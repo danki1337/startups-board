@@ -14,14 +14,45 @@ const testWithBuild = hasBuild
   ? test
   : (name) => test(name, { skip: "web/dist is absent - run `npm run build` in web/ first" }, () => {});
 
+// A stub D1 so the server render exercises the real queryJobs -> table path with deterministic
+// rows. The page no longer carries a demo fixture, so without a database it would render its empty
+// state and the test would assert nothing about the table.
+const STUB_ROW = {
+  key: "greenhouse:global:acme:1",
+  title: "Staff Platform Engineer",
+  companyIdentifier: "acme",
+  companyName: "Acme",
+  companyLogoUrl: null,
+  location: "Berlin, Germany",
+  country: "de",
+  workplace: "Hybrid",
+  employmentType: "Full time",
+  category: "Engineering",
+  provider: "greenhouse",
+  publishedAt: "2026-07-20T00:00:00.000Z",
+  url: "https://job-boards.greenhouse.io/acme/jobs/1",
+};
+
+function stubD1() {
+  const statement = { bind: () => statement };
+  return {
+    prepare: () => statement,
+    batch: async () => [{ results: [STUB_ROW] }, { results: [{ total: 1 }] }],
+  };
+}
+
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  globalThis.__CLOUDFLARE_TEST_ENV__ = { DB: stubD1() };
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
     new Request("http://localhost/", { headers: { accept: "text/html" } }),
-    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    {
+      DB: stubD1(),
+      ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
+    },
     { waitUntil() {}, passThroughOnException() {} },
   );
 }
@@ -36,9 +67,16 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /<table/);
   assert.match(html, /Company/);
   assert.match(html, /Workplace/);
-  assert.match(html, /Staff Developer, Identity/);
   assert.match(html, /Ashby/);
+  assert.match(html, /Role title/);
+  assert.match(html, /All countries/);
+  // Rows come from the stub D1, proving the server render actually queries rather than falling
+  // back to a bundled fixture.
+  assert.match(html, /Staff Platform Engineer/);
+  assert.match(html, /Acme/);
+  assert.match(html, /Berlin, Germany/);
   assert.doesNotMatch(html, /Find the work|worth doing|How the index works/i);
+  assert.doesNotMatch(html, /Sample data|Demo fallback/i);
 });
 
 testWithBuild("keeps HeroUI controls and table-first filters", async () => {

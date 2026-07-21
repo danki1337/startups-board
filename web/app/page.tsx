@@ -1,12 +1,32 @@
 import { JobsExplorer } from "./jobs-explorer";
 import { queryJobs, type JobsPage } from "./jobs-query";
-import { jobs as demoJobs } from "./jobs";
 
 export const dynamic = "force-dynamic";
 
-// The first page is rendered on the server so the table shows real jobs immediately. It used to
-// paint a 12-row demo fixture and only replace it once a client fetch resolved, which is why the
-// UI appeared to "only show 12 jobs".
+// Local dev binds an empty Miniflare D1, so the server render reads the real index from the local
+// SQLite API instead (npm run serve). Production never takes this path -- D1 answers directly.
+const DEV_API_URL = process.env.DEV_JOBS_API_URL ?? "http://localhost:3002/api/jobs";
+
+async function loadFirstPage(params: URLSearchParams): Promise<JobsPage | null> {
+  try {
+    const page = await queryJobs(params);
+    if (page.total > 0) return page;
+  } catch {
+    // Falls through to the dev API below.
+  }
+
+  if (process.env.NODE_ENV === "production") return null;
+  try {
+    const response = await fetch(`${DEV_API_URL}?${params}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as JobsPage;
+  } catch {
+    return null;
+  }
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -19,23 +39,17 @@ export default async function Home({
   }
   params.set("limit", "100");
 
-  let initialPage: JobsPage | null = null;
-  try {
-    initialPage = await queryJobs(params);
-  } catch {
-    // Local dev without a D1 binding still renders, falling back to the bundled sample rows.
-    initialPage = null;
-  }
+  const initialPage = await loadFirstPage(params);
 
   // `limit` is a transport detail, not a filter, so it must not leak into the client's filter state.
   params.delete("limit");
 
   return (
     <JobsExplorer
-      initialJobs={initialPage?.jobs ?? demoJobs}
-      initialTotal={initialPage?.total ?? demoJobs.length}
+      initialJobs={initialPage?.jobs ?? []}
+      initialTotal={initialPage?.total ?? 0}
       initialCursor={initialPage?.nextCursor ?? null}
-      isLiveInitially={initialPage !== null}
+      hasServerData={initialPage !== null}
       initialQuery={params.toString()}
     />
   );

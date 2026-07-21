@@ -115,13 +115,13 @@ export function JobsExplorer({
   initialJobs = [],
   initialTotal = 0,
   initialCursor = null,
-  isLiveInitially = false,
+  hasServerData = false,
   initialQuery = "",
 }: {
   initialJobs?: Job[];
   initialTotal?: number;
   initialCursor?: string | null;
-  isLiveInitially?: boolean;
+  hasServerData?: boolean;
   initialQuery?: string;
 }) {
   // Seeded from the server-supplied query string rather than window.location, so the server and
@@ -131,13 +131,12 @@ export function JobsExplorer({
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [total, setTotal] = useState(initialTotal);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
-  const [isLive, setIsLive] = useState(isLiveInitially);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
   // The server already rendered page one for the current URL, so the first filter effect must not
   // immediately refetch the identical query. When the server could not reach D1 (local dev) the
   // first fetch must still run, otherwise the page would sit on the sample rows forever.
-  const skipNextFetch = useRef(isLiveInitially);
+  const skipNextFetch = useRef(hasServerData);
 
   const queryString = useMemo(() => filtersToSearchParams(filters).toString(), [filters]);
 
@@ -178,9 +177,8 @@ export function JobsExplorer({
         setJobs(payload.jobs);
         setTotal(payload.total);
         setCursor(payload.nextCursor);
-        setIsLive(true);
       } catch (error) {
-        if ((error as Error).name !== "AbortError") setIsLive(false);
+        if ((error as Error).name !== "AbortError") console.error("Jobs fetch failed", error);
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -252,11 +250,8 @@ export function JobsExplorer({
           </div>
 
           <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
-            <span
-              className={`size-2 rounded-full ${isLive ? "bg-[var(--success)]" : "bg-amber-400"}`}
-              aria-hidden="true"
-            />
-            {isLive ? "Live index" : "Sample data"}
+            <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
+            <span className="tabular-nums">{total.toLocaleString()}</span> live roles
           </div>
         </div>
       </header>
