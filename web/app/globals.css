@@ -1,0 +1,115 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root {
+  --canvas: #f8f9fa;
+  --control: #f3f4f5;
+  --control-hover: #edeff1;
+  --row-hover: #fafcfb;
+  --ink: #202326;
+  --muted-strong: #60666d;
+  --muted: #747a82;
+  --accent: #216b49;
+  --success: #2f9b65;
+  --focus: #3b7d60;
+  --shadow-panel:
+    0 0 0 1px oklch(0 0 0 / 0.055),
+    0 1px 2px -1px oklch(0 0 0 / 0.06),
+    0 3px 8px -4px oklch(0 0 0 / 0.07);
+  --shadow-table:
+    0 0 0 1px oklch(0 0 0 / 0.075),
+    0 2px 6px -4px oklch(0 0 0 / 0.08);
+}
+
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-synthesis: none;
+}
+
+button,
+a,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  user-select: none;
+}
+
+a {
+  text-underline-position: from-font;
+  text-decoration-thickness: from-font;
+}
+
+::selection {
+  background: #c9e2d5;
+  color: #173226;
+}
+
+.brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px;
+  padding: 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  box-shadow: var(--shadow-panel);
+}
+
+.brand-mark span {
+  border-radius: 2px;
+  background: #ffffff;
+  opacity: 0.92;
+}
+
+.jobs-table-scroll {
+  scrollbar-color: #c8ccd0 transparent;
+  scrollbar-width: thin;
+}
+
+.jobs-table {
+  filter: drop-shadow(0 1px 2px oklch(0 0 0 / 0.06));
+}
+
+.jobs-table thead th {
+  background: var(--canvas);
+}
+
+.jobs-table tbody tr td {
+  border-bottom: 1px solid oklch(0 0 0 / 0.09);
+  background: #ffffff;
+  transition: background-color 150ms ease;
+}
+
+.jobs-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+.jobs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "../web/node_modules/wrangler/config-schema.json",
+  "name": "startups-board",
+  "main": "../web/dist/server/index.js",
+  "compatibility_date": "2026-07-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "no_bundle": true,
+  "rules": [
+    { "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }
+  ],
+  "assets": {
+    "directory": "../web/dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "startups-board-production",
+      "database_id": "231424ff-f6b0-4a97-9362-4b8b6fa34d05",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ARCHIVE",
+      "bucket_name": "startups-board-archive"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "QUEUE_ASHBY", "queue": "startups-board-jobs-ashby" },
+      { "binding": "QUEUE_BAMBOOHR", "queue": "startups-board-jobs-bamboohr" },
+      { "binding": "QUEUE_GEM", "queue": "startups-board-jobs-gem" },
+      { "binding": "QUEUE_GETRO", "queue": "startups-board-jobs-getro" },
+      { "binding": "QUEUE_GREENHOUSE", "queue": "startups-board-jobs-greenhouse" },
+      { "binding": "QUEUE_ICIMS", "queue": "startups-board-jobs-icims" },
+      { "binding": "QUEUE_LEVER", "queue": "startups-board-jobs-lever" },
+      { "binding": "QUEUE_PAYLOCITY", "queue": "startups-board-jobs-paylocity" },
+      { "binding": "QUEUE_SPARKHIRE", "queue": "startups-board-jobs-sparkhire" },
+      { "binding": "QUEUE_WORKDAY", "queue": "startups-board-jobs-workday" },
+      { "binding": "QUEUE_DISCOVERY", "queue": "startups-board-discovery" }
+    ],
+    "consumers": [
+      { "queue": "startups-board-jobs-ashby", "max_batch_size": 10, "max_concurrency": 3, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-bamboohr", "max_batch_size": 10, "max_concurrency": 4, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-gem", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-getro", "max_batch_size": 10, "max_concurrency": 2, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-greenhouse", "max_batch_size": 10, "max_concurrency": 10, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-icims", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-lever", "max_batch_size": 10, "max_concurrency": 10, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-paylocity", "max_batch_size": 10, "max_concurrency": 2, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-sparkhire", "max_batch_size": 10, "max_concurrency": 3, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-workday", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      // Discovery tasks are long Common Crawl fetches, so they stay near-unbatched.
+      { "queue": "startups-board-discovery", "max_batch_size": 2, "max_concurrency": 3, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-dlq", "max_batch_size": 10, "max_concurrency": 1, "max_retries": 3 }
+    ]
+  },
+  "triggers": {
+    "crons": ["*/15 * * * *", "17 3 * * SUN"]
+  },
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true, "head_sampling_rate": 1 }
+}

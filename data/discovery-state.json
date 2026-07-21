@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-21T09:17:36.411Z",
+  "targets": {
+    "CC-MAIN-2026-25|lever|jobs.lever.co/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "lever",
+      "pattern": "jobs.lever.co/*",
+      "totalPages": 1,
+      "sampledPages": [
+        0
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:07.173Z"
+    },
+    "CC-MAIN-2026-25|lever|jobs.eu.lever.co/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "lever",
+      "pattern": "jobs.eu.lever.co/*",
+      "totalPages": 1,
+      "sampledPages": [
+        0
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:07.486Z"
+    },
+    "CC-MAIN-2026-25|workday|*.myworkdayjobs.com/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "workday",
+      "pattern": "*.myworkdayjobs.com/*",
+      "totalPages": 20,
+      "sampledPages": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:39.322Z"
+    },
+    "CC-MAIN-2026-25|bamboohr|*.bamboohr.com/careers/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "bamboohr",
+      "pattern": "*.bamboohr.com/careers/*",
+      "totalPages": 4,
+      "sampledPages": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:39.104Z"
+    },
+    "CC-MAIN-2026-25|icims|*.icims.com/jobs/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "icims",
+      "pattern": "*.icims.com/jobs/*",
+      "totalPages": 13,
+      "sampledPages": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:39.566Z"
+    },
+    "CC-MAIN-2026-25|greenhouse|boards.greenhouse.io/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "greenhouse",
+      "pattern": "boards.greenhouse.io/*",
+      "totalPages": 5,
+      "sampledPages": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:10.444Z"
+    },
+    "CC-MAIN-2026-25|greenhouse|job-boards.greenhouse.io/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "greenhouse",
+      "pattern": "job-boards.greenhouse.io/*",
+      "totalPages": 20,
+      "sampledPages": [
+        2,
+        6,
+        10,
+        14,
+        18
+      ],
+      "completed": false,
+      "lastSampledAt": "2026-07-21T02:51:26.530Z"
+    },
+    "CC-MAIN-2026-25|ashby|jobs.ashbyhq.com/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "ashby",
+      "pattern": "jobs.ashbyhq.com/*",
+      "totalPages": 8,
+      "sampledPages": [
+        0,
+        1,
+        3,
+        5,
+        6
+      ],
+      "completed": false,
+      "lastSampledAt": "2026-07-21T02:51:37.327Z"
+    },
+    "CC-MAIN-2026-25|gem|jobs.gem.com/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "gem",
+      "pattern": "jobs.gem.com/*",
+      "totalPages": 1,
+      "sampledPages": [
+        0
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T09:17:36.411Z"
+    },
+    "CC-MAIN-2026-25|paylocity|recruiting.paylocity.com/recruiting/jobs/All/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "paylocity",
+      "pattern": "recruiting.paylocity.com/recruiting/jobs/All/*",
+      "totalPages": 2,
+      "sampledPages": [
+        0,
+        1
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:42.315Z"
+    },
+    "CC-MAIN-2026-21|lever|jobs.lever.co/*": {
+      "indexId": "CC-MAIN-2026-21",
+      "provider": "lever",
+      "pattern": "jobs.lever.co/*",
+      "totalPages": 1,
+      "sampledPages": [
+        0
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:43.299Z"
+    },
+    "CC-MAIN-2026-21|lever|jobs.eu.lever.co/*": {
+      "indexId": "CC-MAIN-2026-21",
+      "provider": "lever",
+      "pattern": "jobs.eu.lever.co/*",
+      "totalPages": 1,
+      "sampledPages": [
+        0
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:44.097Z"
+    },
+    "CC-MAIN-2026-21|greenhouse|boards.greenhouse.io/*": {
+      "indexId": "CC-MAIN-2026-21",
+      "provider": "greenhouse",
+      "pattern": "boards.greenhouse.io/*",
+      "totalPages": 4,
+      "sampledPages": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T02:51:46.670Z"
+    },
+    "CC-MAIN-2026-21|greenhouse|job-boards.greenhouse.io/*": {
+      "indexId": "CC-MAIN-2026-21",
+      "provider": "greenhouse",
+      "pattern": "job-boards.greenhouse.io/*",
+      "totalPages": 21,
+      "sampledPages": [
+        2,
+        7,
+        11,
+        15,
+        19
+      ],
+      "completed": false,
+      "lastSampledAt": "2026-07-21T03:09:08.633Z"
+    },
+    "CC-MAIN-2026-21|ashby|jobs.ashbyhq.com/*": {
+      "indexId": "CC-MAIN-2026-21",
+      "provider": "ashby",
+      "pattern": "jobs.ashbyhq.com/*",
+      "totalPages": 7,
+      "sampledPages": [
+        1,
+        2,
+        3,
+        5,
+        6
+      ],
+      "completed": false,
+      "lastSampledAt": "2026-07-21T03:09:21.201Z"
+    },
+    "CC-MAIN-2026-25|getro|*.getro.com/jobs/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "getro",
+      "pattern": "*.getro.com/jobs/*",
+      "totalPages": 2,
+      "sampledPages": [
+        0,
+        1
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T09:16:18.574Z"
+    },
+    "CC-MAIN-2026-25|getro|getro.org/jobs/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "getro",
+      "pattern": "getro.org/jobs/*",
+      "totalPages": 0,
+      "sampledPages": [],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T09:16:19.038Z"
+    },
+    "CC-MAIN-2026-25|sparkhire|www.comeet.com/jobs/*": {
+      "indexId": "CC-MAIN-2026-25",
+      "provider": "sparkhire",
+      "pattern": "www.comeet.com/jobs/*",
+      "totalPages": 2,
+      "sampledPages": [
+        0,
+        1
+      ],
+      "completed": true,
+      "lastSampledAt": "2026-07-21T09:16:20.088Z"
+    }
+  }
+}

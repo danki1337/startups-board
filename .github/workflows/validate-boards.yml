@@ -1,0 +1,65 @@
+name: Validate ATS boards
+
+# The registry grew from ~16k to ~55k boards after merging the reference identifier lists, and
+# importing that many unverified slugs straight into production would flood the DLQ and make the
+# D1 cost math unreadable. Validation runs here instead, on free Actions minutes, sharded by
+# provider so no single job approaches the 6-hour limit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: "Validate a single provider instead of all of them"
+        required: false
+        type: string
+      validation_limit:
+        description: "Optional cap on boards validated per provider"
+        required: false
+        type: string
+  schedule:
+    - cron: "23 5 * * 3"
+
+concurrency:
+  group: ats-board-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      # Each provider is independent, so a provider that rate-limits or blocks CI cannot stall
+      # the others -- the same isolation principle the production queues use.
+      matrix:
+        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate ${{ matrix.provider }} boards
+        if: ${{ inputs.provider == '' || inputs.provider == matrix.provider }}
+        env:
+          VALIDATION_LIMIT: ${{ inputs.validation_limit }}
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "$VALIDATION_LIMIT" ]; then EXTRA_ARGS+=(--validation-limit "$VALIDATION_LIMIT"); fi
+          node src/cli.mjs validate \
+            --provider "${{ matrix.provider }}" \
+            --concurrency 8 \
+            --timeout-ms 20000 \
+            --output "data/validated-${{ matrix.provider }}.json" \
+            --report "data/validation-${{ matrix.provider }}.md" \
+            "${EXTRA_ARGS[@]}"
+
+      - name: Upload ${{ matrix.provider }} results
+        if: ${{ inputs.provider == '' || inputs.provider == matrix.provider }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-${{ matrix.provider }}
+          path: |
+            data/validated-${{ matrix.provider }}.json
+            data/validation-${{ matrix.provider }}.md
+          retention-days: 14

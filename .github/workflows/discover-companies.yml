@@ -1,0 +1,89 @@
+name: Discover ATS companies
+
+# Previously this ran every provider inside a single job, walking them in a fixed order. The job hit
+# its time limit long before the end of the list, so Getro and Spark Hire were never harvested at
+# all (4 and 0 boards respectively, despite both having Common Crawl coverage) and only 2 of ~100
+# CC indexes were ever scanned. Each provider now gets its own job and its own time budget.
+
+on:
+  schedule:
+    - cron: "43 1 * * 0"
+  workflow_dispatch:
+    inputs:
+      index_count:
+        description: "How many Common Crawl indexes to scan"
+        required: false
+        default: "8"
+        type: string
+
+concurrency:
+  group: ats-company-discovery
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, sparkhire]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Each shard writes only its own provider's boards; the merge job unions them afterwards.
+      - name: Harvest ${{ matrix.provider }}
+        run: |
+          node src/cli.mjs discover \
+            --providers "${{ matrix.provider }}" \
+            --index-count "${{ inputs.index_count || '8' }}" \
+            --max-pages 25 \
+            --max-urls-per-target 100000 \
+            --merge-existing false \
+            --resume-discovery true \
+            --output "data/shard-${{ matrix.provider }}.json" \
+            --discovery-state "data/discovery-state.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.provider }}
+          path: data/shard-${{ matrix.provider }}.json
+          retention-days: 7
+
+  merge:
+    needs: harvest
+    # A provider that rate-limits or blocks CI should not discard the shards that did succeed.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: data/shards
+          pattern: shard-*
+          merge-multiple: true
+
+      - name: Merge shards into the canonical registry
+        run: node scripts/merge-registry-shards.mjs data/shards/shard-*.json
+
+      - name: Commit the refreshed registry
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/discovered-boards.json data/discovery-state.json
+          git diff --staged --quiet && exit 0
+          git commit -m "Refresh ATS company registry"
+          git pull --rebase origin main
+          git push origin HEAD:main

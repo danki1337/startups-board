@@ -1,0 +1,28 @@
+{
+  "name": "startups-board-discovery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Discover and validate public ATS job boards before building the Startups.board product.",
+  "scripts": {
+    "discover": "node src/cli.mjs discover",
+    "harvest": "node src/cli.mjs discover --index-count 12 --max-pages 25 --max-urls-per-target 100000 --resume-discovery true",
+    "validate": "node src/cli.mjs validate",
+    "sync": "node src/cli.mjs sync",
+    "sync:remote": "node src/cli.mjs sync --remote true --skip-database true",
+    "cloudflare:build": "cd web && npm run build",
+    "cloudflare:provision": "node cloudflare/scripts/provision.mjs",
+    "cloudflare:deploy": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
+    "cloudflare:migrate": "node web/node_modules/wrangler/bin/wrangler.js d1 migrations apply startups-board-production --remote --config cloudflare/wrangler.jsonc",
+    "cloudflare:import-boards": "node --env-file=.env.production cloudflare/scripts/import-boards.mjs",
+    "database": "node src/cli.mjs database",
+    "watch": "node src/cli.mjs watch",
+    "serve": "node src/cli.mjs serve",
+    "system": "node src/cli.mjs system",
+    "poc": "node src/cli.mjs run",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
