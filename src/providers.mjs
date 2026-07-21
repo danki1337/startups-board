@@ -37,9 +37,15 @@ const PROVIDERS = {
   },
 
   greenhouse: {
+    // A single domain match covers boards. and job-boards. plus any future shared host; parse()
+    // still only accepts the two board hosts, so the wider net cannot pollute the registry.
     discoveryTargets: [
-      { pattern: "boards.greenhouse.io/*", region: "global" },
-      { pattern: "job-boards.greenhouse.io/*", region: "global" },
+      {
+        pattern: "*.greenhouse.io/*",
+        query: "greenhouse.io",
+        matchType: "domain",
+        region: "global",
+      },
     ],
     parse(url) {
       const host = url.hostname.toLowerCase();
@@ -169,7 +175,15 @@ const PROVIDERS = {
   },
 
   sparkhire: {
-    discoveryTargets: [{ pattern: "www.comeet.com/jobs/*", region: "global" }],
+    // Domain match also captures bare-host and regional comeet.com URLs the www. prefix missed.
+    discoveryTargets: [
+      {
+        pattern: "*.comeet.com/jobs/*",
+        query: "comeet.com",
+        matchType: "domain",
+        region: "global",
+      },
+    ],
     parse(url) {
       const host = url.hostname.toLocaleLowerCase();
       if (host !== "comeet.com" && host !== "www.comeet.com") return null;
@@ -240,9 +254,38 @@ const PROVIDERS = {
         matchType: "domain",
         region: "global",
       },
+      {
+        pattern: "*.myworkdaysite.com/*",
+        query: "myworkdaysite.com",
+        matchType: "domain",
+        region: "global",
+      },
     ],
     parse(url) {
       const host = url.hostname.toLocaleLowerCase();
+      // Workday's newer myworkdaysite.com family carries the tenant in the path rather than the
+      // host: https://{wdN}.myworkdaysite.com/[{locale}/]recruiting/{tenant}/{site}/... Both
+      // families map onto the same tenant|wdN|site identifier, so a board reachable on both
+      // domains deduplicates to one canonical record instead of ingesting every job twice.
+      const siteMatch = /^(impl-)?(wd\d+)\.myworkdaysite\.com$/.exec(host);
+      if (siteMatch) {
+        if (siteMatch[1]) return null; // impl-* hosts are implementation sandboxes, not live boards
+        const segments = decodedPathSegments(url);
+        const offset = /^[a-z]{2}-[a-z]{2}$/i.test(segments[0] ?? "") ? 1 : 0;
+        if (segments[offset]?.toLocaleLowerCase() !== "recruiting") return null;
+        const tenant = segments[offset + 1]?.toLocaleLowerCase();
+        const siteId = segments[offset + 2];
+        if (!tenant || !siteId || WORKDAY_RESERVED_PATHS.has(siteId.toLocaleLowerCase())) return null;
+        const dataCenter = siteMatch[2];
+        return board({
+          provider: "workday",
+          identifier: `${tenant}|${dataCenter}|${siteId}`,
+          region: "global",
+          boardUrl: `https://${host}/recruiting/${encodeURIComponent(tenant)}/${encodeURIComponent(siteId)}`,
+          apiUrl: `https://${host}/wday/cxs/${encodeURIComponent(tenant)}/${encodeURIComponent(siteId)}/jobs`,
+        });
+      }
+
       const match = /^([^.]+)\.(wd\d+)\.myworkdayjobs\.com$/.exec(host);
       if (!match) return null;
 
@@ -318,9 +361,11 @@ const PROVIDERS = {
   },
 
   paylocity: {
+    // The /jobs/All/ prefix missed Details/ and legacy paths that still reveal the company GUID;
+    // the host prefix is broad enough while staying far cheaper than a paylocity.com domain match.
     discoveryTargets: [
       {
-        pattern: "recruiting.paylocity.com/recruiting/jobs/All/*",
+        pattern: "recruiting.paylocity.com/*",
         region: "global",
       },
     ],
@@ -328,8 +373,19 @@ const PROVIDERS = {
       if (url.hostname.toLocaleLowerCase() !== "recruiting.paylocity.com") return null;
       const segments = decodedPathSegments(url);
       const allIndex = segments.findIndex((segment) => segment.toLocaleLowerCase() === "all");
-      const identifier = allIndex >= 0 ? segments[allIndex + 1] : null;
-      if (!identifier || !/^[a-z0-9-]{8,}$/i.test(identifier)) return null;
+      let identifier = allIndex >= 0 ? segments[allIndex + 1] : null;
+      // Job-detail URLs (/recruiting/jobs/Details/{jobId}/{company-slug}) carry no board GUID, but
+      // any URL that does carry one exposes it as a UUID path segment.
+      if (!identifier) {
+        identifier = segments.find((segment) =>
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) ?? null;
+      }
+      // Paylocity boards are keyed by company GUID; with the discovery target widened to the whole
+      // recruiting host, anything looser would let slugs and job ids masquerade as boards.
+      if (!identifier
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+        return null;
+      }
       return board({
         provider: "paylocity",
         identifier: identifier.toLocaleLowerCase(),
@@ -828,10 +884,12 @@ function normalizeBambooHrJob(candidate, job, syncedAt) {
 }
 
 function normalizeWorkdayJob(candidate, job, syncedAt) {
-  const baseUrl = new URL(candidate.boardUrl).origin;
-  const siteId = candidate.identifier.split("|")[2];
+  // boardUrl already encodes the family-specific shape ({tenant}.wdN.myworkdayjobs.com/{site}
+  // vs wdN.myworkdaysite.com/recruiting/{tenant}/{site}), so job and logo URLs append to it
+  // rather than reconstructing a host-based path that only exists on the older domain.
+  const boardBase = candidate.boardUrl.replace(/\/$/, "");
   const externalPath = cleanString(job.externalPath) || "";
-  const url = `${baseUrl}/${encodeURIComponent(siteId)}${externalPath.startsWith("/") ? "" : "/"}${externalPath}`;
+  const url = `${boardBase}${externalPath.startsWith("/") ? "" : "/"}${externalPath}`;
   return normalizedJob(candidate, syncedAt, {
     sourceId: lastPathSegment(url) || externalPath,
     title: job.title,
@@ -845,7 +903,7 @@ function normalizeWorkdayJob(candidate, job, syncedAt) {
     applyUrl: url,
     // Every Workday tenant serves its customer's own logo from a fixed path, so this needs no
     // extra request at ingestion. The frontend falls back to the generated monogram if it 404s.
-    companyLogoUrl: `${baseUrl}/${encodeURIComponent(siteId)}/assets/logo`,
+    companyLogoUrl: `${boardBase}/assets/logo`,
     compensation: null,
   });
 }

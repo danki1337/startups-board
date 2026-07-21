@@ -13,7 +13,7 @@ on:
       index_count:
         description: "How many Common Crawl indexes to scan"
         required: false
-        default: "8"
+        default: "24"
         type: string
 
 concurrency:
@@ -42,7 +42,7 @@ jobs:
         run: |
           node src/cli.mjs discover \
             --providers "${{ matrix.provider }}" \
-            --index-count "${{ inputs.index_count || '8' }}" \
+            --index-count "${{ inputs.index_count || '24' }}" \
             --max-pages 25 \
             --max-urls-per-target 100000 \
             --merge-existing false \

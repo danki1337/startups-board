@@ -81,6 +81,26 @@ test("parses localized and API Workday URLs into the same board", () => {
   assert.equal(publicUrl.apiUrl, "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/jobs");
 });
 
+test("parses path-based myworkdaysite.com boards into the shared Workday identifier", () => {
+  const localized = parseAtsUrl(
+    "https://wd1.myworkdaysite.com/en-US/recruiting/abinbev/GHQ/job/TANZANIA-DSM-HQ/OPERATOR_30022343",
+  );
+  const bare = parseAtsUrl("https://wd1.myworkdaysite.com/recruiting/abinbev/GHQ");
+  assert.equal(localized.provider, "workday");
+  assert.equal(localized.identifier, "abinbev|wd1|GHQ");
+  assert.equal(localized.key, bare.key);
+  assert.equal(localized.boardUrl, "https://wd1.myworkdaysite.com/recruiting/abinbev/GHQ");
+  assert.equal(localized.apiUrl, "https://wd1.myworkdaysite.com/wday/cxs/abinbev/GHQ/jobs");
+
+  // The same tenant|wdN|site on the host-based domain must collapse to one canonical board.
+  const hostBased = parseAtsUrl("https://abinbev.wd1.myworkdayjobs.com/GHQ");
+  assert.equal(hostBased.key, localized.key);
+
+  // Implementation sandboxes and non-recruiting paths are not boards.
+  assert.equal(parseAtsUrl("https://impl-wd501.myworkdaysite.com/recruiting/syssero/Syssero_External"), null);
+  assert.equal(parseAtsUrl("https://wd1.myworkdaysite.com/wday/other/abinbev/GHQ"), null);
+});
+
 test("parses iCIMS and Paylocity board identifiers", () => {
   const icims = parseAtsUrl("https://careers-acme.icims.com/jobs/123/software-engineer/job");
   const paylocity = parseAtsUrl(
