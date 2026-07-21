@@ -86,6 +86,10 @@ a {
 
 .jobs-table {
   filter: drop-shadow(0 1px 2px oklch(0 0 0 / 0.06));
+  /* Only the visible rows exist in the DOM while virtualized, so `auto` layout re-measured column
+     widths against whatever was on screen and the columns visibly shifted during scrolling. Fixed
+     layout derives every width from the header alone, so they never move. */
+  table-layout: fixed;
 }
 
 .jobs-table thead th {
@@ -96,6 +100,16 @@ a {
   border-bottom: 1px solid oklch(0 0 0 / 0.09);
   background: #ffffff;
   transition: background-color 150ms ease;
+  /* Uniform row height is what lets Virtuoso predict the scroll extent exactly. A wrapped date or
+     a two-line location used to make rows twice the estimated height, which is what produced the
+     jumping while scrolling. */
+  height: 72px;
+  overflow: hidden;
+}
+
+/* Long values are clipped rather than wrapped, so no cell can grow a row. */
+.jobs-table tbody tr td > * {
+  min-width: 0;
 }
 
 .jobs-table tbody tr:hover td {

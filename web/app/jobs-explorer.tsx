@@ -449,8 +449,8 @@ export function JobsExplorer({
               computeItemKey={(_index, job) => job.id}
               fixedHeaderContent={TableHeader}
               itemContent={(_index, job) => <JobCells job={job} />}
-              defaultItemHeight={73}
-              increaseViewportBy={{ top: 220, bottom: 420 }}
+              fixedItemHeight={72}
+              increaseViewportBy={{ top: 240, bottom: 480 }}
               endReached={() => void loadMore()}
             />
           </div>
@@ -621,13 +621,13 @@ function JobCells({ job }: { job: Job }) {
         <span className="block truncate text-sm font-medium text-[var(--ink)]" title={job.title}>
           {job.title}
         </span>
-        <span className="mt-0.5 block text-[12px] text-[var(--muted)]">
+        <span className="mt-0.5 block truncate text-[12px] text-[var(--muted)]">
           {job.category}
           {job.employmentType ? ` · ${job.employmentType}` : ""}
         </span>
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
             {job.countryFlag ?? (job.workplace === "Remote" ? "🌍" : "")}
           </span>
@@ -639,10 +639,10 @@ function JobCells({ job }: { job: Job }) {
           {job.workplace}
         </Chip>
       </td>
-      <td className="px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
+      <td className="whitespace-nowrap px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
         <time dateTime={postedDate.toISOString().slice(0, 10)}>{dateFormatter.format(postedDate)}</time>
       </td>
-      <td className="px-5 py-3.5 text-end">
+      <td className="whitespace-nowrap px-5 py-3.5 text-end">
         <a
           href={job.url}
           target="_blank"
