@@ -7,6 +7,8 @@ export const PROVIDER_QUEUE_BINDINGS = Object.freeze({
   icims: "QUEUE_ICIMS",
   lever: "QUEUE_LEVER",
   paylocity: "QUEUE_PAYLOCITY",
+  rippling: "QUEUE_RIPPLING",
+  smartrecruiters: "QUEUE_SMARTRECRUITERS",
   sparkhire: "QUEUE_SPARKHIRE",
   workday: "QUEUE_WORKDAY",
 });

@@ -61,6 +61,8 @@ export const PROVIDER_LABELS: Record<string, string> = {
   icims: "iCIMS",
   lever: "Lever",
   paylocity: "Paylocity",
+  rippling: "Rippling",
+  smartrecruiters: "SmartRecruiters",
   sparkhire: "Spark Hire",
   workday: "Workday",
 };

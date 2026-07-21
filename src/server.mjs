@@ -144,6 +144,8 @@ function titleCase(value) {
   const text = String(value || "");
   if (text.toLocaleLowerCase() === "bamboohr") return "BambooHR";
   if (text.toLocaleLowerCase() === "icims") return "iCIMS";
+  if (text.toLocaleLowerCase() === "smartrecruiters") return "SmartRecruiters";
+  if (text.toLocaleLowerCase() === "sparkhire") return "Spark Hire";
   return text ? text[0].toLocaleUpperCase() + text.slice(1) : text;
 }
 

@@ -37,6 +37,8 @@
       { "binding": "QUEUE_ICIMS", "queue": "startups-board-jobs-icims" },
       { "binding": "QUEUE_LEVER", "queue": "startups-board-jobs-lever" },
       { "binding": "QUEUE_PAYLOCITY", "queue": "startups-board-jobs-paylocity" },
+      { "binding": "QUEUE_RIPPLING", "queue": "startups-board-jobs-rippling" },
+      { "binding": "QUEUE_SMARTRECRUITERS", "queue": "startups-board-jobs-smartrecruiters" },
       { "binding": "QUEUE_SPARKHIRE", "queue": "startups-board-jobs-sparkhire" },
       { "binding": "QUEUE_WORKDAY", "queue": "startups-board-jobs-workday" },
       { "binding": "QUEUE_DISCOVERY", "queue": "startups-board-discovery" }
@@ -50,6 +52,8 @@
       { "queue": "startups-board-jobs-icims", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
       { "queue": "startups-board-jobs-lever", "max_batch_size": 10, "max_concurrency": 10, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
       { "queue": "startups-board-jobs-paylocity", "max_batch_size": 10, "max_concurrency": 2, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-rippling", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
+      { "queue": "startups-board-jobs-smartrecruiters", "max_batch_size": 10, "max_concurrency": 8, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
       { "queue": "startups-board-jobs-sparkhire", "max_batch_size": 10, "max_concurrency": 3, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
       { "queue": "startups-board-jobs-workday", "max_batch_size": 10, "max_concurrency": 6, "max_retries": 5, "dead_letter_queue": "startups-board-dlq" },
       // Discovery tasks are long Common Crawl fetches, so they stay near-unbatched.

@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, sparkhire]
+        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, sparkhire, rippling, smartrecruiters]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

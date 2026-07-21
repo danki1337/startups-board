@@ -447,7 +447,7 @@ export function JobsExplorer({
               components={virtuosoComponents}
               computeItemKey={(_index, job) => job.id}
               fixedHeaderContent={TableHeader}
-              itemContent={(_index, job) => <JobCells job={job} />}
+              itemContent={(_index, job) => <JobCells job={job} onFilter={update} />}
               fixedItemHeight={72}
               increaseViewportBy={{ top: 240, bottom: 480 }}
               endReached={() => void loadMore()}
@@ -600,7 +600,7 @@ function TableHeader() {
   );
 }
 
-function JobCells({ job }: { job: Job }) {
+function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filters>) => void }) {
   const postedDate = job.publishedAt ? new Date(job.publishedAt) : new Date(referenceDate);
   if (!job.publishedAt) {
     postedDate.setUTCDate(referenceDate.getUTCDate() - Math.max(0, (job.postedDaysAgo ?? 1) - 1));
@@ -611,9 +611,14 @@ function JobCells({ job }: { job: Job }) {
       <td className="px-5 py-3.5">
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
-          <span className="truncate text-sm font-semibold tracking-[-0.01em]" title={job.company}>
+          <button
+            type="button"
+            onClick={() => onFilter({ company: job.company })}
+            title={`Show only jobs at ${job.company}`}
+            className="truncate rounded text-start text-sm font-semibold tracking-[-0.01em] underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          >
             {job.company}
-          </span>
+          </button>
         </div>
       </td>
       <td className="px-5 py-3.5">
@@ -630,7 +635,20 @@ function JobCells({ job }: { job: Job }) {
           <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
             {job.countryFlag ?? (job.workplace === "Remote" ? "🌍" : "")}
           </span>
-          <span className="truncate" title={job.location}>{job.location}</span>
+          {job.location === "Location not specified" ? (
+            <span className="truncate">{job.location}</span>
+          ) : (
+            <button
+              type="button"
+              // Filtering by the resolved city is far more useful than the raw string, which is
+              // often a full address that would match only this one posting.
+              onClick={() => (job.city ? onFilter({ city: job.city, location: "" }) : onFilter({ location: job.location }))}
+              title={job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
+              className="truncate rounded text-start underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+            >
+              {job.location}
+            </button>
+          )}
         </span>
       </td>
       <td className="px-5 py-3.5">

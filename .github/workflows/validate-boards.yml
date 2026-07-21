@@ -32,7 +32,7 @@ jobs:
       # Each provider is independent, so a provider that rate-limits or blocks CI cannot stall
       # the others -- the same isolation principle the production queues use.
       matrix:
-        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro]
+        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, rippling, smartrecruiters]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

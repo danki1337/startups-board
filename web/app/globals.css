@@ -79,6 +79,24 @@ a {
   opacity: 0.92;
 }
 
+/* Tailwind v4's reset drops the UA default of cursor:pointer on buttons, so every interactive
+   control has to opt back in. Applied globally rather than per-component so a new control cannot
+   silently ship without it. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="option"],
+summary,
+select,
+label:has(> select),
+a[href] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .jobs-table-scroll {
   scrollbar-color: #c8ccd0 transparent;
   scrollbar-width: thin;

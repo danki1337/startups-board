@@ -19,7 +19,7 @@ export type Job = {
     | "Sales & Marketing"
     | "Operations"
     | "Other";
-  source: "Ashby" | "BambooHR" | "Gem" | "Getro" | "Greenhouse" | "iCIMS" | "Lever" | "Paylocity" | "Spark Hire" | "Workday";
+  source: "Ashby" | "BambooHR" | "Gem" | "Getro" | "Greenhouse" | "iCIMS" | "Lever" | "Paylocity" | "Rippling" | "SmartRecruiters" | "Spark Hire" | "Workday";
   postedDaysAgo?: number;
   publishedAt?: string | null;
   skills: string[];
@@ -41,6 +41,8 @@ export const sourceOptions: Job["source"][] = [
   "iCIMS",
   "Lever",
   "Paylocity",
+  "Rippling",
+  "SmartRecruiters",
   "Spark Hire",
   "Workday",
 ];

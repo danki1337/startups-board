@@ -15,6 +15,8 @@ export const DEFAULT_PROVIDER_CONCURRENCY = Object.freeze({
   icims: 30,
   lever: 30,
   paylocity: 5,
+  rippling: 6,
+  smartrecruiters: 8,
   sparkhire: 3,
   workday: 50,
 });

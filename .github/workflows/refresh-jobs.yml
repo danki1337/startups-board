@@ -45,6 +45,10 @@ jobs:
             concurrency: 30
           - provider: lever
             concurrency: 30
+          - provider: smartrecruiters
+            concurrency: 8
+          - provider: rippling
+            concurrency: 6
           - provider: bamboohr
             concurrency: 10
           - provider: ashby

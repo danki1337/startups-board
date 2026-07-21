@@ -16,6 +16,8 @@ const ICONS: Record<string, string> = {
   iCIMS: "/ats/icims.png",
   Lever: "/ats/lever.png",
   Paylocity: "/ats/paylocity.png",
+  Rippling: "/ats/rippling.png",
+  SmartRecruiters: "/ats/smartrecruiters.png",
   "Spark Hire": "/ats/sparkhire.png",
   Workday: "/ats/workday.png",
 };
@@ -29,6 +31,8 @@ const FALLBACKS: Record<string, { short: string; className: string }> = {
   iCIMS: { short: "iC", className: "bg-[#e7ecf0] text-[#34495b]" },
   Lever: { short: "Lv", className: "bg-[#fde8ea] text-[#a12b3c]" },
   Paylocity: { short: "Py", className: "bg-[#e8f0fb] text-[#1d4f91]" },
+  Rippling: { short: "Rp", className: "bg-[#fdeae6] text-[#a8331b]" },
+  SmartRecruiters: { short: "SR", className: "bg-[#e6f0fb] text-[#15508c]" },
   "Spark Hire": { short: "Sh", className: "bg-[#fff0dc] text-[#95590c]" },
   Workday: { short: "Wd", className: "bg-[#e6f2fb] text-[#0b5c8a]" },
 };

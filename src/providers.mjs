@@ -216,6 +216,55 @@ const PROVIDERS = {
     },
   },
 
+  rippling: {
+    discoveryTargets: [{ pattern: "ats.rippling.com/*", region: "global" }],
+    parse(url) {
+      if (url.hostname.toLowerCase() !== "ats.rippling.com") return null;
+      const identifier = firstPathSegment(url);
+      if (!isSharedHostIdentifier(identifier) || RIPPLING_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
+      return board({
+        provider: "rippling",
+        identifier,
+        region: "global",
+        boardUrl: `https://ats.rippling.com/${encodeURIComponent(identifier)}/jobs`,
+        apiUrl: `https://api.rippling.com/platform/api/ats/v1/board/${encodeURIComponent(identifier)}/jobs`,
+      });
+    },
+    fetchJobs: fetchRipplingJobs,
+    normalizeJob: normalizeRipplingJob,
+    async validate(candidate, request) {
+      const jobs = await fetchRipplingJobs(candidate, request);
+      return { jobCount: jobs.length, sampleTitles: jobs.slice(0, 3).map((job) => job.name).filter(Boolean) };
+    },
+  },
+
+  smartrecruiters: {
+    discoveryTargets: [
+      { pattern: "jobs.smartrecruiters.com/*", region: "global" },
+      { pattern: "careers.smartrecruiters.com/*", region: "global" },
+    ],
+    parse(url) {
+      const host = url.hostname.toLowerCase();
+      if (host !== "jobs.smartrecruiters.com" && host !== "careers.smartrecruiters.com") return null;
+      // Job URLs are /{company}/{jobId}; the board itself is just /{company}.
+      const identifier = firstPathSegment(url);
+      if (!isSharedHostIdentifier(identifier) || SMARTRECRUITERS_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
+      return board({
+        provider: "smartrecruiters",
+        identifier,
+        region: "global",
+        boardUrl: `https://jobs.smartrecruiters.com/${encodeURIComponent(identifier)}`,
+        apiUrl: `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(identifier)}/postings`,
+      });
+    },
+    fetchJobs: fetchSmartRecruitersJobs,
+    normalizeJob: normalizeSmartRecruitersJob,
+    async validate(candidate, request) {
+      const jobs = await fetchSmartRecruitersJobs(candidate, request);
+      return { jobCount: jobs.length, sampleTitles: jobs.slice(0, 3).map((job) => job.name).filter(Boolean) };
+    },
+  },
+
   bamboohr: {
     discoveryTargets: [
       {
@@ -452,6 +501,10 @@ const LEVER_PAGE_SIZE = 100;
 const LEVER_MAX_PAGES = 1_000;
 const WORKDAY_PAGE_SIZE = 20;
 const WORKDAY_MAX_PAGES = 5_000;
+const SMARTRECRUITERS_PAGE_SIZE = 100;
+const SMARTRECRUITERS_MAX_PAGES = 200;
+const RIPPLING_RESERVED_PATHS = new Set(["jobs", "api", "static", "assets", "favicon.ico", "robots.txt"]);
+const SMARTRECRUITERS_RESERVED_PATHS = new Set(["api", "static", "assets", "search", "favicon.ico", "robots.txt"]);
 const GETRO_PAGE_SIZE = 100;
 const GETRO_MAX_PAGES = 10_000;
 
@@ -552,6 +605,30 @@ async function fetchAshbyJobs(candidate, request) {
 
   return payload.jobs.filter((job) => job.isListed !== false);
 }
+
+async function fetchRipplingJobs(candidate, request) {
+  const response = await request(candidate.apiUrl);
+  const payload = await readJson(response);
+  if (!Array.isArray(payload)) throw new InvalidPayloadError("Expected a Rippling job array");
+  return payload;
+}
+
+async function fetchSmartRecruitersJobs(candidate, request) {
+  const jobs = [];
+  for (let page = 0; page < SMARTRECRUITERS_MAX_PAGES; page += 1) {
+    const url = `${candidate.apiUrl}?limit=${SMARTRECRUITERS_PAGE_SIZE}&offset=${page * SMARTRECRUITERS_PAGE_SIZE}`;
+    const payload = await readJson(await request(url));
+    if (!Array.isArray(payload?.content)) {
+      throw new InvalidPayloadError("Expected a SmartRecruiters content array");
+    }
+    jobs.push(...payload.content);
+    if (jobs.length >= Number(payload.totalFound ?? 0) || payload.content.length === 0) return jobs;
+  }
+  throw new InvalidPayloadError(
+    `SmartRecruiters board exceeded ${SMARTRECRUITERS_MAX_PAGES * SMARTRECRUITERS_PAGE_SIZE} jobs`,
+  );
+}
+
 
 async function fetchGemJobs(candidate, request) {
   const response = await request(candidate.apiUrl);
@@ -907,6 +984,46 @@ function normalizeWorkdayJob(candidate, job, syncedAt) {
     // Every Workday tenant serves its customer's own logo from a fixed path, so this needs no
     // extra request at ingestion. The frontend falls back to the generated monogram if it 404s.
     companyLogoUrl: `${boardBase}/assets/logo`,
+    compensation: null,
+  });
+}
+
+function normalizeRipplingJob(candidate, job, syncedAt) {
+  const location = cleanString(job.workLocation?.label);
+  return normalizedJob(candidate, syncedAt, {
+    sourceId: job.uuid,
+    title: job.name,
+    location,
+    workplace: normalizeWorkplace(`${location ?? ""} ${job.name ?? ""}`),
+    employmentType: cleanString(job.employmentType?.label),
+    department: cleanString(job.department?.label),
+    descriptionPlain: null,
+    publishedAt: null,
+    url: job.url || `${candidate.boardUrl}/${encodeURIComponent(job.uuid)}`,
+    applyUrl: job.url,
+    compensation: null,
+  });
+}
+
+function normalizeSmartRecruitersJob(candidate, job, syncedAt) {
+  const place = job.location ?? {};
+  // fullLocation repeats the country ("Poland, REMOTE, Poland"), so the parts are rebuilt instead.
+  const location = [place.city, place.region, place.country?.toUpperCase()]
+    .filter(Boolean)
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(", ");
+  return normalizedJob(candidate, syncedAt, {
+    sourceId: job.id,
+    title: job.name,
+    companyName: cleanString(job.company?.name),
+    location,
+    workplace: place.remote ? "Remote" : place.hybrid ? "Hybrid" : normalizeWorkplace(location),
+    employmentType: cleanString(job.typeOfEmployment?.label),
+    department: cleanString(job.department?.label ?? job.function?.label),
+    descriptionPlain: null,
+    publishedAt: job.releasedDate,
+    url: `https://jobs.smartrecruiters.com/${encodeURIComponent(candidate.identifier)}/${encodeURIComponent(job.id)}`,
+    applyUrl: null,
     compensation: null,
   });
 }

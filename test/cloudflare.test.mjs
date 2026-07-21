@@ -13,7 +13,8 @@ test("production refresh cadence is adaptive", () => {
 
 test("every production ATS has an isolated queue binding", () => {
   assert.deepEqual(Object.keys(PROVIDER_QUEUE_BINDINGS).sort(), [
-    "ashby", "bamboohr", "gem", "getro", "greenhouse", "icims", "lever", "paylocity", "sparkhire", "workday",
+    "ashby", "bamboohr", "gem", "getro", "greenhouse", "icims", "lever", "paylocity",
+    "rippling", "smartrecruiters", "sparkhire", "workday",
   ]);
 });
 
