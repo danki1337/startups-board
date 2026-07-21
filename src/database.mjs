@@ -295,9 +295,30 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
     );
   }
   if (filters.location) conditions.push(`lower(coalesce(location, '')) LIKE ${sqlLike(filters.location)} ESCAPE '\\'`);
-  if (filters.provider) conditions.push(`provider = ${sqlString(String(filters.provider).toLowerCase())}`);
-  if (filters.workplace) conditions.push(`workplace = ${sqlString(filters.workplace)}`);
-  if (filters.category) conditions.push(`category = ${sqlString(filters.category)}`);
+  if (filters.company) {
+    conditions.push(
+      `lower(coalesce(company_name, company_identifier)) LIKE ${sqlLike(filters.company)} ESCAPE '\\'`,
+    );
+  }
+  // Comma-separated sets mirror the production route so the local API answers the same UI.
+  // The UI sends display labels ("Spark Hire", "BambooHR"); stored providers are lowercase and
+  // unspaced, so "Spark Hire" must collapse to "sparkhire" rather than "spark hire".
+  addSetCondition(conditions, "provider", filters.provider, (value) =>
+    value.toLowerCase().replace(/\s+/g, ""));
+  addSetCondition(conditions, "workplace", filters.workplace);
+  addSetCondition(conditions, "category", filters.category);
+  addSetCondition(conditions, "employment_type", filters.employmentType);
+
+  const postedWithin = Number.parseInt(filters.postedWithin ?? "", 10);
+  if (Number.isFinite(postedWithin) && postedWithin > 0) {
+    conditions.push(`published_at >= datetime('now', '-${Math.min(3650, postedWithin)} days')`);
+  }
+
+  const order = filters.sort === "oldest"
+    ? "coalesce(published_at, '') ASC, key"
+    : filters.sort === "company"
+      ? "lower(coalesce(company_name, company_identifier)) ASC, key"
+      : "coalesce(published_at, '') DESC, key";
 
   const limit = clampInteger(filters.limit, 50, 1, 100);
   const offset = clampInteger(filters.offset, 0, 0, 1_000_000);
@@ -317,7 +338,7 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
         published_at AS publishedAt, url, description_plain AS description
       FROM jobs
       WHERE ${where}
-      ORDER BY coalesce(published_at, '') DESC, key
+      ORDER BY ${order}
       LIMIT ${limit} OFFSET ${offset};
     `,
   );
@@ -391,4 +412,16 @@ function sqlLike(value) {
 function clampInteger(value, fallback, minimum, maximum) {
   const number = Number.parseInt(value, 10);
   return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
+
+// Accepts a single value or a comma-separated set, matching the production /api/jobs contract.
+function addSetCondition(conditions, column, value, normalize = (input) => input) {
+  const values = String(value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map(normalize);
+  if (!values.length) return;
+  conditions.push(`${column} IN (${values.map((entry) => sqlString(entry)).join(", ")})`);
 }

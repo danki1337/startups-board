@@ -1,21 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Chip, Input, SearchField, TextField } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   categoryOptions,
-  jobs,
   sourceOptions,
   workplaceOptions,
   type Job,
 } from "./jobs";
 
-type WorkplaceFilter = Job["workplace"] | "All";
-type SourceFilter = Job["source"] | "All";
-type CategoryFilter = Job["category"] | "All";
-
 const referenceDate = new Date(Date.UTC(2026, 6, 20));
+// In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
+// sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
 const apiUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "http://localhost:3002/api/jobs"
   : "/api/jobs";
@@ -27,75 +24,146 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-export function JobsExplorer() {
-  const [query, setQuery] = useState("");
-  const [location, setLocation] = useState("");
-  const [workplace, setWorkplace] = useState<WorkplaceFilter>("All");
-  const [source, setSource] = useState<SourceFilter>("All");
-  const [category, setCategory] = useState<CategoryFilter>("All");
-  const [remoteJobs, setRemoteJobs] = useState<Job[]>([]);
-  const [totalJobs, setTotalJobs] = useState(jobs.length);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [isLive, setIsLive] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+const employmentOptions = ["Full time", "Part time", "Contract", "Internship", "Temporary"];
+const postedWithinOptions = [
+  { label: "Any time", value: "" },
+  { label: "Past 24 hours", value: "1" },
+  { label: "Past week", value: "7" },
+  { label: "Past 30 days", value: "30" },
+  { label: "Past 90 days", value: "90" },
+];
+const sortOptions = [
+  { label: "Newest first", value: "newest" },
+  { label: "Oldest first", value: "oldest" },
+  { label: "Company A–Z", value: "company" },
+];
 
-  const filteredJobs = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    const normalizedLocation = location.trim().toLocaleLowerCase();
+// Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
+// single source rather than five parallel useStates that could drift apart.
+type Filters = {
+  search: string;
+  location: string;
+  company: string;
+  workplace: string[];
+  category: string[];
+  source: string[];
+  employmentType: string[];
+  postedWithin: string;
+  sort: string;
+};
 
-    return jobs.filter((job) => {
-      const searchable = [job.title, job.company, job.description, ...job.skills]
-        .join(" ")
-        .toLocaleLowerCase();
+const emptyFilters: Filters = {
+  search: "",
+  location: "",
+  company: "",
+  workplace: [],
+  category: [],
+  source: [],
+  employmentType: [],
+  postedWithin: "",
+  sort: "newest",
+};
 
-      return (
-        (!normalizedQuery || searchable.includes(normalizedQuery)) &&
-        (!normalizedLocation || job.location.toLocaleLowerCase().includes(normalizedLocation)) &&
-        (workplace === "All" || job.workplace === workplace) &&
-        (source === "All" || job.source === source) &&
-        (category === "All" || job.category === category)
-      );
-    });
-  }, [category, location, query, source, workplace]);
+function filtersFromSearchParams(query: string): Filters {
+  const params = new URLSearchParams(query);
+  const list = (key: string) => (params.get(key) ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+  return {
+    search: params.get("search") ?? "",
+    location: params.get("location") ?? "",
+    company: params.get("company") ?? "",
+    workplace: list("workplace"),
+    category: list("category"),
+    source: list("provider"),
+    employmentType: list("employmentType"),
+    postedWithin: params.get("postedWithin") ?? "",
+    sort: params.get("sort") ?? "newest",
+  };
+}
 
-  function resetPagination() {
-    setCursor(null);
-    setNextCursor(null);
-    setRemoteJobs([]);
+function filtersToSearchParams(filters: Filters) {
+  const params = new URLSearchParams();
+  if (filters.search.trim()) params.set("search", filters.search.trim());
+  if (filters.location.trim()) params.set("location", filters.location.trim());
+  if (filters.company.trim()) params.set("company", filters.company.trim());
+  if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
+  if (filters.category.length) params.set("category", filters.category.join(","));
+  if (filters.source.length) params.set("provider", filters.source.join(","));
+  if (filters.employmentType.length) params.set("employmentType", filters.employmentType.join(","));
+  if (filters.postedWithin) params.set("postedWithin", filters.postedWithin);
+  if (filters.sort !== "newest") params.set("sort", filters.sort);
+  return params;
+}
+
+export function JobsExplorer({
+  initialJobs = [],
+  initialTotal = 0,
+  initialCursor = null,
+  isLiveInitially = false,
+  initialQuery = "",
+}: {
+  initialJobs?: Job[];
+  initialTotal?: number;
+  initialCursor?: string | null;
+  isLiveInitially?: boolean;
+  initialQuery?: string;
+}) {
+  // Seeded from the server-supplied query string rather than window.location, so the server and
+  // client render identical markup. Reading window here caused a hydration mismatch whenever the
+  // page was opened with filters already in the URL.
+  const [filters, setFilters] = useState<Filters>(() => filtersFromSearchParams(initialQuery));
+  const [jobs, setJobs] = useState<Job[]>(initialJobs);
+  const [total, setTotal] = useState(initialTotal);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [isLive, setIsLive] = useState(isLiveInitially);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPaging, setIsPaging] = useState(false);
+  // The server already rendered page one for the current URL, so the first filter effect must not
+  // immediately refetch the identical query. When the server could not reach D1 (local dev) the
+  // first fetch must still run, otherwise the page would sit on the sample rows forever.
+  const skipNextFetch = useRef(isLiveInitially);
+
+  const queryString = useMemo(() => filtersToSearchParams(filters).toString(), [filters]);
+
+  function update(patch: Partial<Filters>) {
+    setFilters((current) => ({ ...current, ...patch }));
   }
 
+  function toggle(key: "workplace" | "category" | "source" | "employmentType", value: string) {
+    setFilters((current) => {
+      const values = current[key];
+      return {
+        ...current,
+        [key]: values.includes(value) ? values.filter((v) => v !== value) : [...values, value],
+      };
+    });
+  }
+
+  // Refetch page one whenever the filters change, and mirror them into the URL so a filtered view
+  // is shareable and survives reload.
   useEffect(() => {
+    const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ""}`;
+    window.history.replaceState(null, "", nextUrl);
+
+    if (skipNextFetch.current) {
+      skipNextFetch.current = false;
+      return;
+    }
+
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      const parameters = new URLSearchParams({
-        limit: String(pageSize),
-      });
-      if (cursor) parameters.set("cursor", cursor);
-      if (query.trim()) parameters.set("search", query.trim());
-      if (location.trim()) parameters.set("location", location.trim());
-      if (workplace !== "All") parameters.set("workplace", workplace);
-      if (source !== "All") {
-        parameters.set("provider", source === "Spark Hire" ? "sparkhire" : source.toLocaleLowerCase());
-      }
-      if (category !== "All") parameters.set("category", category);
-
       setIsLoading(true);
       try {
-        const response = await fetch(`${apiUrl}?${parameters}`, { signal: controller.signal });
+        const params = new URLSearchParams(queryString);
+        params.set("limit", String(pageSize));
+        const response = await fetch(`${apiUrl}?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
         const payload = (await response.json()) as { jobs: Job[]; total: number; nextCursor: string | null };
-        setRemoteJobs((current) => {
-          if (!cursor) return payload.jobs;
-          const byId = new Map(current.map((job) => [job.id, job]));
-          for (const job of payload.jobs) byId.set(job.id, job);
-          return [...byId.values()];
-        });
-        setTotalJobs(payload.total);
-        setNextCursor(payload.nextCursor);
+        setJobs(payload.jobs);
+        setTotal(payload.total);
+        setCursor(payload.nextCursor);
         setIsLive(true);
       } catch (error) {
-        if ((error as Error).name !== "AbortError" && !cursor) setIsLive(false);
+        if ((error as Error).name !== "AbortError") setIsLive(false);
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -105,28 +173,45 @@ export function JobsExplorer() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [category, cursor, location, query, source, workplace]);
+  }, [queryString]);
 
-  const displayedJobs = isLive ? remoteJobs : filteredJobs;
-  const displayedTotal = isLive ? totalJobs : filteredJobs.length;
+  const loadMore = useCallback(async () => {
+    if (!cursor || isPaging) return;
+    setIsPaging(true);
+    try {
+      const params = new URLSearchParams(queryString);
+      params.set("limit", String(pageSize));
+      params.set("cursor", cursor);
+      const response = await fetch(`${apiUrl}?${params}`);
+      if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
+      const payload = (await response.json()) as { jobs: Job[]; nextCursor: string | null };
+      setJobs((current) => {
+        const seen = new Set(current.map((job) => job.id));
+        return [...current, ...payload.jobs.filter((job) => !seen.has(job.id))];
+      });
+      setCursor(payload.nextCursor);
+    } catch {
+      setCursor(null);
+    } finally {
+      setIsPaging(false);
+    }
+  }, [cursor, isPaging, queryString]);
 
-  const activeFilterCount = [
-    query.trim(),
-    location.trim(),
-    workplace !== "All" ? workplace : "",
-    category !== "All" ? category : "",
-    source !== "All" ? source : "",
-  ].filter(Boolean).length;
-
-  function clearFilters() {
-    setQuery("");
-    setLocation("");
-    setWorkplace("All");
-    setSource("All");
-    setCategory("All");
-    setCursor(null);
-    setNextCursor(null);
-  }
+  const activeChips = useMemo(() => {
+    const chips: { label: string; clear: () => void }[] = [];
+    if (filters.search.trim()) chips.push({ label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
+    if (filters.location.trim()) chips.push({ label: `Location: ${filters.location.trim()}`, clear: () => update({ location: "" }) });
+    if (filters.company.trim()) chips.push({ label: `Company: ${filters.company.trim()}`, clear: () => update({ company: "" }) });
+    for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
+    for (const value of filters.category) chips.push({ label: value, clear: () => toggle("category", value) });
+    for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
+    for (const value of filters.employmentType) chips.push({ label: value, clear: () => toggle("employmentType", value) });
+    if (filters.postedWithin) {
+      const label = postedWithinOptions.find((option) => option.value === filters.postedWithin)?.label;
+      chips.push({ label: label ?? filters.postedWithin, clear: () => update({ postedWithin: "" }) });
+    }
+    return chips;
+  }, [filters]);
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
@@ -147,7 +232,7 @@ export function JobsExplorer() {
               className={`size-2 rounded-full ${isLive ? "bg-[var(--success)]" : "bg-amber-400"}`}
               aria-hidden="true"
             />
-            {isLive ? "Live local index" : "Demo fallback"}
+            {isLive ? "Live index" : "Sample data"}
           </div>
         </div>
       </header>
@@ -166,14 +251,11 @@ export function JobsExplorer() {
         </div>
 
         <div className="rounded-2xl bg-white p-3 shadow-[var(--shadow-panel)]">
-          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(260px,1.5fr)_minmax(190px,0.9fr)_repeat(3,minmax(150px,0.7fr))_auto]">
+          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.4fr)_minmax(170px,0.9fr)_minmax(170px,0.9fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)]">
             <SearchField
               aria-label="Search roles, companies, or skills"
-              value={query}
-              onChange={(value) => {
-                setQuery(value);
-                resetPagination();
-              }}
+              value={filters.search}
+              onChange={(value) => update({ search: value })}
               fullWidth
               className="min-w-0"
             >
@@ -189,86 +271,114 @@ export function JobsExplorer() {
 
             <TextField aria-label="Filter by location" fullWidth className="min-w-0">
               <Input
-                value={location}
-                onChange={(event) => {
-                  setLocation(event.target.value);
-                  resetPagination();
-                }}
+                value={filters.location}
+                onChange={(event) => update({ location: event.target.value })}
                 placeholder="Location"
                 className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
               />
             </TextField>
 
-            <FilterSelect
-              label="Workplace"
-              value={workplace}
-              options={workplaceOptions}
-              onChange={(value) => {
-                setWorkplace(value as WorkplaceFilter);
-                resetPagination();
-              }}
-            />
-            <FilterSelect
-              label="Function"
-              value={category}
-              options={categoryOptions}
-              onChange={(value) => {
-                setCategory(value as CategoryFilter);
-                resetPagination();
-              }}
-            />
-            <FilterSelect
-              label="ATS"
-              value={source}
-              options={sourceOptions}
-              onChange={(value) => {
-                setSource(value as SourceFilter);
-                resetPagination();
-              }}
-            />
+            <TextField aria-label="Filter by company" fullWidth className="min-w-0">
+              <Input
+                value={filters.company}
+                onChange={(event) => update({ company: event.target.value })}
+                placeholder="Company"
+                className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
+              />
+            </TextField>
 
-            <Button
-              variant="secondary"
-              isDisabled={!activeFilterCount}
-              className="min-h-11 rounded-xl px-4 font-medium transition-[scale,background-color] duration-150 active:not-disabled:scale-[0.96] md:col-span-2 xl:col-span-1"
-              onPress={clearFilters}
-            >
-              Clear
-              {activeFilterCount > 0 && (
-                <span className="tabular-nums text-[var(--muted)]">{activeFilterCount}</span>
-              )}
-            </Button>
+            <PlainSelect
+              label="Date posted"
+              value={filters.postedWithin}
+              options={postedWithinOptions}
+              onChange={(value) => update({ postedWithin: value })}
+            />
+            <PlainSelect
+              label="Sort"
+              value={filters.sort}
+              options={sortOptions}
+              onChange={(value) => update({ sort: value })}
+            />
           </div>
+
+          <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-4">
+            <MultiSelect
+              label="Workplace"
+              options={workplaceOptions}
+              selected={filters.workplace}
+              onToggle={(value) => toggle("workplace", value)}
+            />
+            <MultiSelect
+              label="Function"
+              options={categoryOptions}
+              selected={filters.category}
+              onToggle={(value) => toggle("category", value)}
+            />
+            <MultiSelect
+              label="Employment"
+              options={employmentOptions}
+              selected={filters.employmentType}
+              onToggle={(value) => toggle("employmentType", value)}
+            />
+            <MultiSelect
+              label="ATS"
+              options={sourceOptions}
+              selected={filters.source}
+              onToggle={(value) => toggle("source", value)}
+            />
+          </div>
+
+          {activeChips.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
+              <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
+              {activeChips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={chip.clear}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                  aria-label={`Remove filter ${chip.label}`}
+                >
+                  {chip.label}
+                  <span aria-hidden="true" className="text-[var(--muted)]">×</span>
+                </button>
+              ))}
+              <Button
+                variant="secondary"
+                className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
+                onPress={() => setFilters(emptyFilters)}
+              >
+                Clear all
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
-            <span className="tabular-nums text-[var(--ink)]">{displayedTotal}</span>{" "}
-            {displayedTotal === 1 ? "job" : "jobs"}
+            <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
+            {total === 1 ? "job" : "jobs"}
             {isLoading && <span className="ms-2 font-normal">Updating…</span>}
           </p>
-          <p className="text-[13px] text-[var(--muted)]">Newest first</p>
+          <p className="text-[13px] text-[var(--muted)]">
+            {sortOptions.find((option) => option.value === filters.sort)?.label}
+          </p>
         </div>
 
-        {displayedJobs.length > 0 ? (
+        {jobs.length > 0 ? (
           <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
             <TableVirtuoso
               aria-label="Startup jobs from public ATS pages"
               className="jobs-table-scroll bg-white"
               style={{ height: "clamp(420px, 68vh, 760px)" }}
-              data={displayedJobs}
+              data={jobs}
               components={virtuosoComponents}
               computeItemKey={(_index, job) => job.id}
               fixedHeaderContent={TableHeader}
               itemContent={(_index, job) => <JobCells job={job} />}
               defaultItemHeight={73}
               increaseViewportBy={{ top: 220, bottom: 420 }}
-              initialItemCount={Math.min(12, displayedJobs.length)}
-              endReached={() => {
-                if (isLive && !isLoading && nextCursor && remoteJobs.length < totalJobs) {
-                  setCursor(nextCursor);
-                }
-              }}
+              endReached={() => void loadMore()}
             />
           </div>
         ) : (
@@ -278,25 +388,23 @@ export function JobsExplorer() {
             <Button
               variant="secondary"
               className="mt-5 min-h-11 rounded-xl px-4 font-medium transition-transform duration-150 active:scale-[0.96]"
-              onPress={clearFilters}
+              onPress={() => setFilters(emptyFilters)}
             >
               Clear filters
             </Button>
           </div>
         )}
 
-        {isLive && (
-          <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
-            Showing {remoteJobs.length.toLocaleString()} of {displayedTotal.toLocaleString()}
-            {remoteJobs.length < displayedTotal ? " · Scroll for more" : ""}
-          </p>
-        )}
+        <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
+          Showing {jobs.length.toLocaleString()} of {total.toLocaleString()}
+          {isPaging ? " · Loading…" : jobs.length < total ? " · Scroll for more" : ""}
+        </p>
       </section>
     </main>
   );
 }
 
-function FilterSelect({
+function PlainSelect({
   label,
   value,
   options,
@@ -304,7 +412,7 @@ function FilterSelect({
 }: {
   label: string;
   value: string;
-  options: readonly string[];
+  options: readonly { label: string; value: string }[];
   onChange: (value: string) => void;
 }) {
   return (
@@ -316,10 +424,9 @@ function FilterSelect({
         className="min-h-11 w-full appearance-none rounded-xl bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
         aria-label={label}
       >
-        <option value="All">All {label.toLocaleLowerCase()}</option>
         {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
+          <option key={option.value} value={option.value}>
+            {option.label}
           </option>
         ))}
       </select>
@@ -330,6 +437,46 @@ function FilterSelect({
         ▾
       </span>
     </label>
+  );
+}
+
+// Toggle pills rather than <select multiple>: the previous single-select made it impossible to ask
+// for, say, Remote *and* Hybrid, which is the most common way people actually filter.
+function MultiSelect({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string;
+  options: readonly string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="mb-1.5 px-0.5 text-[12px] font-medium text-[var(--muted)]">{label}</p>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
+        {options.map((option) => {
+          const isSelected = selected.includes(option);
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => onToggle(option)}
+              className={`min-h-8 rounded-lg px-2.5 text-[12px] font-medium transition-[background-color,color,scale] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+                isSelected
+                  ? "bg-[var(--ink)] text-white"
+                  : "bg-[var(--control)] text-[var(--muted-strong)] hover:bg-[var(--control-hover)]"
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -394,7 +541,10 @@ function JobCells({ job }: { job: Job }) {
         <span className="block truncate text-sm font-medium text-[var(--ink)]" title={job.title}>
           {job.title}
         </span>
-        <span className="mt-0.5 block text-[12px] text-[var(--muted)]">{job.category}</span>
+        <span className="mt-0.5 block text-[12px] text-[var(--muted)]">
+          {job.category}
+          {job.employmentType ? ` · ${job.employmentType}` : ""}
+        </span>
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">{job.location}</td>
       <td className="px-5 py-3.5">

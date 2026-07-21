@@ -21,7 +21,7 @@ export function startApiServer(options = {}) {
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    setCors(response);
+    setCors(response, request);
 
     if (request.method === "OPTIONS") {
       response.writeHead(204).end();
@@ -39,21 +39,34 @@ export function startApiServer(options = {}) {
         return;
       }
       if (url.pathname === "/api/jobs") {
+        // The frontend paginates with the production route's opaque-cursor contract, so this
+        // local server accepts the same `cursor` parameter (a base64 offset here) and returns
+        // `nextCursor`. Without it the jobs table stops dead at the first page.
+        const requestedOffset = decodeOffsetCursor(url.searchParams.get("cursor"))
+          ?? Number(url.searchParams.get("offset") ?? 0);
         const result = await queryActiveJobs(
           {
             search: url.searchParams.get("search"),
             location: url.searchParams.get("location"),
+            company: url.searchParams.get("company"),
             provider: url.searchParams.get("provider"),
             workplace: url.searchParams.get("workplace"),
             category: url.searchParams.get("category"),
+            employmentType: url.searchParams.get("employmentType"),
+            postedWithin: url.searchParams.get("postedWithin"),
+            sort: url.searchParams.get("sort"),
             limit: url.searchParams.get("limit"),
-            offset: url.searchParams.get("offset"),
+            offset: requestedOffset,
           },
           databasePath,
         );
+        const consumed = requestedOffset + result.jobs.length;
         sendJson(response, 200, {
           ...result,
           jobs: result.jobs.map(toPublicJob),
+          nextCursor: result.jobs.length > 0 && consumed < result.total
+            ? Buffer.from(JSON.stringify({ offset: consumed })).toString("base64")
+            : null,
         });
         return;
       }
@@ -126,8 +139,22 @@ function hash(value) {
   return result;
 }
 
-function setCors(response) {
-  response.setHeader("access-control-allow-origin", "http://localhost:3001");
+function decodeOffsetCursor(value) {
+  if (!value) return null;
+  try {
+    const cursor = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+    return Number.isInteger(cursor.offset) && cursor.offset >= 0 ? cursor.offset : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCors(response, request) {
+  // The dev frontend's port varies (vinext defaults to 3000, older setups used 3001), so any
+  // localhost origin is acceptable for this local-only API rather than a single hardcoded port.
+  const origin = request?.headers?.origin;
+  const isLocal = origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  response.setHeader("access-control-allow-origin", isLocal ? origin : "http://localhost:3000");
   response.setHeader("access-control-allow-methods", "GET, OPTIONS");
   response.setHeader("access-control-allow-headers", "content-type");
   response.setHeader("cache-control", "no-store");

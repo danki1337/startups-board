@@ -55,7 +55,11 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /endReached=/);
   assert.match(explorer, /<SearchField/);
   assert.match(explorer, /<table/);
-  assert.match(explorer, /FilterSelect/);
+  // Filters are multi-select pills plus plain selects for date/sort; the old single-value
+  // FilterSelect could not express "Remote or Hybrid".
+  assert.match(explorer, /MultiSelect/);
+  assert.match(explorer, /PlainSelect/);
+  assert.match(explorer, /aria-pressed=/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);
