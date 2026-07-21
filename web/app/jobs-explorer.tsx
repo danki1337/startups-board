@@ -365,6 +365,7 @@ export function JobsExplorer({
               options={sourceOptions}
               selected={filters.source}
               onToggle={(value) => toggle("source", value)}
+              withIcons
             />
           </div>
 
@@ -487,11 +488,13 @@ function MultiSelect({
   options,
   selected,
   onToggle,
+  withIcons = false,
 }: {
   label: string;
   options: readonly string[];
   selected: string[];
   onToggle: (value: string) => void;
+  withIcons?: boolean;
 }) {
   return (
     <div className="min-w-0">
@@ -505,12 +508,17 @@ function MultiSelect({
               type="button"
               aria-pressed={isSelected}
               onClick={() => onToggle(option)}
-              className={`min-h-8 rounded-lg px-2.5 text-[12px] font-medium transition-[background-color,color,scale] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+              className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg ${withIcons ? "ps-1.5 pe-2.5" : "px-2.5"} text-[12px] font-medium transition-[background-color,color,scale] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
                 isSelected
                   ? "bg-[var(--ink)] text-white"
                   : "bg-[var(--control)] text-[var(--muted-strong)] hover:bg-[var(--control-hover)]"
               }`}
             >
+              {withIcons && (
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
+                  <AtsMark source={option} size={4} />
+                </span>
+              )}
               {option}
             </button>
           );
