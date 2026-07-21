@@ -107,9 +107,10 @@ export async function applyBoardSnapshot(db, result, options = {}) {
       return db.prepare(`
         INSERT INTO jobs (
           key, source_id, board_key, provider, company_identifier, company_name,
-          company_logo_url, title, location, country, workplace, employment_type, category,
-          published_at, url, fingerprint, seen_run_id, is_active, first_seen_at, updated_at, closed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+          company_logo_url, title, location, country, city, role_family, workplace, employment_type,
+          category, published_at, url, fingerprint, seen_run_id, is_active, first_seen_at, updated_at,
+          closed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
         ON CONFLICT(key) DO UPDATE SET
           source_id = excluded.source_id,
           board_key = excluded.board_key,
@@ -120,6 +121,8 @@ export async function applyBoardSnapshot(db, result, options = {}) {
           title = excluded.title,
           location = excluded.location,
           country = excluded.country,
+          city = excluded.city,
+          role_family = excluded.role_family,
           workplace = excluded.workplace,
           employment_type = excluded.employment_type,
           category = excluded.category,
@@ -135,7 +138,8 @@ export async function applyBoardSnapshot(db, result, options = {}) {
       `).bind(
         job.key, job.sourceId, job.boardKey, job.provider,
         job.companyIdentifier, job.companyName, job.companyLogoUrl, job.title, job.location,
-        job.country, job.workplace, job.employmentType, job.category, job.publishedAt,
+        job.country, job.city, job.roleFamily, job.workplace, job.employmentType, job.category,
+        job.publishedAt,
         job.url, job.fingerprint, runId, now, now,
       );
     }));
@@ -299,6 +303,8 @@ function compactJob(job) {
     title: job.title,
     location: job.location ?? null,
     country: job.country ?? null,
+    city: job.city ?? null,
+    roleFamily: job.roleFamily ?? null,
     workplace: job.workplace ?? "Unspecified",
     employmentType: job.employmentType ?? null,
     category: job.category ?? "Other",

@@ -166,6 +166,44 @@ export function locationCountry(value) {
   return null;
 }
 
+// Canonical display label for the city needles above, so "San Francisco, CA", "san francisco" and
+// "SF Bay Area" all collapse to one selectable value. Only the curated CITIES list resolves --
+// there are ~19,600 distinct raw location strings and no dropdown can or should list them all.
+const CITY_LABELS = new Map();
+for (const [code, cities] of Object.entries(CITIES)) {
+  for (const city of cities) {
+    const base = city.split(",")[0];
+    const label = base.replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase());
+    if (!CITY_LABELS.has(city)) CITY_LABELS.set(city, { label, code });
+  }
+}
+
+// Longest-first for the same reason as country needles: "new york" must beat "york".
+const CITY_NEEDLES = [...CITY_LABELS.entries()].sort((a, b) => b[0].length - a[0].length);
+
+export function locationCity(value) {
+  const text = String(value ?? "").toLowerCase().trim();
+  if (!text || isAnywhere(text)) return null;
+  for (const [needle, entry] of CITY_NEEDLES) {
+    const index = text.indexOf(needle);
+    if (index < 0) continue;
+    const before = text[index - 1];
+    const after = text[index + needle.length];
+    if (before && /[a-z]/.test(before)) continue;
+    if (after && /[a-z]/.test(after)) continue;
+    return entry.label;
+  }
+  return null;
+}
+
+export function listCities() {
+  const seen = new Map();
+  for (const { label, code } of CITY_LABELS.values()) {
+    if (!seen.has(label)) seen.set(label, { name: label, country: code });
+  }
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function countryName(code) {
   return COUNTRY_NAMES[code] ?? null;
 }

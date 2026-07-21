@@ -1,4 +1,5 @@
-import { locationCountry } from "./locations.mjs";
+import { locationCity, locationCountry } from "./locations.mjs";
+import { roleFamily } from "./roles.mjs";
 
 const PROVIDERS = {
   lever: {
@@ -967,6 +968,8 @@ function normalizedJob(candidate, syncedAt, values) {
     // Resolved once here rather than per query; ~86% of postings yield a country, remote-only
     // strings resolve to null and are surfaced through the separate "Anywhere" filter.
     country: locationCountry(values.location),
+    city: locationCity(values.location),
+    roleFamily: roleFamily(title),
     workplace: values.workplace || "Unspecified",
     employmentType: cleanString(values.employmentType),
     department,

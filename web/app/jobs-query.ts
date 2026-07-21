@@ -36,6 +36,8 @@ type JobRow = {
   companyLogoUrl: string | null;
   location: string | null;
   country: string | null;
+  city: string | null;
+  roleFamily: string | null;
   workplace: Job["workplace"];
   employmentType: string | null;
   // The database stores these as free text; ingestion constrains them to the unions below, and
@@ -94,6 +96,8 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // Filters accept comma-separated values so the UI can offer multi-select without extra requests.
   addSetFilter(conditions, bindings, "j.provider", params.get("provider"), (value) =>
     PROVIDER_BY_LABEL.get(value.toLowerCase()) ?? value.toLowerCase());
+  addSetFilter(conditions, bindings, "j.city", params.get("city"));
+  addSetFilter(conditions, bindings, "j.role_family", params.get("roleFamily"));
   addSetFilter(conditions, bindings, "j.workplace", params.get("workplace"));
   addSetFilter(conditions, bindings, "j.category", params.get("category"));
   addSetFilter(conditions, bindings, "j.employment_type", params.get("employmentType"));
@@ -129,6 +133,8 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       coalesce(j.company_logo_url, c.logo_url) AS companyLogoUrl,
       j.location,
       j.country,
+      j.city,
+      j.role_family AS roleFamily,
       j.workplace,
       j.employment_type AS employmentType,
       j.category,
@@ -238,6 +244,8 @@ function toPublicJob(job: JobRow): PublicJob {
     companyColor: companyColor(company),
     location: job.location || "Location not specified",
     country: job.country ?? null,
+    city: job.city ?? null,
+    roleFamily: job.roleFamily ?? null,
     countryFlag: countryFlag(job.country),
     workplace: job.workplace,
     employmentType: job.employmentType,

@@ -7,6 +7,8 @@ export type Job = {
   companyColor: string;
   location: string;
   country?: string | null;
+  city?: string | null;
+  roleFamily?: string | null;
   countryFlag?: string | null;
   workplace: "Remote" | "Hybrid" | "On-site" | "Unspecified";
   employmentType: string | null;

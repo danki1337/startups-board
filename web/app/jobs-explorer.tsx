@@ -10,6 +10,7 @@ import {
   type Job,
 } from "./jobs";
 import { COUNTRY_OPTIONS, countryFlag, countryName } from "./countries";
+import { CITY_OPTIONS, ROLE_FAMILY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
 const referenceDate = new Date(Date.UTC(2026, 6, 20));
@@ -41,6 +42,18 @@ const countrySelectOptions = [
   ...COUNTRY_OPTIONS.map((entry) => ({ label: `${entry.flag} ${entry.name}`, value: entry.code })),
 ];
 
+const cityOptions = [
+  { label: "All cities", value: "" },
+  ...CITY_OPTIONS.map((entry) => ({
+    label: `${countryFlag(entry.country) ?? ""} ${entry.name}`.trim(),
+    value: entry.name,
+  })),
+];
+const roleOptions = [
+  { label: "All roles", value: "" },
+  ...ROLE_FAMILY_OPTIONS.map((name) => ({ label: name, value: name })),
+];
+
 const sortOptions = [
   { label: "Newest first", value: "newest" },
   { label: "Oldest first", value: "oldest" },
@@ -55,6 +68,8 @@ type Filters = {
   location: string;
   company: string;
   country: string;
+  city: string;
+  roleFamily: string;
   workplace: string[];
   category: string[];
   source: string[];
@@ -69,6 +84,8 @@ const emptyFilters: Filters = {
   location: "",
   company: "",
   country: "",
+  city: "",
+  roleFamily: "",
   workplace: [],
   category: [],
   source: [],
@@ -86,6 +103,8 @@ function filtersFromSearchParams(query: string): Filters {
     location: params.get("location") ?? "",
     company: params.get("company") ?? "",
     country: params.get("country") ?? "",
+    city: params.get("city") ?? "",
+    roleFamily: params.get("roleFamily") ?? "",
     workplace: list("workplace"),
     category: list("category"),
     source: list("provider"),
@@ -102,6 +121,8 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.location.trim()) params.set("location", filters.location.trim());
   if (filters.company.trim()) params.set("company", filters.company.trim());
   if (filters.country) params.set("country", filters.country);
+  if (filters.city) params.set("city", filters.city);
+  if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
   if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
   if (filters.category.length) params.set("category", filters.category.join(","));
   if (filters.source.length) params.set("provider", filters.source.join(","));
@@ -224,6 +245,8 @@ export function JobsExplorer({
         : `${countryFlag(filters.country) ?? ""} ${countryName(filters.country) ?? filters.country}`;
       chips.push({ label: label.trim(), clear: () => update({ country: "" }) });
     }
+    if (filters.city) chips.push({ label: filters.city, clear: () => update({ city: "" }) });
+    if (filters.roleFamily) chips.push({ label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
     for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
     for (const value of filters.category) chips.push({ label: value, clear: () => toggle("category", value) });
     for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
@@ -288,6 +311,13 @@ export function JobsExplorer({
               </SearchField.Group>
             </SearchField>
 
+            <PlainSelect
+              label="Role"
+              value={filters.roleFamily}
+              options={roleOptions}
+              onChange={(value) => update({ roleFamily: value })}
+            />
+
             <TextField aria-label="Filter by job title" fullWidth className="min-w-0">
               <Input
                 value={filters.title}
@@ -311,6 +341,13 @@ export function JobsExplorer({
               value={filters.country}
               options={countrySelectOptions}
               onChange={(value) => update({ country: value })}
+            />
+
+            <PlainSelect
+              label="City"
+              value={filters.city}
+              options={cityOptions}
+              onChange={(value) => update({ city: value })}
             />
 
             <TextField aria-label="Filter by city or region" fullWidth className="min-w-0">
