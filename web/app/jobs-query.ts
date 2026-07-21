@@ -169,6 +169,26 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   };
 }
 
+// Typeahead for the role-title field. Reads the small job_titles aggregate (~99k rows, one per
+// distinct title) rather than the 511k-row jobs table, so a keystroke costs a fraction of a search.
+// Prefix matches rank above mid-word ones so typing "eng" offers "Engineering Manager" before
+// "Senior Software Engineer".
+export async function queryTitleSuggestions(query: string, limit = 8) {
+  const term = query.trim().toLowerCase().slice(0, 60);
+  if (term.length < 2) return [];
+
+  const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
+  const rows = await getD1().prepare(`
+    SELECT title, job_count AS jobCount
+    FROM job_titles
+    WHERE lower(title) LIKE ? ESCAPE '\\'
+    ORDER BY CASE WHEN lower(title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
+    LIMIT ?
+  `).bind(`%${escaped}%`, `${escaped}%`, Math.min(20, limit)).all();
+
+  return (rows.results ?? []) as { title: string; jobCount: number }[];
+}
+
 function orderBy(sort: SortOption) {
   if (sort === "oldest") return "coalesce(j.published_at, '') ASC, j.key";
   if (sort === "company") return "lower(coalesce(j.company_name, j.company_identifier)) ASC, j.key";

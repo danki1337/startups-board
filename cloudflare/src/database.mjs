@@ -260,6 +260,19 @@ export async function archiveAndCleanupClosedJobs(env, now = new Date().toISOStr
   return { archived: rows.results.length };
 }
 
+// Rebuilt daily rather than maintained per write: the typeahead only needs approximate counts, and
+// one grouped scan a day is far cheaper than touching an aggregate on every job upsert.
+export async function refreshTitleSuggestions(db, now = new Date().toISOString()) {
+  await db.prepare("DELETE FROM job_titles").run();
+  const result = await db.prepare(`
+    INSERT INTO job_titles (title, job_count, updated_at)
+    SELECT title, count(*) AS job_count, ?
+    FROM jobs WHERE is_active = 1 AND title IS NOT NULL AND title <> ''
+    GROUP BY title
+  `).bind(now).run();
+  return { titles: Number(result.meta?.changes ?? 0) };
+}
+
 // The per-refresh delta in applyBoardSnapshot can drift when a board fails midway or rows are
 // archived out from under it, so the true counts are recomputed once a day instead of per board.
 export async function reconcileProviderHealth(db, now = new Date().toISOString()) {

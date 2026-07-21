@@ -295,6 +295,26 @@ export async function getBoardSyncStates(databasePath = "data/jobs.db") {
   }
 }
 
+// Local counterpart of the D1 job_titles lookup. The local snapshot is small enough to group on
+// demand, so it queries `jobs` directly rather than maintaining a separate aggregate.
+export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {
+  const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
+  if (term.length < 2) return [];
+  const like = sqlLike(term);
+  const prefix = sqlString(`${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`);
+  return querySqlite(
+    resolve(databasePath),
+    `
+      SELECT title, count(*) AS jobCount
+      FROM jobs
+      WHERE is_active = 1 AND lower(title) LIKE ${like} ESCAPE '\\'
+      GROUP BY title
+      ORDER BY CASE WHEN lower(title) LIKE ${prefix} ESCAPE '\\' THEN 0 ELSE 1 END, jobCount DESC
+      LIMIT ${clampInteger(limit, 8, 1, 20)};
+    `,
+  );
+}
+
 export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db") {
   const conditions = ["is_active = 1"];
   if (filters.search) {

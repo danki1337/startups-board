@@ -12,6 +12,7 @@ import {
   markBoardsQueued,
   pruneSyncRuns,
   reconcileProviderHealth,
+  refreshTitleSuggestions,
   releaseBoards,
   upsertDiscoveredBoards,
 } from "./database.mjs";
@@ -31,6 +32,7 @@ export async function scheduled(controller, env, ctx) {
       archiveAndCleanupClosedJobs(env, dailyAt),
       reconcileProviderHealth(env.DB, dailyAt),
       pruneSyncRuns(env.DB, dailyAt),
+      refreshTitleSuggestions(env.DB, dailyAt),
     );
   }
   ctx.waitUntil(Promise.all(work));

@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { getDatabaseStats, queryActiveJobs } from "./database.mjs";
+import { getDatabaseStats, queryActiveJobs, queryTitleSuggestions } from "./database.mjs";
 import { countryFlag } from "./locations.mjs";
 
 const COMPANY_COLORS = [
@@ -37,6 +37,11 @@ export function startApiServer(options = {}) {
       }
       if (url.pathname === "/api/stats") {
         sendJson(response, 200, await getDatabaseStats(databasePath));
+        return;
+      }
+      if (url.pathname === "/api/titles") {
+        const titles = await queryTitleSuggestions(url.searchParams.get("q"), databasePath);
+        sendJson(response, 200, { titles });
         return;
       }
       if (url.pathname === "/api/jobs") {

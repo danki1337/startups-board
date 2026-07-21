@@ -19,6 +19,9 @@ const referenceDate = new Date(Date.UTC(2026, 6, 20));
 const apiUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "http://localhost:3002/api/jobs"
   : "/api/jobs";
+const titlesUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
+  ? "http://localhost:3002/api/titles"
+  : "/api/titles";
 const pageSize = 100;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -318,14 +321,10 @@ export function JobsExplorer({
               onChange={(value) => update({ roleFamily: value })}
             />
 
-            <TextField aria-label="Filter by job title" fullWidth className="min-w-0">
-              <Input
-                value={filters.title}
-                onChange={(event) => update({ title: event.target.value })}
-                placeholder="Role title"
-                className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
-              />
-            </TextField>
+            <TitleCombobox
+              value={filters.title}
+              onChange={(value) => update({ title: value })}
+            />
 
             <TextField aria-label="Filter by company name" fullWidth className="min-w-0">
               <Input
@@ -686,5 +685,129 @@ function CompanyLogo({ job }: { job: Job }) {
     >
       {job.companyMark}
     </span>
+  );
+}
+
+
+// Typeahead over real job titles. The role dropdown above filters by family (29 buckets); this
+// completes the exact ~99,000 titles that actually exist, so a search cannot be typed for a title
+// the index does not contain.
+function TitleCombobox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [suggestions, setSuggestions] = useState<{ title: string; jobCount: number }[]>([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(-1);
+  // Set while committing a suggestion so the resulting value change does not immediately refetch
+  // and reopen the list under the user's cursor.
+  const justPicked = useRef(false);
+
+  useEffect(() => {
+    if (justPicked.current) {
+      justPicked.current = false;
+      return;
+    }
+    const term = value.trim();
+    const controller = new AbortController();
+    // All state updates happen inside the debounce, never synchronously during the effect.
+    const timer = window.setTimeout(async () => {
+      if (term.length < 2) {
+        setSuggestions([]);
+        return;
+      }
+      try {
+        const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { titles: { title: string; jobCount: number }[] };
+        setSuggestions(payload.titles ?? []);
+        setHighlighted(-1);
+      } catch {
+        // A failed lookup just means no suggestions; the field still filters on what was typed.
+      }
+    }, 160);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [value]);
+
+  function commit(title: string) {
+    justPicked.current = true;
+    onChange(title);
+    setIsOpen(false);
+    setSuggestions([]);
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!isOpen || suggestions.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setHighlighted((current) => (current + step + suggestions.length) % suggestions.length);
+    } else if (event.key === "Enter" && highlighted >= 0) {
+      event.preventDefault();
+      commit(suggestions[highlighted].title);
+    } else if (event.key === "Escape") {
+      setIsOpen(false);
+    }
+  }
+
+  const showList = isOpen && suggestions.length > 0;
+
+  return (
+    <div className="relative min-w-0">
+      <label className="sr-only" htmlFor="role-title-input">Filter by job title</label>
+      <input
+        id="role-title-input"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        // Blur is delayed so a click on a suggestion lands before the list unmounts.
+        onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+        onKeyDown={onKeyDown}
+        placeholder="Role title"
+        autoComplete="off"
+        role="combobox"
+        aria-expanded={showList}
+        aria-controls="role-title-listbox"
+        aria-autocomplete="list"
+        aria-activedescendant={highlighted >= 0 ? `role-title-option-${highlighted}` : undefined}
+        className="min-h-11 w-full rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+      />
+
+      {showList && (
+        <ul
+          id="role-title-listbox"
+          role="listbox"
+          className="absolute inset-x-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-auto rounded-xl bg-white py-1 shadow-[var(--shadow-panel)] outline outline-1 -outline-offset-1 outline-black/10"
+        >
+          {suggestions.map((suggestion, index) => (
+            <li key={suggestion.title} id={`role-title-option-${index}`} role="option" aria-selected={index === highlighted}>
+              <button
+                type="button"
+                // onMouseDown rather than onClick: onClick fires after blur has closed the list.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  commit(suggestion.title);
+                }}
+                onMouseEnter={() => setHighlighted(index)}
+                className={`flex w-full items-center justify-between gap-3 px-3.5 py-2 text-start text-[13px] transition-colors duration-100 ${
+                  index === highlighted ? "bg-[var(--control-hover)]" : "bg-transparent"
+                }`}
+              >
+                <span className="truncate text-[var(--ink)]">{suggestion.title}</span>
+                <span className="shrink-0 tabular-nums text-[12px] text-[var(--muted)]">
+                  {suggestion.jobCount.toLocaleString()}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
