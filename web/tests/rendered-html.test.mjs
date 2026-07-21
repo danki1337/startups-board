@@ -97,7 +97,10 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // FilterSelect could not express "Remote or Hybrid".
   assert.match(explorer, /MultiSelect/);
   assert.match(explorer, /PlainSelect/);
-  assert.match(explorer, /aria-pressed=/);
+  // The pills use HeroUI's ToggleButtonGroup, which owns selection state and the aria wiring the
+  // hand-rolled buttons used to set themselves.
+  assert.match(explorer, /<ToggleButtonGroup/);
+  assert.match(explorer, /selectionMode="multiple"/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);

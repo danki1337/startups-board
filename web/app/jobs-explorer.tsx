@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Chip, Input, SearchField, TextField } from "@heroui/react";
+import { Button, Chip, Input, SearchField, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   categoryOptions,
@@ -529,32 +529,39 @@ function MultiSelect({
 }) {
   return (
     <div className="min-w-0">
-      <p className="mb-1.5 px-0.5 text-[12px] font-medium text-[var(--muted)]">{label}</p>
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
-        {options.map((option) => {
-          const isSelected = selected.includes(option);
-          return (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={isSelected}
-              onClick={() => onToggle(option)}
-              className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg ${withIcons ? "ps-1.5 pe-2.5" : "px-2.5"} text-[12px] font-medium transition-[background-color,color,scale] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
-                isSelected
-                  ? "bg-[var(--ink)] text-white"
-                  : "bg-[var(--control)] text-[var(--muted-strong)] hover:bg-[var(--control-hover)]"
-              }`}
-            >
-              {withIcons && (
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
-                  <AtsMark source={option} size={4} />
-                </span>
-              )}
-              {option}
-            </button>
-          );
-        })}
-      </div>
+      <p className="mb-1.5 px-0.5 text-[12px] font-medium text-[var(--muted)]" id={`filter-${label}`}>
+        {label}
+      </p>
+      {/* HeroUI's ToggleButtonGroup over hand-rolled pills: it owns the selection state, roving
+          focus and aria-pressed wiring that the previous buttons implemented by hand. isDetached
+          keeps the pills visually separate rather than fusing them into a segmented control. */}
+      <ToggleButtonGroup
+        selectionMode="multiple"
+        isDetached
+        size="sm"
+        aria-labelledby={`filter-${label}`}
+        selectedKeys={new Set(selected)}
+        onSelectionChange={(keys) => {
+          const next = new Set([...keys].map(String));
+          // The group reports the whole selection; translate it back into the single-value toggle
+          // the filter state expects so URL sync and chips stay in one code path.
+          for (const option of options) {
+            if (next.has(option) !== selected.includes(option)) onToggle(option);
+          }
+        }}
+        className="flex flex-wrap gap-1.5"
+      >
+        {options.map((option) => (
+          <ToggleButton key={option} id={option} className="gap-1.5 rounded-lg text-[12px]">
+            {withIcons && (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
+                <AtsMark source={option} size={4} />
+              </span>
+            )}
+            {option}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
     </div>
   );
 }
@@ -590,9 +597,10 @@ const virtuosoComponents = {
 function TableHeader() {
   return (
     <tr className="bg-[var(--canvas)]">
-      <TableHeading className="w-[17%]">Company</TableHeading>
-      <TableHeading className="w-[25%]">Role</TableHeading>
-      <TableHeading className="w-[19%]">Location</TableHeading>
+      {/* Role and company share one column: the title is what people scan for, so it leads and the
+          company sits beneath it as context, rather than the company owning the first column. */}
+      <TableHeading className="w-[40%]">Role</TableHeading>
+      <TableHeading className="w-[21%]">Location</TableHeading>
       <TableHeading className="w-[13%]">Workplace</TableHeading>
       <TableHeading className="w-[13%]">Posted</TableHeading>
       <TableHeading className="w-[13%] text-end">Source</TableHeading>
@@ -611,24 +619,27 @@ function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filte
       <td className="px-5 py-3.5">
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
-          <button
-            type="button"
-            onClick={() => onFilter({ company: job.company })}
-            title={`Show only jobs at ${job.company}`}
-            className="truncate rounded text-start text-sm font-semibold tracking-[-0.01em] underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-          >
-            {job.company}
-          </button>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]" title={job.title}>
+              {job.title}
+            </span>
+            <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
+              <button
+                type="button"
+                onClick={() => onFilter({ company: job.company })}
+                title={`Show only jobs at ${job.company}`}
+                className="max-w-[55%] truncate rounded underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              >
+                {job.company}
+              </button>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">
+                {job.category}
+                {job.employmentType ? ` · ${job.employmentType}` : ""}
+              </span>
+            </span>
+          </div>
         </div>
-      </td>
-      <td className="px-5 py-3.5">
-        <span className="block truncate text-sm font-medium text-[var(--ink)]" title={job.title}>
-          {job.title}
-        </span>
-        <span className="mt-0.5 block truncate text-[12px] text-[var(--muted)]">
-          {job.category}
-          {job.employmentType ? ` · ${job.employmentType}` : ""}
-        </span>
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
