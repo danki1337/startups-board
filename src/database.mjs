@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   company_logo_url TEXT,
   title TEXT NOT NULL,
   location TEXT,
+  country TEXT,
   workplace TEXT NOT NULL,
   employment_type TEXT,
   department TEXT,
@@ -128,6 +129,7 @@ SELECT
   json_extract(value, '$.companyLogoUrl') AS company_logo_url,
   json_extract(value, '$.title') AS title,
   json_extract(value, '$.location') AS location,
+  json_extract(value, '$.country') AS country,
   coalesce(json_extract(value, '$.workplace'), 'Unspecified') AS workplace,
   json_extract(value, '$.employmentType') AS employment_type,
   json_extract(value, '$.department') AS department,
@@ -148,14 +150,14 @@ CREATE UNIQUE INDEX incoming_jobs_key_idx ON incoming_jobs(key);
 
 INSERT INTO jobs (
   key, source_id, board_key, provider, company_identifier, company_name,
-  company_logo_url, title, location,
+  company_logo_url, title, location, country,
   workplace, employment_type, department, category, description_plain,
   published_at, url, apply_url, compensation_json, first_seen_at, last_seen_at,
   closed_at, is_active
 )
 SELECT
   key, source_id, board_key, provider, company_identifier, company_name,
-  company_logo_url, title, location,
+  company_logo_url, title, location, country,
   workplace, employment_type, department, category, description_plain,
   published_at, url, apply_url, compensation_json, synced_at, synced_at,
   NULL, 1
@@ -170,6 +172,7 @@ ON CONFLICT(key) DO UPDATE SET
   company_logo_url = excluded.company_logo_url,
   title = excluded.title,
   location = excluded.location,
+  country = excluded.country,
   workplace = excluded.workplace,
   employment_type = excluded.employment_type,
   department = excluded.department,
@@ -305,6 +308,13 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
   // unspaced, so "Spark Hire" must collapse to "sparkhire" rather than "spark hire".
   addSetCondition(conditions, "provider", filters.provider, (value) =>
     value.toLowerCase().replace(/\s+/g, ""));
+  if (filters.title) conditions.push(`lower(title) LIKE ${sqlLike(filters.title)} ESCAPE '\\'`);
+  // "anywhere" means remote with no resolvable country, which is different from country unknown.
+  if (filters.country === "anywhere") {
+    conditions.push("country IS NULL AND workplace = 'Remote'");
+  } else {
+    addSetCondition(conditions, "country", filters.country, (value) => value.toLowerCase());
+  }
   addSetCondition(conditions, "workplace", filters.workplace);
   addSetCondition(conditions, "category", filters.category);
   addSetCondition(conditions, "employment_type", filters.employmentType);
@@ -333,7 +343,7 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
       SELECT
         key, title, company_identifier AS companyIdentifier,
         company_name AS companyName, company_logo_url AS companyLogoUrl,
-        location, workplace,
+        location, country, workplace,
         employment_type AS employmentType, category, provider,
         published_at AS publishedAt, url, description_plain AS description
       FROM jobs
@@ -355,6 +365,7 @@ async function ensureJobColumns(databasePath) {
   const migrations = [];
   if (!columns.has("company_name")) migrations.push("ALTER TABLE jobs ADD COLUMN company_name TEXT;");
   if (!columns.has("company_logo_url")) migrations.push("ALTER TABLE jobs ADD COLUMN company_logo_url TEXT;");
+  if (!columns.has("country")) migrations.push("ALTER TABLE jobs ADD COLUMN country TEXT;");
   if (migrations.length) await runSqlite(databasePath, migrations.join("\n"));
 }
 

@@ -9,6 +9,8 @@ import {
   workplaceOptions,
   type Job,
 } from "./jobs";
+import { COUNTRY_OPTIONS, countryFlag, countryName } from "./countries";
+import { AtsMark } from "./ats-marks";
 
 const referenceDate = new Date(Date.UTC(2026, 6, 20));
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
@@ -32,6 +34,13 @@ const postedWithinOptions = [
   { label: "Past 30 days", value: "30" },
   { label: "Past 90 days", value: "90" },
 ];
+// "Anywhere" is remote-with-no-country -- a real answer, distinct from an unrecognised location.
+const countrySelectOptions = [
+  { label: "All countries", value: "" },
+  { label: "🌍 Anywhere (remote)", value: "anywhere" },
+  ...COUNTRY_OPTIONS.map((entry) => ({ label: `${entry.flag} ${entry.name}`, value: entry.code })),
+];
+
 const sortOptions = [
   { label: "Newest first", value: "newest" },
   { label: "Oldest first", value: "oldest" },
@@ -42,8 +51,10 @@ const sortOptions = [
 // single source rather than five parallel useStates that could drift apart.
 type Filters = {
   search: string;
+  title: string;
   location: string;
   company: string;
+  country: string;
   workplace: string[];
   category: string[];
   source: string[];
@@ -54,8 +65,10 @@ type Filters = {
 
 const emptyFilters: Filters = {
   search: "",
+  title: "",
   location: "",
   company: "",
+  country: "",
   workplace: [],
   category: [],
   source: [],
@@ -69,8 +82,10 @@ function filtersFromSearchParams(query: string): Filters {
   const list = (key: string) => (params.get(key) ?? "").split(",").map((v) => v.trim()).filter(Boolean);
   return {
     search: params.get("search") ?? "",
+    title: params.get("title") ?? "",
     location: params.get("location") ?? "",
     company: params.get("company") ?? "",
+    country: params.get("country") ?? "",
     workplace: list("workplace"),
     category: list("category"),
     source: list("provider"),
@@ -83,8 +98,10 @@ function filtersFromSearchParams(query: string): Filters {
 function filtersToSearchParams(filters: Filters) {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set("search", filters.search.trim());
+  if (filters.title.trim()) params.set("title", filters.title.trim());
   if (filters.location.trim()) params.set("location", filters.location.trim());
   if (filters.company.trim()) params.set("company", filters.company.trim());
+  if (filters.country) params.set("country", filters.country);
   if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
   if (filters.category.length) params.set("category", filters.category.join(","));
   if (filters.source.length) params.set("provider", filters.source.join(","));
@@ -201,7 +218,14 @@ export function JobsExplorer({
     const chips: { label: string; clear: () => void }[] = [];
     if (filters.search.trim()) chips.push({ label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
     if (filters.location.trim()) chips.push({ label: `Location: ${filters.location.trim()}`, clear: () => update({ location: "" }) });
+    if (filters.title.trim()) chips.push({ label: `Role: ${filters.title.trim()}`, clear: () => update({ title: "" }) });
     if (filters.company.trim()) chips.push({ label: `Company: ${filters.company.trim()}`, clear: () => update({ company: "" }) });
+    if (filters.country) {
+      const label = filters.country === "anywhere"
+        ? "🌍 Anywhere"
+        : `${countryFlag(filters.country) ?? ""} ${countryName(filters.country) ?? filters.country}`;
+      chips.push({ label: label.trim(), clear: () => update({ country: "" }) });
+    }
     for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
     for (const value of filters.category) chips.push({ label: value, clear: () => toggle("category", value) });
     for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
@@ -251,9 +275,9 @@ export function JobsExplorer({
         </div>
 
         <div className="rounded-2xl bg-white p-3 shadow-[var(--shadow-panel)]">
-          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[minmax(240px,1.4fr)_minmax(170px,0.9fr)_minmax(170px,0.9fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)]">
+          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <SearchField
-              aria-label="Search roles, companies, or skills"
+              aria-label="Search all job text"
               value={filters.search}
               onChange={(value) => update({ search: value })}
               fullWidth
@@ -262,27 +286,43 @@ export function JobsExplorer({
               <SearchField.Group className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 shadow-none">
                 <SearchField.SearchIcon className="text-[var(--muted)]" />
                 <SearchField.Input
-                  placeholder="Role, company, or skill"
+                  placeholder="Search everything"
                   className="text-base text-[var(--ink)] placeholder:text-[var(--muted)] sm:text-sm"
                 />
                 <SearchField.ClearButton aria-label="Clear job search" />
               </SearchField.Group>
             </SearchField>
 
-            <TextField aria-label="Filter by location" fullWidth className="min-w-0">
+            <TextField aria-label="Filter by job title" fullWidth className="min-w-0">
               <Input
-                value={filters.location}
-                onChange={(event) => update({ location: event.target.value })}
-                placeholder="Location"
+                value={filters.title}
+                onChange={(event) => update({ title: event.target.value })}
+                placeholder="Role title"
                 className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
               />
             </TextField>
 
-            <TextField aria-label="Filter by company" fullWidth className="min-w-0">
+            <TextField aria-label="Filter by company name" fullWidth className="min-w-0">
               <Input
                 value={filters.company}
                 onChange={(event) => update({ company: event.target.value })}
-                placeholder="Company"
+                placeholder="Company name"
+                className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
+              />
+            </TextField>
+
+            <PlainSelect
+              label="Country"
+              value={filters.country}
+              options={countrySelectOptions}
+              onChange={(value) => update({ country: value })}
+            />
+
+            <TextField aria-label="Filter by city or region" fullWidth className="min-w-0">
+              <Input
+                value={filters.location}
+                onChange={(event) => update({ location: event.target.value })}
+                placeholder="City or region"
                 className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
               />
             </TextField>
@@ -546,7 +586,14 @@ function JobCells({ job }: { job: Job }) {
           {job.employmentType ? ` · ${job.employmentType}` : ""}
         </span>
       </td>
-      <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">{job.location}</td>
+      <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
+            {job.countryFlag ?? (job.workplace === "Remote" ? "🌍" : "")}
+          </span>
+          <span className="truncate" title={job.location}>{job.location}</span>
+        </span>
+      </td>
       <td className="px-5 py-3.5">
         <Chip size="sm" variant="soft" className="whitespace-nowrap text-[12px]">
           {job.workplace}
@@ -563,6 +610,7 @@ function JobCells({ job }: { job: Job }) {
           className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] transition-[color,background-color,scale] duration-150 hover:bg-black/4 hover:text-[var(--ink)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
           aria-label={`Open ${job.title} at ${job.company} on ${job.source}`}
         >
+          <AtsMark source={job.source} />
           {job.source}
           <span aria-hidden="true" className="text-[13px]">
             ↗

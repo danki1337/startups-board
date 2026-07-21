@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getDatabaseStats, queryActiveJobs } from "./database.mjs";
+import { countryFlag } from "./locations.mjs";
 
 const COMPANY_COLORS = [
   "bg-[#ebe7ff] text-[#5436a8]",
@@ -49,6 +50,8 @@ export function startApiServer(options = {}) {
             search: url.searchParams.get("search"),
             location: url.searchParams.get("location"),
             company: url.searchParams.get("company"),
+            title: url.searchParams.get("title"),
+            country: url.searchParams.get("country"),
             provider: url.searchParams.get("provider"),
             workplace: url.searchParams.get("workplace"),
             category: url.searchParams.get("category"),
@@ -92,6 +95,8 @@ export function toPublicJob(job) {
     companyLogoUrl: job.companyLogoUrl || null,
     companyColor: COMPANY_COLORS[hash(company) % COMPANY_COLORS.length],
     location: job.location || "Location not specified",
+    country: job.country ?? null,
+    countryFlag: countryFlag(job.country),
     workplace: job.workplace,
     employmentType: job.employmentType,
     category: job.category,

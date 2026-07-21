@@ -1,3 +1,5 @@
+import { locationCountry } from "./locations.mjs";
+
 const PROVIDERS = {
   lever: {
     discoveryTargets: [
@@ -962,6 +964,9 @@ function normalizedJob(candidate, syncedAt, values) {
     companyLogoUrl: cleanString(values.companyLogoUrl),
     title,
     location: cleanString(values.location),
+    // Resolved once here rather than per query; ~86% of postings yield a country, remote-only
+    // strings resolve to null and are surfaced through the separate "Anywhere" filter.
+    country: locationCountry(values.location),
     workplace: values.workplace || "Unspecified",
     employmentType: cleanString(values.employmentType),
     department,

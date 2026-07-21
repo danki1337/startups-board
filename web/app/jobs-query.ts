@@ -1,5 +1,6 @@
 import { getD1 } from "../db";
 import type { Job } from "./jobs";
+import { countryFlag } from "./countries";
 
 // Shared by the /api/jobs route and the server-rendered first page, so the initial paint and every
 // subsequent fetch apply exactly the same filter semantics. Previously the page shipped a 12-row
@@ -34,6 +35,7 @@ type JobRow = {
   companyName: string | null;
   companyLogoUrl: string | null;
   location: string | null;
+  country: string | null;
   workplace: Job["workplace"];
   employmentType: string | null;
   // The database stores these as free text; ingestion constrains them to the unions below, and
@@ -77,6 +79,17 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   }
   addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", params.get("location"));
   addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", params.get("company"));
+  // Role and company are separate fields: searching "stripe" as a role should not match every
+  // posting at Stripe, and vice versa.
+  addLikeFilter(conditions, bindings, "lower(j.title)", params.get("title"));
+
+  // "anywhere" is remote-with-no-country, which is a distinct answer from "country unknown".
+  const country = params.get("country");
+  if (country === "anywhere") {
+    conditions.push("j.country IS NULL AND j.workplace = 'Remote'");
+  } else if (country) {
+    addSetFilter(conditions, bindings, "j.country", country, (value) => value.toLowerCase());
+  }
 
   // Filters accept comma-separated values so the UI can offer multi-select without extra requests.
   addSetFilter(conditions, bindings, "j.provider", params.get("provider"), (value) =>
@@ -115,6 +128,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       j.company_name AS companyName,
       coalesce(j.company_logo_url, c.logo_url) AS companyLogoUrl,
       j.location,
+      j.country,
       j.workplace,
       j.employment_type AS employmentType,
       j.category,
@@ -223,6 +237,8 @@ function toPublicJob(job: JobRow): PublicJob {
     companyLogoUrl: job.companyLogoUrl,
     companyColor: companyColor(company),
     location: job.location || "Location not specified",
+    country: job.country ?? null,
+    countryFlag: countryFlag(job.country),
     workplace: job.workplace,
     employmentType: job.employmentType,
     category: CATEGORIES.includes(job.category) ? job.category : "Other",
