@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Chip, Input, SearchField, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Button, Chip, Input, ListBox, SearchField, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   categoryOptions,
@@ -329,14 +329,14 @@ export function JobsExplorer({
               </SearchField.Group>
             </SearchField>
 
-            <PlainSelect
+            <FilterSelect
               label="Role"
               value={filters.roleFamily}
               options={roleOptions}
               onChange={(value) => update({ roleFamily: value })}
             />
 
-            <PlainSelect
+            <FilterSelect
               label="Industry"
               value={filters.industry}
               options={industryOptions}
@@ -357,14 +357,14 @@ export function JobsExplorer({
               />
             </TextField>
 
-            <PlainSelect
+            <FilterSelect
               label="Country"
               value={filters.country}
               options={countrySelectOptions}
               onChange={(value) => update({ country: value })}
             />
 
-            <PlainSelect
+            <FilterSelect
               label="City"
               value={filters.city}
               options={cityOptions}
@@ -380,13 +380,13 @@ export function JobsExplorer({
               />
             </TextField>
 
-            <PlainSelect
+            <FilterSelect
               label="Date posted"
               value={filters.postedWithin}
               options={postedWithinOptions}
               onChange={(value) => update({ postedWithin: value })}
             />
-            <PlainSelect
+            <FilterSelect
               label="Sort"
               value={filters.sort}
               options={sortOptions}
@@ -498,7 +498,16 @@ export function JobsExplorer({
   );
 }
 
-function PlainSelect({
+// HeroUI's Select (a styled React-Aria listbox in a popover) rather than a native <select>: it gives
+// keyboard typeahead, a themed panel that matches the rest of the controls, and selected/focused
+// states we can drive from the design tokens. The prop shape is kept identical to the old native
+// wrapper so every call site is unchanged.
+//
+// React Aria treats an empty-string key as "no selection" and would fall back to the placeholder, so
+// the "All …" row's "" value is mapped to a sentinel key on the way in and translated back out.
+const SELECT_EMPTY_KEY = " all";
+
+function FilterSelect({
   label,
   value,
   options,
@@ -510,27 +519,30 @@ function PlainSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="relative min-w-0">
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-11 w-full appearance-none rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
-        aria-label={label}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-[var(--muted)]"
-      >
-        ▾
-      </span>
-    </label>
+    <Select
+      aria-label={label}
+      selectedKey={value === "" ? SELECT_EMPTY_KEY : value}
+      onSelectionChange={(key) => onChange(key === SELECT_EMPTY_KEY ? "" : String(key ?? ""))}
+      className="min-w-0"
+    >
+      <Select.Trigger className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-3 ps-3.5 text-base text-[var(--ink)] shadow-none outline-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] data-[focus-visible]:shadow-[0_0_0_2px_var(--focus)] sm:text-sm">
+        <Select.Value className="min-w-0 truncate text-start" />
+        <Select.Indicator className="shrink-0 text-xs text-[var(--muted)]">▾</Select.Indicator>
+      </Select.Trigger>
+      <Select.Popover className="max-h-72 min-w-[var(--trigger-width)] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-lift)]">
+        <ListBox aria-label={label} items={options} className="outline-none">
+          {(option) => (
+            <ListBox.Item
+              id={option.value === "" ? SELECT_EMPTY_KEY : option.value}
+              textValue={option.label}
+              className="flex min-h-9 cursor-pointer items-center rounded-lg px-3 text-base text-[var(--ink)] outline-none transition-colors duration-100 data-[focused]:bg-[var(--control-hover)] data-[selected]:bg-[var(--accent-wash)] data-[selected]:text-[var(--accent-strong)] sm:text-sm"
+            >
+              {option.label}
+            </ListBox.Item>
+          )}
+        </ListBox>
+      </Select.Popover>
+    </Select>
   );
 }
 
