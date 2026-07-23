@@ -22,9 +22,12 @@
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);
+  /* The 0 0 0 1px layer is a hairline ring that stands in for a border/stroke; the other two give a
+     soft lift. Kept as an exact three-layer box-shadow rather than a stroke + separate shadow. */
   --shadow-table:
-    0 1px 2px oklch(0 0 0 / 0.04),
-    0 1px 1px oklch(0 0 0 / 0.03);
+    0 0 0 1px #0000000f,
+    0 1px 2px -1px #0000000f,
+    0 2px 4px #0000000a;
   --shadow-lift: 0 4px 16px oklch(0 0 0 / 0.06);
 }
 
@@ -110,7 +113,7 @@ button:disabled,
 }
 
 .jobs-table {
-  filter: drop-shadow(0 1px 2px oklch(0 0 0 / 0.06));
+  /* No drop-shadow here — the table container's --shadow-table box-shadow now owns the edge/elevation. */
   /* Only the visible rows exist in the DOM while virtualized, so `auto` layout re-measured column
      widths against whatever was on screen and the columns visibly shifted during scrolling. Fixed
      layout derives every width from the header alone, so they never move. */
