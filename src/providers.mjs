@@ -1,5 +1,6 @@
 import { locationCity, locationCountry } from "./locations.mjs";
 import { roleFamily } from "./roles.mjs";
+import { classifyIndustry } from "./industry.mjs";
 
 const PROVIDERS = {
   lever: {
@@ -1020,6 +1021,7 @@ function normalizeSmartRecruitersJob(candidate, job, syncedAt) {
     workplace: place.remote ? "Remote" : place.hybrid ? "Hybrid" : normalizeWorkplace(location),
     employmentType: cleanString(job.typeOfEmployment?.label),
     department: cleanString(job.department?.label ?? job.function?.label),
+    smartRecruitersIndustry: job.industry?.id ?? job.industry?.label,
     descriptionPlain: null,
     publishedAt: job.releasedDate,
     url: `https://jobs.smartrecruiters.com/${encodeURIComponent(candidate.identifier)}/${encodeURIComponent(job.id)}`,
@@ -1087,6 +1089,13 @@ function normalizedJob(candidate, syncedAt, values) {
     country: locationCountry(values.location),
     city: locationCity(values.location),
     roleFamily: roleFamily(title),
+    // No ATS but SmartRecruiters exposes a company industry, so it is derived from the company
+    // name and role, with SmartRecruiters' native label taking priority when present.
+    companyIndustry: classifyIndustry({
+      companyName: cleanString(values.companyName) ?? candidate.identifier,
+      roleFamily: roleFamily(title),
+      smartRecruitersIndustry: values.smartRecruitersIndustry,
+    }),
     workplace: values.workplace || "Unspecified",
     employmentType: cleanString(values.employmentType),
     department,

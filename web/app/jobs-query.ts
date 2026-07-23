@@ -38,6 +38,7 @@ type JobRow = {
   country: string | null;
   city: string | null;
   roleFamily: string | null;
+  companyIndustry: string | null;
   workplace: Job["workplace"];
   employmentType: string | null;
   // The database stores these as free text; ingestion constrains them to the unions below, and
@@ -100,6 +101,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     PROVIDER_BY_LABEL.get(value.toLowerCase()) ?? value.toLowerCase());
   addSetFilter(conditions, bindings, "j.city", params.get("city"));
   addSetFilter(conditions, bindings, "j.role_family", params.get("roleFamily"));
+  addSetFilter(conditions, bindings, "j.company_industry", params.get("industry"));
   addSetFilter(conditions, bindings, "j.workplace", params.get("workplace"));
   addSetFilter(conditions, bindings, "j.category", params.get("category"));
   addSetFilter(conditions, bindings, "j.employment_type", params.get("employmentType"));
@@ -137,6 +139,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       j.country,
       j.city,
       j.role_family AS roleFamily,
+      j.company_industry AS companyIndustry,
       j.workplace,
       j.employment_type AS employmentType,
       j.category,
@@ -268,6 +271,7 @@ function toPublicJob(job: JobRow): PublicJob {
     country: job.country ?? null,
     city: job.city ?? null,
     roleFamily: job.roleFamily ?? null,
+    companyIndustry: job.companyIndustry ?? null,
     countryFlag: countryFlag(job.country),
     workplace: job.workplace,
     employmentType: job.employmentType,

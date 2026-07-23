@@ -9,6 +9,7 @@ export type Job = {
   country?: string | null;
   city?: string | null;
   roleFamily?: string | null;
+  companyIndustry?: string | null;
   countryFlag?: string | null;
   workplace: "Remote" | "Hybrid" | "On-site" | "Unspecified";
   employmentType: string | null;

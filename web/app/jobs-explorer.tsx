@@ -10,7 +10,7 @@ import {
   type Job,
 } from "./jobs";
 import { COUNTRY_OPTIONS, countryFlag, countryName } from "./countries";
-import { CITY_OPTIONS, ROLE_FAMILY_OPTIONS } from "./taxonomies";
+import { CITY_OPTIONS, INDUSTRY_OPTIONS, ROLE_FAMILY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
 const referenceDate = new Date(Date.UTC(2026, 6, 20));
@@ -56,6 +56,10 @@ const roleOptions = [
   { label: "All roles", value: "" },
   ...ROLE_FAMILY_OPTIONS.map((name) => ({ label: name, value: name })),
 ];
+const industryOptions = [
+  { label: "All industries", value: "" },
+  ...INDUSTRY_OPTIONS.map((name) => ({ label: name, value: name })),
+];
 
 const sortOptions = [
   { label: "Newest first", value: "newest" },
@@ -73,6 +77,7 @@ type Filters = {
   country: string;
   city: string;
   roleFamily: string;
+  industry: string;
   workplace: string[];
   category: string[];
   source: string[];
@@ -89,6 +94,7 @@ const emptyFilters: Filters = {
   country: "",
   city: "",
   roleFamily: "",
+  industry: "",
   workplace: [],
   category: [],
   source: [],
@@ -108,6 +114,7 @@ function filtersFromSearchParams(query: string): Filters {
     country: params.get("country") ?? "",
     city: params.get("city") ?? "",
     roleFamily: params.get("roleFamily") ?? "",
+    industry: params.get("industry") ?? "",
     workplace: list("workplace"),
     category: list("category"),
     source: list("provider"),
@@ -126,6 +133,7 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.country) params.set("country", filters.country);
   if (filters.city) params.set("city", filters.city);
   if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
+  if (filters.industry) params.set("industry", filters.industry);
   if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
   if (filters.category.length) params.set("category", filters.category.join(","));
   if (filters.source.length) params.set("provider", filters.source.join(","));
@@ -250,6 +258,7 @@ export function JobsExplorer({
     }
     if (filters.city) chips.push({ label: filters.city, clear: () => update({ city: "" }) });
     if (filters.roleFamily) chips.push({ label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
+    if (filters.industry) chips.push({ label: filters.industry, clear: () => update({ industry: "" }) });
     for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
     for (const value of filters.category) chips.push({ label: value, clear: () => toggle("category", value) });
     for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
@@ -325,6 +334,13 @@ export function JobsExplorer({
               value={filters.roleFamily}
               options={roleOptions}
               onChange={(value) => update({ roleFamily: value })}
+            />
+
+            <PlainSelect
+              label="Industry"
+              value={filters.industry}
+              options={industryOptions}
+              onChange={(value) => update({ industry: value })}
             />
 
             <TitleCombobox

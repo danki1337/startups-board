@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   country TEXT,
   city TEXT,
   role_family TEXT,
+  company_industry TEXT,
   workplace TEXT NOT NULL,
   employment_type TEXT,
   department TEXT,
@@ -134,6 +135,7 @@ SELECT
   json_extract(value, '$.country') AS country,
   json_extract(value, '$.city') AS city,
   json_extract(value, '$.roleFamily') AS role_family,
+  json_extract(value, '$.companyIndustry') AS company_industry,
   coalesce(json_extract(value, '$.workplace'), 'Unspecified') AS workplace,
   json_extract(value, '$.employmentType') AS employment_type,
   json_extract(value, '$.department') AS department,
@@ -154,14 +156,14 @@ CREATE UNIQUE INDEX incoming_jobs_key_idx ON incoming_jobs(key);
 
 INSERT INTO jobs (
   key, source_id, board_key, provider, company_identifier, company_name,
-  company_logo_url, title, location, country, city, role_family,
+  company_logo_url, title, location, country, city, role_family, company_industry,
   workplace, employment_type, department, category, description_plain,
   published_at, url, apply_url, compensation_json, first_seen_at, last_seen_at,
   closed_at, is_active
 )
 SELECT
   key, source_id, board_key, provider, company_identifier, company_name,
-  company_logo_url, title, location, country, city, role_family,
+  company_logo_url, title, location, country, city, role_family, company_industry,
   workplace, employment_type, department, category, description_plain,
   published_at, url, apply_url, compensation_json, synced_at, synced_at,
   NULL, 1
@@ -179,6 +181,7 @@ ON CONFLICT(key) DO UPDATE SET
   country = excluded.country,
   city = excluded.city,
   role_family = excluded.role_family,
+  company_industry = excluded.company_industry,
   workplace = excluded.workplace,
   employment_type = excluded.employment_type,
   department = excluded.department,
@@ -343,6 +346,7 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
   }
   addSetCondition(conditions, "city", filters.city);
   addSetCondition(conditions, "role_family", filters.roleFamily);
+  addSetCondition(conditions, "company_industry", filters.industry);
   addSetCondition(conditions, "workplace", filters.workplace);
   addSetCondition(conditions, "category", filters.category);
   addSetCondition(conditions, "employment_type", filters.employmentType);
@@ -371,7 +375,7 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
       SELECT
         key, title, company_identifier AS companyIdentifier,
         company_name AS companyName, company_logo_url AS companyLogoUrl,
-        location, country, city, role_family AS roleFamily, workplace,
+        location, country, city, role_family AS roleFamily, company_industry AS companyIndustry, workplace,
         employment_type AS employmentType, category, provider,
         published_at AS publishedAt, url, description_plain AS description
       FROM jobs
@@ -396,6 +400,7 @@ async function ensureJobColumns(databasePath) {
   if (!columns.has("country")) migrations.push("ALTER TABLE jobs ADD COLUMN country TEXT;");
   if (!columns.has("city")) migrations.push("ALTER TABLE jobs ADD COLUMN city TEXT;");
   if (!columns.has("role_family")) migrations.push("ALTER TABLE jobs ADD COLUMN role_family TEXT;");
+  if (!columns.has("company_industry")) migrations.push("ALTER TABLE jobs ADD COLUMN company_industry TEXT;");
   if (migrations.length) await runSqlite(databasePath, migrations.join("\n"));
 }
 
