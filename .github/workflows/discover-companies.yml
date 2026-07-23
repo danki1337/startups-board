@@ -29,6 +29,11 @@ jobs:
     timeout-minutes: 330
     strategy:
       fail-fast: false
+      # Unlike the refresh matrix, every shard here talks to the SAME upstream -- Common Crawl's
+      # shared CDX API -- and 12 concurrent shards got the runner IP throttled into HTTP 503s
+      # (which is why most of the 2026-07-21 run failed). Three at a time stays under its limits;
+      # the resumable coverage ledger means later shards lose nothing by waiting.
+      max-parallel: 3
       matrix:
         provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, sparkhire, rippling, smartrecruiters]
     steps:
