@@ -1,15 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, Input, ListBox, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button, Input, ListBox, Select, TextField } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   sourceOptions,
   workplaceOptions,
   type Job,
 } from "./jobs";
-import { COUNTRY_OPTIONS, countryFlag, countryName } from "./countries";
-import { CITY_OPTIONS, INDUSTRY_OPTIONS, ROLE_FAMILY_OPTIONS } from "./taxonomies";
+import { countryFlag, countryName } from "./countries";
+import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
 const referenceDate = new Date(Date.UTC(2026, 6, 20));
@@ -53,28 +53,10 @@ const postedWithinOptions = [
   { label: "Last 30 days", value: "30" },
   { label: "Last 90 days", value: "90" },
 ];
-// "Anywhere" is remote-with-no-country -- a real answer, distinct from an unrecognised location.
-const countrySelectOptions = [
-  { label: "All countries", value: "" },
-  { label: "🌍 Anywhere (remote)", value: "anywhere" },
-  ...COUNTRY_OPTIONS.map((entry) => ({ label: `${entry.flag} ${entry.name}`, value: entry.code })),
-];
-
-const cityOptions = [
-  { label: "All cities", value: "" },
-  ...CITY_OPTIONS.map((entry) => ({
-    label: `${countryFlag(entry.country) ?? ""} ${entry.name}`.trim(),
-    value: entry.name,
-  })),
-];
-const roleOptions = [
-  { label: "All roles", value: "" },
-  ...ROLE_FAMILY_OPTIONS.map((name) => ({ label: name, value: name })),
-];
-const industryOptions = [
-  { label: "All industries", value: "" },
-  ...INDUSTRY_OPTIONS.map((name) => ({ label: name, value: name })),
-];
+const cityOptions = CITY_OPTIONS.map((entry) => ({
+  label: `${countryFlag(entry.country) ?? ""} ${entry.name}`.trim(),
+  value: entry.name,
+}));
 
 // Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
 // single source rather than five parallel useStates that could drift apart.
@@ -84,9 +66,10 @@ type Filters = {
   location: string;
   company: string;
   country: string;
-  city: string;
+  // Multi-select facets (comma-joined into the query, which already treats city/industry as sets).
+  city: string[];
   roleFamily: string;
-  industry: string;
+  industry: string[];
   workplace: string[];
   source: string[];
   employmentType: string[];
@@ -103,9 +86,9 @@ const emptyFilters: Filters = {
   location: "",
   company: "",
   country: "",
-  city: "",
+  city: [],
   roleFamily: "",
-  industry: "",
+  industry: [],
   workplace: [],
   source: [],
   employmentType: [],
@@ -123,9 +106,9 @@ function filtersFromSearchParams(query: string): Filters {
     location: params.get("location") ?? "",
     company: params.get("company") ?? "",
     country: params.get("country") ?? "",
-    city: params.get("city") ?? "",
+    city: list("city"),
     roleFamily: params.get("roleFamily") ?? "",
-    industry: params.get("industry") ?? "",
+    industry: list("industry"),
     workplace: list("workplace"),
     source: list("provider"),
     employmentType: list("employmentType"),
@@ -142,9 +125,9 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.location.trim()) params.set("location", filters.location.trim());
   if (filters.company.trim()) params.set("company", filters.company.trim());
   if (filters.country) params.set("country", filters.country);
-  if (filters.city) params.set("city", filters.city);
+  if (filters.city.length) params.set("city", filters.city.join(","));
   if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
-  if (filters.industry) params.set("industry", filters.industry);
+  if (filters.industry.length) params.set("industry", filters.industry.join(","));
   if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
   if (filters.source.length) params.set("provider", filters.source.join(","));
   if (filters.employmentType.length) params.set("employmentType", filters.employmentType.join(","));
@@ -194,8 +177,6 @@ export function JobsExplorer({
   // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
   // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
   const [now, setNow] = useState(0);
-  // The compact filter bar shows a few core filters; "Add filter" reveals the rest. Hidden by default.
-  const [showMoreFilters, setShowMoreFilters] = useState(false);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -246,7 +227,7 @@ export function JobsExplorer({
     setSavedViews((current) => [...current.filter((view) => view.name !== trimmed), { name: trimmed, query }]);
   }, [filters]);
 
-  function toggle(key: "workplace" | "source" | "employmentType", value: string) {
+  function toggle(key: "workplace" | "source" | "employmentType" | "industry" | "city", value: string) {
     setFilters((current) => {
       const values = current[key];
       return {
@@ -361,9 +342,9 @@ export function JobsExplorer({
         : `${countryFlag(filters.country) ?? ""} ${countryName(filters.country) ?? filters.country}`;
       chips.push({ label: label.trim(), clear: () => update({ country: "" }) });
     }
-    if (filters.city) chips.push({ label: filters.city, clear: () => update({ city: "" }) });
+    for (const value of filters.city) chips.push({ label: value, clear: () => toggle("city", value) });
     if (filters.roleFamily) chips.push({ label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
-    if (filters.industry) chips.push({ label: filters.industry, clear: () => update({ industry: "" }) });
+    for (const value of filters.industry) chips.push({ label: value, clear: () => toggle("industry", value) });
     for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
     for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
     for (const value of filters.employmentType) chips.push({ label: value, clear: () => toggle("employmentType", value) });
@@ -419,118 +400,50 @@ export function JobsExplorer({
           <FilterBar
             filters={filters}
             update={update}
+            toggle={toggle}
             onSaveView={saveView}
             canSaveView={urlQuery.length > 0}
-            showMore={showMoreFilters}
-            onToggleMore={() => setShowMoreFilters((value) => !value)}
           />
 
-          {/* The remaining filters, revealed by "Add filter". Search, Title, Location and Date live in
-              the bar above; everything else stays hidden until asked for. */}
-          {showMoreFilters && (
-            <>
-              <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                <FilterSelect
-                  label="Role"
-                  value={filters.roleFamily}
-                  options={roleOptions}
-                  onChange={(value) => update({ roleFamily: value })}
-                />
-                <FilterSelect
-                  label="Industry"
-                  value={filters.industry}
-                  options={industryOptions}
-                  onChange={(value) => update({ industry: value })}
-                />
-                <TextField aria-label="Filter by company name" fullWidth className="min-w-0">
-                  <Input
-                    value={filters.company}
-                    onChange={(event) => update({ company: event.target.value })}
-                    placeholder="Company name"
-                    className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
-                  />
-                </TextField>
-                {/* Type-to-search over the full country list (~200 options is unwieldy as a plain dropdown). */}
-                <SearchSelect
-                  label="Country"
-                  placeholder="Country"
-                  options={countrySelectOptions}
-                  value={filters.country}
-                  onSelect={(value) => update({ country: value })}
-                />
-                {/* Exact city select; the free-text region search is the Location field in the bar. */}
-                <SearchSelect
-                  label="City"
-                  placeholder="City"
-                  options={cityOptions}
-                  value={filters.city}
-                  onSelect={(value) => update({ city: value, location: "" })}
-                  freeText={filters.location}
-                  onFreeText={(text) => update({ location: text, city: "" })}
-                />
-              </div>
+          {activeChips.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
+              <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
+              {activeChips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={chip.clear}
+                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                  aria-label={`Remove filter ${chip.label}`}
+                >
+                  {chip.label}
+                  <span aria-hidden="true" className="text-[var(--muted)]">×</span>
+                </button>
+              ))}
+              <Button
+                variant="secondary"
+                className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
+                onPress={() => setFilters(emptyFilters)}
+              >
+                Clear all
+              </Button>
+            </div>
+          )}
 
-              <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-3">
-                <MultiSelect
-                  label="Workplace"
-                  options={workplaceOptions}
-                  selected={filters.workplace}
-                  onToggle={(value) => toggle("workplace", value)}
-                />
-                <MultiSelect
-                  label="Employment"
-                  options={employmentOptions}
-                  selected={filters.employmentType}
-                  onToggle={(value) => toggle("employmentType", value)}
-                />
-                <MultiSelect
-                  label="ATS"
-                  options={sourceOptions}
-                  selected={filters.source}
-                  onToggle={(value) => toggle("source", value)}
-                  withIcons
-                />
-              </div>
-
-              {activeChips.length > 0 && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
-                  <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
-                  {activeChips.map((chip) => (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      onClick={chip.clear}
-                      className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-                      aria-label={`Remove filter ${chip.label}`}
-                    >
-                      {chip.label}
-                      <span aria-hidden="true" className="text-[var(--muted)]">×</span>
-                    </button>
-                  ))}
-                  <Button
-                    variant="secondary"
-                    className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
-                    onPress={() => setFilters(emptyFilters)}
-                  >
-                    Clear all
-                  </Button>
-                </div>
-              )}
-
-              <div className="mt-3 border-t border-black/6 pt-3">
-                <ViewsToolbar
-                  savedViews={savedViews}
-                  currentQuery={urlQuery}
-                  onSaveView={saveView}
-                  onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
-                  onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
-                  watchlistCount={watchlist.length}
-                  watchlistOnly={watchlistActive}
-                  onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
-                  showSave={false}
-                />
-              </div>
-            </>
+          {(watchlist.length > 0 || savedViews.length > 0) && (
+            <div className="mt-3 border-t border-black/6 pt-3">
+              <ViewsToolbar
+                savedViews={savedViews}
+                currentQuery={urlQuery}
+                onSaveView={saveView}
+                onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
+                onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
+                watchlistCount={watchlist.length}
+                watchlistOnly={watchlistActive}
+                onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
+                showSave={false}
+              />
+            </div>
           )}
         </div>
 
@@ -614,6 +527,102 @@ const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
 const IconCalendar = () => <LineIcon><rect x="2.5" y="3.5" width="11" height="10" rx="2" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></LineIcon>;
 const IconChevronDown = () => <LineIcon><path d="M4.5 6.5 8 10l3.5-3.5" /></LineIcon>;
 const IconUpDown = () => <LineIcon><path d="M5.5 6.5 8 4l2.5 2.5M5.5 9.5 8 12l2.5-2.5" /></LineIcon>;
+const IconChevronRight = () => <LineIcon><path d="M6.5 4.5 10 8l-3.5 3.5" /></LineIcon>;
+const IconIndustry = () => <LineIcon><path d="M2 13.5V8l3 1.6V8l3 1.6V5.5l3.5 2v6z" /><path d="M2 13.5h11.5" /></LineIcon>;
+const IconWorkplace = () => <LineIcon><rect x="3" y="2.5" width="6" height="11" rx="1" /><path d="M5.2 5h1.6M5.2 7.3h1.6M5.2 9.6h1.6" /><path d="M9 6.5h3.5v7H9" /><path d="M10.7 9h.01M10.7 11h.01" /></LineIcon>;
+const IconJobType = () => <LineIcon><circle cx="6" cy="5" r="2.2" /><path d="M2.5 12.6c0-2 1.6-3.4 3.5-3.4c.6 0 1.2.1 1.7.4" /><circle cx="11" cy="10.5" r="3" /><path d="M11 9.3v1.3l1 .6" /></LineIcon>;
+const IconAts = () => <LineIcon><path d="M4.5 2.5h4l3 3v8h-7z" /><path d="M8.5 2.5v3h3" /><circle cx="8" cy="9.5" r="1.6" /></LineIcon>;
+const IconGlobe = () => <LineIcon><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5Z" /></LineIcon>;
+
+function FilterCheckbox({ checked }: { checked: boolean }) {
+  return checked ? (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-[var(--ink)]">
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
+    </span>
+  ) : (
+    <span className="size-5 shrink-0 rounded-md border-[1.5px] border-[var(--border)]" />
+  );
+}
+
+type FilterCategoryKey = "industry" | "city" | "workplace" | "employmentType" | "source";
+
+const FILTER_CATEGORIES: {
+  key: FilterCategoryKey;
+  label: string;
+  Icon: () => React.ReactElement;
+  options: readonly { label: string; value: string }[];
+  glyph?: "globe" | "ats";
+  badge?: boolean;
+}[] = [
+  { key: "industry", label: "Industry", Icon: IconIndustry, options: INDUSTRY_OPTIONS.map((name) => ({ label: name, value: name })), badge: true },
+  { key: "city", label: "City", Icon: IconPin, options: cityOptions.filter((option) => option.value), badge: true },
+  { key: "workplace", label: "Workplace", Icon: IconWorkplace, options: workplaceOptions.map((name) => ({ label: name, value: name })), glyph: "globe" },
+  { key: "employmentType", label: "Job type", Icon: IconJobType, options: employmentOptions.map((name) => ({ label: name, value: name })) },
+  { key: "source", label: "ATS", Icon: IconAts, options: sourceOptions.map((name) => ({ label: name, value: name })), glyph: "ats", badge: true },
+];
+
+// The "Add filter" flyout: a category list on the left, and the active category's options as a
+// checkbox multi-select on the right — the design's two-panel menu. Every category maps to a
+// multi-select filter (the query already treats city/industry as comma-separated sets).
+function AddFilterMenu({
+  filters,
+  toggle,
+}: {
+  filters: Filters;
+  toggle: (key: FilterCategoryKey, value: string) => void;
+}) {
+  const [active, setActive] = useState<FilterCategoryKey>("industry");
+  const category = FILTER_CATEGORIES.find((entry) => entry.key === active) ?? FILTER_CATEGORIES[0];
+  const card = "w-64 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[var(--shadow-lift)]";
+  const row = "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-start text-sm text-[var(--ink)] transition-colors duration-100";
+
+  return (
+    <div className="absolute left-0 top-[calc(100%+8px)] z-30 flex items-start gap-2">
+      <div className={card}>
+        {FILTER_CATEGORIES.map((entry) => (
+          <button
+            key={entry.key}
+            type="button"
+            onClick={() => setActive(entry.key)}
+            onMouseEnter={() => setActive(entry.key)}
+            className={`${row} ${active === entry.key ? "bg-[var(--control-hover)]" : "hover:bg-[var(--control-hover)]"}`}
+          >
+            <entry.Icon />
+            <span className="flex-1 font-medium">{entry.label}</span>
+            {entry.badge && <span className="tabular-nums text-[13px] text-[var(--muted)]">{entry.options.length}+</span>}
+            <IconChevronRight />
+          </button>
+        ))}
+      </div>
+
+      <div className={`${card} max-h-96 overflow-auto`}>
+        {category.options.map((option) => {
+          const checked = filters[category.key].includes(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => toggle(category.key, option.value)}
+              aria-pressed={checked}
+              className={`${row} justify-between hover:bg-[var(--control-hover)]`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                {category.glyph === "globe" && <IconGlobe />}
+                {category.glyph === "ats" && (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
+                    <AtsMark source={option.value} size={4} />
+                  </span>
+                )}
+                <span className="truncate">{option.label}</span>
+              </span>
+              <FilterCheckbox checked={checked} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // Shared pill: a standalone rounded, bordered control — the design uses these rather than one
 // segmented bar.
@@ -626,23 +635,23 @@ const FILTER_PILL =
 function FilterBar({
   filters,
   update,
+  toggle,
   onSaveView,
   canSaveView,
-  showMore,
-  onToggleMore,
 }: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
+  toggle: (key: FilterCategoryKey, value: string) => void;
   onSaveView: (name: string) => void;
   canSaveView: boolean;
-  showMore: boolean;
-  onToggleMore: () => void;
 }) {
   const [naming, setNaming] = useState(false);
   const [viewName, setViewName] = useState("");
   const [openPill, setOpenPill] = useState<"title" | "location" | null>(null);
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const titleRef = useRef<HTMLDivElement>(null);
   const locationRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Close an open Title/Location popover when a pointer lands outside it.
   useEffect(() => {
@@ -654,6 +663,16 @@ function FilterBar({
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [openPill]);
+
+  // Same, for the Add filter flyout.
+  useEffect(() => {
+    if (!filterMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setFilterMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [filterMenuOpen]);
 
   function commitSave() {
     onSaveView(viewName);
@@ -714,7 +733,7 @@ function FilterBar({
               autoFocus
               aria-label="Filter by location"
               value={filters.location}
-              onChange={(event) => update({ location: event.target.value, city: "" })}
+              onChange={(event) => update({ location: event.target.value, city: [] })}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === "Escape") setOpenPill(null);
               }}
@@ -725,10 +744,18 @@ function FilterBar({
         )}
       </div>
 
-      {/* Add filter — reveals the rest of the filters */}
-      <button type="button" onClick={onToggleMore} aria-expanded={showMore} className={FILTER_PILL}>
-        <IconPlus /> Add filter
-      </button>
+      {/* Add filter — opens the faceted filter flyout */}
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setFilterMenuOpen((open) => !open)}
+          aria-expanded={filterMenuOpen}
+          className={FILTER_PILL}
+        >
+          <IconPlus /> Add filter
+        </button>
+        {filterMenuOpen && <AddFilterMenu filters={filters} toggle={toggle} />}
+      </div>
 
       {/* Right group, pushed to the end */}
       <div className="ms-auto flex flex-wrap items-center gap-2">
@@ -910,252 +937,8 @@ function ViewsToolbar({
 //
 // When `onFreeText` is supplied the field is dual-purpose: typing sets the free text (city -> a
 // location substring search) and picking an option sets the exact value, each clearing the other.
-function SearchSelect({
-  label,
-  placeholder,
-  options,
-  value,
-  onSelect,
-  freeText,
-  onFreeText,
-}: {
-  label: string;
-  placeholder: string;
-  options: readonly { label: string; value: string }[];
-  value: string;
-  onSelect: (value: string) => void;
-  freeText?: string;
-  onFreeText?: (text: string) => void;
-}) {
-  const allowFreeText = typeof onFreeText === "function";
-  const listboxId = useId();
-  // null while the committed value is shown; a string once the user starts searching.
-  const [query, setQuery] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [highlighted, setHighlighted] = useState(-1);
-
-  // "" values are the "All …" rows, treated as no selection so the field shows its placeholder.
-  const selectedLabel = value ? options.find((option) => option.value === value)?.label ?? "" : "";
-  const committed = value ? selectedLabel : (freeText ?? "");
-  const inputValue = query ?? committed;
-
-  const needle = query?.trim().toLowerCase() ?? "";
-  const matches = useMemo(
-    () => (needle ? options.filter((option) => option.label.toLowerCase().includes(needle)) : options).slice(0, 60),
-    [needle, options],
-  );
-
-  // onSelect and onFreeText each apply a full filter update where one field clears the other (picking
-  // a city clears the region text and vice versa), so exactly one is called per interaction --
-  // calling both would have the second overwrite the first.
-  function commit(option: { label: string; value: string }) {
-    onSelect(option.value);
-    setQuery(null);
-    setIsOpen(false);
-    setHighlighted(-1);
-  }
-
-  function clear() {
-    onSelect("");
-    setQuery(null);
-    setHighlighted(-1);
-  }
-
-  function onType(text: string) {
-    setQuery(text);
-    setIsOpen(true);
-    setHighlighted(-1);
-    // Typing is a free-text search; the parent handler also clears any previously picked exact value.
-    if (allowFreeText) onFreeText!(text);
-  }
-
-  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      setIsOpen(true);
-      if (!matches.length) return;
-      const step = event.key === "ArrowDown" ? 1 : -1;
-      setHighlighted((current) => (current + step + matches.length) % matches.length);
-    } else if (event.key === "Enter") {
-      if (isOpen && highlighted >= 0 && matches[highlighted]) {
-        event.preventDefault();
-        commit(matches[highlighted]);
-      } else {
-        setIsOpen(false);
-      }
-    } else if (event.key === "Escape") {
-      setQuery(null);
-      setIsOpen(false);
-    }
-  }
-
-  const showList = isOpen && matches.length > 0;
-  const hasValue = Boolean(value || (allowFreeText && freeText));
-
-  return (
-    <div className="relative min-w-0">
-      <input
-        value={inputValue}
-        onChange={(event) => onType(event.target.value)}
-        onFocus={(event) => {
-          setIsOpen(true);
-          event.target.select();
-        }}
-        // Delay so a click on an option lands before the list unmounts.
-        onBlur={() => window.setTimeout(() => { setIsOpen(false); setQuery(null); }, 120)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        aria-label={label}
-        role="combobox"
-        aria-expanded={showList}
-        aria-controls={listboxId}
-        aria-autocomplete="list"
-        autoComplete="off"
-        className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
-      />
-      {hasValue ? (
-        <button
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={clear}
-          aria-label={`Clear ${label}`}
-          className="absolute inset-y-0 end-2.5 flex items-center rounded text-[var(--muted)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-        >
-          ×
-        </button>
-      ) : (
-        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-[var(--muted)]">▾</span>
-      )}
-
-      {showList && (
-        <ul
-          id={listboxId}
-          role="listbox"
-          aria-label={label}
-          className="absolute inset-x-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-auto rounded-xl bg-white py-1 shadow-[var(--shadow-panel)] outline outline-1 -outline-offset-1 outline-black/10"
-        >
-          {matches.map((option, index) => (
-            <li key={option.value || "__any"} role="option" aria-selected={option.value === value}>
-              <button
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => commit(option)}
-                onMouseEnter={() => setHighlighted(index)}
-                className={`flex w-full items-center px-3.5 py-2 text-start text-base sm:text-sm ${
-                  index === highlighted ? "bg-[var(--control-hover)]" : ""
-                } ${option.value === value && value ? "text-[var(--accent-strong)]" : "text-[var(--ink)]"}`}
-              >
-                {option.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-// HeroUI's Select (a styled React-Aria listbox in a popover) rather than a native <select>: it gives
-// keyboard typeahead, a themed panel that matches the rest of the controls, and selected/focused
-// states we can drive from the design tokens. The prop shape is kept identical to the old native
-// wrapper so every call site is unchanged.
-//
-// React Aria treats an empty-string key as "no selection" and would fall back to the placeholder, so
-// the "All …" row's "" value is mapped to a sentinel key on the way in and translated back out.
+// Sentinel key for the date Select: React Aria treats an empty-string key as "no selection".
 const SELECT_EMPTY_KEY = " all";
-
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: readonly { label: string; value: string }[];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Select
-      aria-label={label}
-      selectedKey={value === "" ? SELECT_EMPTY_KEY : value}
-      onSelectionChange={(key) => onChange(key === SELECT_EMPTY_KEY ? "" : String(key ?? ""))}
-      className="min-w-0"
-    >
-      <Select.Trigger className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-3 ps-3.5 text-base text-[var(--ink)] shadow-none outline-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] data-[focus-visible]:shadow-[0_0_0_2px_var(--focus)] sm:text-sm">
-        <Select.Value className="min-w-0 truncate text-start" />
-        <Select.Indicator className="shrink-0 text-xs text-[var(--muted)]">▾</Select.Indicator>
-      </Select.Trigger>
-      <Select.Popover className="max-h-72 min-w-[var(--trigger-width)] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-lift)]">
-        <ListBox aria-label={label} items={options} className="outline-none">
-          {(option) => (
-            <ListBox.Item
-              id={option.value === "" ? SELECT_EMPTY_KEY : option.value}
-              textValue={option.label}
-              className="flex min-h-9 cursor-pointer items-center rounded-lg px-3 text-base text-[var(--ink)] outline-none transition-colors duration-100 data-[focused]:bg-[var(--control-hover)] data-[selected]:bg-[var(--accent-wash)] data-[selected]:text-[var(--accent-strong)] sm:text-sm"
-            >
-              {option.label}
-            </ListBox.Item>
-          )}
-        </ListBox>
-      </Select.Popover>
-    </Select>
-  );
-}
-
-// Toggle pills rather than <select multiple>: the previous single-select made it impossible to ask
-// for, say, Remote *and* Hybrid, which is the most common way people actually filter.
-function MultiSelect({
-  label,
-  options,
-  selected,
-  onToggle,
-  withIcons = false,
-}: {
-  label: string;
-  options: readonly string[];
-  selected: string[];
-  onToggle: (value: string) => void;
-  withIcons?: boolean;
-}) {
-  return (
-    <div className="min-w-0">
-      <p className="mb-1.5 px-0.5 text-[12px] font-medium text-[var(--muted)]" id={`filter-${label}`}>
-        {label}
-      </p>
-      {/* HeroUI's ToggleButtonGroup over hand-rolled pills: it owns the selection state, roving
-          focus and aria-pressed wiring that the previous buttons implemented by hand. isDetached
-          keeps the pills visually separate rather than fusing them into a segmented control. */}
-      <ToggleButtonGroup
-        selectionMode="multiple"
-        isDetached
-        size="sm"
-        aria-labelledby={`filter-${label}`}
-        selectedKeys={new Set(selected)}
-        onSelectionChange={(keys) => {
-          const next = new Set([...keys].map(String));
-          // The group reports the whole selection; translate it back into the single-value toggle
-          // the filter state expects so URL sync and chips stay in one code path.
-          for (const option of options) {
-            if (next.has(option) !== selected.includes(option)) onToggle(option);
-          }
-        }}
-        className="flex flex-wrap gap-1.5"
-      >
-        {options.map((option) => (
-          <ToggleButton key={option} id={option} className="gap-1.5 rounded-lg text-[12px]">
-            {withIcons && (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
-                <AtsMark source={option} size={4} />
-              </span>
-            )}
-            {option}
-          </ToggleButton>
-        ))}
-      </ToggleButtonGroup>
-    </div>
-  );
-}
 
 function TableHeading({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
@@ -1267,7 +1050,7 @@ function JobCells({
               type="button"
               // Filtering by the resolved city is far more useful than the raw string, which is
               // often a full address that would match only this one posting.
-              onClick={() => (job.city ? onFilter({ city: job.city, location: "" }) : onFilter({ location: job.location }))}
+              onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: job.location }))}
               title={job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
               className="truncate rounded text-start underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
             >
