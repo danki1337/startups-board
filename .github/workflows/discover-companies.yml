@@ -55,10 +55,14 @@ jobs:
             --output "data/shard-${{ matrix.provider }}.json" \
             --discovery-state "data/discovery-state.json"
 
+      # if: always() -- when a shard dies mid-run (Common Crawl throttling), the checkpoint file on
+      # disk still holds everything found before the failure; upload it so the merge keeps it.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: shard-${{ matrix.provider }}
           path: data/shard-${{ matrix.provider }}.json
+          if-no-files-found: ignore
           retention-days: 7
 
   merge:

@@ -275,18 +275,29 @@ async function discover(options) {
 
       for (const target of getDiscoveryTargets(providerNames)) {
         console.log(`Discovering ${target.provider} boards from ${target.pattern}`);
-        const result = await discoverTarget(target, {
-          index: currentIndex,
-          maxPages: asInteger(options.maxPages, 5),
-          pageSize: asInteger(options.pageSize, 1),
-          maxUrls: asInteger(options.maxUrlsPerTarget, 25_000),
-          sampleSeed: sampleSeed + stableHash(`${currentIndex.id}:${target.pattern}`),
-          seenPages: asBoolean(options.resumeDiscovery, true)
-            ? getSampledPages(crawlState, currentIndex, target)
-            : undefined,
-          onProgress: ({ page, totalPages }) =>
-            console.log(`  reading sampled page ${page + 1} of ${totalPages}`),
-        });
+        let result;
+        try {
+          result = await discoverTarget(target, {
+            index: currentIndex,
+            maxPages: asInteger(options.maxPages, 5),
+            pageSize: asInteger(options.pageSize, 1),
+            maxUrls: asInteger(options.maxUrlsPerTarget, 25_000),
+            sampleSeed: sampleSeed + stableHash(`${currentIndex.id}:${target.pattern}`),
+            seenPages: asBoolean(options.resumeDiscovery, true)
+              ? getSampledPages(crawlState, currentIndex, target)
+              : undefined,
+            onProgress: ({ page, totalPages }) =>
+              console.log(`  reading sampled page ${page + 1} of ${totalPages}`),
+          });
+        } catch (error) {
+          // Common Crawl's shared CDX API throttles hard and unpredictably (503s, dropped
+          // connections). One throttled target used to abort the whole run and discard every
+          // board already found -- a smartrecruiters shard once lost 1,500+ boards that way.
+          // Skipping the target keeps the run alive; the unvisited pages stay out of the
+          // coverage ledger, so the next run retries exactly what was missed.
+          console.warn(`  skipping ${target.pattern} on ${currentIndex.id}: ${error.message}`);
+          continue;
+        }
 
         for (const url of result.urls) {
           addDiscoveredUrl(registry, url, {
