@@ -263,8 +263,8 @@ export function JobsExplorer({
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      <header className="border-b border-black/8 bg-white">
-        <div className="mx-auto flex min-h-[68px] w-full max-w-[1600px] items-center justify-between gap-4 px-5 sm:px-8">
+      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
+        <div className="mx-auto flex min-h-[60px] w-full max-w-[1240px] items-center justify-between gap-4 px-5 sm:px-8">
           <div className="flex items-center gap-3">
             <span className="brand-mark" aria-hidden="true">
               <span />
@@ -274,7 +274,6 @@ export function JobsExplorer({
             </span>
             <span className="text-[15px] font-semibold tracking-[-0.015em]">Startups.board</span>
           </div>
-
           <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
             <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
             <span className="tabular-nums">{total.toLocaleString()}</span> live roles
@@ -282,20 +281,27 @@ export function JobsExplorer({
         </div>
       </header>
 
-      <section className="mx-auto w-full max-w-[1600px] px-5 pb-12 pt-8 sm:px-8 sm:pt-10">
-        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold leading-tight tracking-[-0.025em]">Startup jobs</h1>
-            <p className="mt-1 text-sm leading-relaxed text-[var(--muted)]">
-              Roles published on public company ATS pages.
-            </p>
-          </div>
-          <p className="text-[13px] text-[var(--muted)]">
-            Ashby · BambooHR · Gem · Getro · Greenhouse · iCIMS · Lever · Paylocity · Spark Hire · Workday
+      <section className="mx-auto w-full max-w-[1240px] px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
+        <div className="mb-10 text-center">
+          <span
+            className="mx-auto mb-8 block h-[42px] w-24 rounded-xl"
+            style={{ background: "var(--chip)" }}
+            aria-hidden="true"
+          />
+          <h1
+            className="mx-auto text-[clamp(38px,6vw,58px)] leading-[1.02] tracking-[-0.01em] text-balance"
+            style={{ fontFamily: "var(--font-pixel), var(--font-inter), sans-serif", fontWeight: 500 }}
+          >
+            Join a high-growth startup
+          </h1>
+          <p className="mx-auto mt-[18px] max-w-[620px] text-[16px] leading-relaxed text-[var(--muted)]">
+            Find{" "}
+            <span className="font-semibold tabular-nums text-[var(--accent)]">{total.toLocaleString()}</span>{" "}
+            open roles at today&rsquo;s top startups. Updated daily.
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-3 shadow-[var(--shadow-panel)]">
+        <div className="rounded-2xl bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)]">
           <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             <SearchField
               aria-label="Search all job text"
@@ -304,7 +310,7 @@ export function JobsExplorer({
               fullWidth
               className="min-w-0"
             >
-              <SearchField.Group className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 shadow-none">
+              <SearchField.Group className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 shadow-none">
                 <SearchField.SearchIcon className="text-[var(--muted)]" />
                 <SearchField.Input
                   placeholder="Search everything"
@@ -331,7 +337,7 @@ export function JobsExplorer({
                 value={filters.company}
                 onChange={(event) => update({ company: event.target.value })}
                 placeholder="Company name"
-                className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
               />
             </TextField>
 
@@ -354,7 +360,7 @@ export function JobsExplorer({
                 value={filters.location}
                 onChange={(event) => update({ location: event.target.value })}
                 placeholder="City or region"
-                className="min-h-11 rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
+                className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
               />
             </TextField>
 
@@ -493,7 +499,7 @@ function PlainSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-11 w-full appearance-none rounded-xl bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+        className="min-h-11 w-full appearance-none rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
         aria-label={label}
       >
         {options.map((option) => (
@@ -675,14 +681,12 @@ function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filte
           href={job.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] transition-[color,background-color,scale] duration-150 hover:bg-black/4 hover:text-[var(--ink)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] transition-[color,background-color] duration-150 hover:bg-black/4 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
           aria-label={`Open ${job.title} at ${job.company} on ${job.source}`}
         >
           <AtsMark source={job.source} />
           {job.source}
-          <span aria-hidden="true" className="text-[13px]">
-            ↗
-          </span>
+          <span aria-hidden="true" className="text-[13px]">↗</span>
         </a>
       </td>
     </>
@@ -693,7 +697,7 @@ function CompanyLogo({ job }: { job: Job }) {
   const [failed, setFailed] = useState(false);
   if (job.companyLogoUrl && !failed) {
     return (
-      <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white outline outline-1 -outline-offset-1 outline-black/10">
+      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white outline outline-1 -outline-offset-1 outline-black/10">
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -707,9 +711,11 @@ function CompanyLogo({ job }: { job: Job }) {
       </span>
     );
   }
+  // Circular violet-gradient mark for companies without a logo, matching the redesign.
   return (
     <span
-      className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1 outline-black/10 ${job.companyColor}`}
+      className="flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
+      style={{ background: "linear-gradient(150deg, #b9a5ff 0%, #8f8bf6 100%)" }}
       aria-hidden="true"
     >
       {job.companyMark}
@@ -805,7 +811,7 @@ function TitleCombobox({ value, onChange }: { value: string; onChange: (value: s
         aria-controls="role-title-listbox"
         aria-autocomplete="list"
         aria-activedescendant={highlighted >= 0 ? `role-title-option-${highlighted}` : undefined}
-        className="min-h-11 w-full rounded-xl bg-[var(--control)] px-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+        className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
       />
 
       {showList && (

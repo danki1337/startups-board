@@ -2,23 +2,30 @@
 @import "@heroui/styles";
 
 :root {
-  --canvas: #f8f9fa;
-  --control: #f3f4f5;
-  --control-hover: #edeff1;
-  --row-hover: #fafcfb;
-  --ink: #202326;
-  --muted-strong: #60666d;
-  --muted: #747a82;
-  --accent: #216b49;
+  /* Palette from the ChainPort redesign: near-white ground, hairline borders, violet accent. */
+  --canvas: #fcfcfd;
+  --surface: #ffffff;
+  --control: #ffffff;
+  --control-hover: #f7f7fb;
+  --row-hover: #f7f7fb;
+  --border: #e6e7e9;
+  --border-soft: #ededf2;
+  --ink: #16161a;
+  --muted-strong: rgba(60, 60, 67, 0.78);
+  --muted: rgba(60, 60, 67, 0.6);
+  --accent: #9391f7;
+  --accent-strong: #6f6de8;
+  --accent-wash: #efeefe;
+  --chip: #cdb7ff;
   --success: #2f9b65;
-  --focus: #3b7d60;
+  --focus: #9391f7;
   --shadow-panel:
-    0 0 0 1px oklch(0 0 0 / 0.055),
-    0 1px 2px -1px oklch(0 0 0 / 0.06),
-    0 3px 8px -4px oklch(0 0 0 / 0.07);
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 1px 1px oklch(0 0 0 / 0.03);
   --shadow-table:
-    0 0 0 1px oklch(0 0 0 / 0.075),
-    0 2px 6px -4px oklch(0 0 0 / 0.08);
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 1px 1px oklch(0 0 0 / 0.03);
+  --shadow-lift: 0 4px 16px oklch(0 0 0 / 0.06);
 }
 
 @theme inline {
