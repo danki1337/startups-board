@@ -19,6 +19,9 @@ const SCAM_PATTERNS = [
   // Offshore job-spam headlines: "URGENT VACANCY FOR BANKING SECTOR", "URGENT OPENING MECHANICAL
   // ENGINEER". A genuine ATS posting is titled with the role, never a "URGENT VACANCY" banner.
   /\burgent\s+(vacancy|vacancies|opening|job\s+opening)\b/,
+  // A personal/free-email contact in the title ("... - abdulglobalrecruters@gmail.com"). A real
+  // employer routes applications through its ATS; a Gmail/Yahoo address in the title is a scam tell.
+  /@(gmail|yahoo|hotmail|outlook|proton(mail)?|aol|ymail|icloud|rediffmail|mail)\.[a-z]/,
 ];
 
 export function isLikelyScam(title) {

@@ -10,6 +10,8 @@ test("flags real recruitment-scam and job-spam titles", () => {
     "URGENT VACANCY FOR BANKING SECTOR",
     "URGENT OPENING MECHANICAL ELECTRICAL & ELECTRONICS ENGINEER",
     "Teacher needed - free visa and accommodation provided",
+    "$4800USD ESL/ENGLISH TEACHING JOB IN DUBAI - abdulglobalrecruters@gmail.com",
+    "HIGH PAID ESL/ENGLISH TEACHING JOB AVAILABLE - recruiter@yahoo.com",
   ]) {
     assert.equal(isLikelyScam(title), true, title);
   }
@@ -26,6 +28,8 @@ test("does not flag legitimate postings that share loose keywords", () => {
     "Flight Attendant",
     "Visa Compliance Manager",           // "visa" without "free"
     "Monthly Reporting Analyst",         // "month" without the "USD/monthly" spam shape
+    "Email Marketing Manager",           // "email" without an address
+    "Careers at gmail — Product Lead",   // "gmail" without an @address is not the pattern
   ]) {
     assert.equal(isLikelyScam(title), false, title);
   }
