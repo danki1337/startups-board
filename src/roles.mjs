@@ -56,7 +56,7 @@ const ROLE_FAMILIES = [
   ]],
   ["Finance & Accounting", [
     "accountant", "accounting", "financial analyst", "finance manager", "controller", "bookkeeper",
-    "auditor", "payroll", "treasury", "tax ", "fp&a", "underwriter",
+    "auditor", "payroll", "treasury", "tax ", "fp&a", "underwriter", "banker", " teller",
   ]],
   ["People & Recruiting", [
     "recruiter", "talent acquisition", "human resources", "hr manager", "hr generalist",
@@ -67,13 +67,19 @@ const ROLE_FAMILIES = [
   ]],
   ["Healthcare & Clinical", [
     "nurse", "rn ", "registered nurse", "physician", "medical assistant", "therapist", "clinician",
-    "pharmacist", "caregiver", "behavior technician", "behavior analyst", "bcba", "physical therap", "occupational therap",
-    "dental", "veterinar", "phlebotom", "radiolog", "clinical",
+    "pharmacist", "pharmacy", "caregiver", "behavior technician", "behavior analyst", "bcba",
+    "physical therap", "occupational therap", "speech language", "speech therap", "pathologist",
+    "dental", "veterinar", "phlebotom", "radiolog", "sonograph", "clinical", "dietary", "dietitian",
+    "dietician", "optometr", "psychiatr", "psycholog", "podiatr", "chiropract", "audiolog", "hospice",
+    "care assistant", "care worker", "home health", "certified nursing", "nursing assistant",
   ]],
   ["Education & Training", ["teacher", "instructor", "tutor", "professor", "trainer", "curriculum", "faculty", "educator"]],
   ["Retail & Hospitality", [
-    "store manager", "cashier", "barista", "server", "bartender", "cook", "chef", "housekeep",
-    "front desk", "retail", "shift supervisor", "sales associate", "restaurant", "hotel",
+    "store manager", "store associate", "retail associate", "cashier", "barista", "server",
+    "bartender", "cook", "chef", "commis", "cuisine", "dishwasher", "dish washer", "kitchen assistant",
+    "kitchen porter", "busser", "busboy", "food runner", "waiting staff", "wait staff", "waiter",
+    "waitress", " host", "concierge", "valet", "sommelier", "housekeep", "front desk", "retail",
+    "shift supervisor", "sales associate", "key holder", "keyholder", "merchandis", "restaurant", "hotel",
   ]],
   ["Logistics & Transport", [
     "driver", "warehouse", "forklift", "logistics", "supply chain", "dispatcher", "courier",
@@ -86,7 +92,8 @@ const ROLE_FAMILIES = [
   ]],
   ["Engineering (non-software)", [
     "mechanical engineer", "electrical engineer", "civil engineer", "chemical engineer",
-    "industrial engineer", "process engineer", "manufacturing engineer", "aerospace", "structural",
+    "industrial engineer", "process engineer", "manufacturing engineer", "project engineer",
+    "aerospace", "structural",
   ]],
   ["Project & Program Management", ["project manager", "program manager", "scrum master", "delivery manager", "pmo", "project coordinator"]],
   ["Operations", ["operations manager", "operations analyst", "operations associate", "business operations", "chief of staff", "general manager"]],
