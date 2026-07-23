@@ -123,7 +123,11 @@ const NAME_HINTS = [
     "analytics", "devices"]],
 ];
 
-// Weak fallback: the family of role the posting is for.
+// Weak fallback: the family of role the posting is for. Restricted to families that indicate a
+// company's *core* workforce — a company of nurses is a healthcare company, of machinists a
+// manufacturer. Deliberately excludes cross-cutting functions (Finance & Accounting, Marketing,
+// HR, Legal) that exist at every company: an accountant does not make an employer a bank, so those
+// industries are only assigned from an explicit company-name signal, never from the role.
 const ROLE_TO_INDUSTRY = {
   "Healthcare & Clinical": "Healthcare & Life Sciences",
   "Software Engineering": "Technology & Software",
@@ -135,8 +139,6 @@ const ROLE_TO_INDUSTRY = {
   "Manufacturing & Trades": "Manufacturing & Industrial",
   "Logistics & Transport": "Transportation & Logistics",
   "Education & Training": "Education",
-  "Finance & Accounting": "Financial Services",
-  "Marketing & Communications": "Media & Marketing",
 };
 
 function fromName(name) {
