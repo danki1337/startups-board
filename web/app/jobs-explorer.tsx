@@ -196,6 +196,10 @@ export function JobsExplorer({
   // immediately refetch the identical query. When the server could not reach D1 (local dev) the
   // first fetch must still run, otherwise the page would sit on the sample rows forever.
   const skipNextFetch = useRef(hasServerData);
+  // In-memory cache of the first page keyed by the fetch query, so returning to a filter combination
+  // already viewed this session paints instantly instead of flashing an empty/loading table while a
+  // fresh request is in flight. It still revalidates in the background, so nothing goes stale.
+  const resultCache = useRef(new Map<string, { jobs: Job[]; total: number; cursor: string | null }>());
 
   const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
 
@@ -267,18 +271,34 @@ export function JobsExplorer({
 
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
+      // Seed the cache with the server-rendered first page so returning to the initial view is instant.
+      resultCache.current.set(queryString, { jobs: initialJobs, total: initialTotal, cursor: initialCursor });
       return;
+    }
+
+    // Paint a previously-fetched page immediately, with no loading indicator; the request below still
+    // runs to refresh it.
+    const cached = resultCache.current.get(queryString);
+    if (cached) {
+      setJobs(cached.jobs);
+      setTotal(cached.total);
+      setCursor(cached.cursor);
     }
 
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      setIsLoading(true);
+      if (!cached) setIsLoading(true);
       try {
         const params = new URLSearchParams(queryString);
         params.set("limit", String(pageSize));
         const response = await fetch(`${apiUrl}?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
         const payload = (await response.json()) as { jobs: Job[]; total: number; nextCursor: string | null };
+        // Bounded LRU: re-inserting moves the key to the newest slot; the oldest is dropped past the cap.
+        const cache = resultCache.current;
+        cache.delete(queryString);
+        cache.set(queryString, { jobs: payload.jobs, total: payload.total, cursor: payload.nextCursor });
+        if (cache.size > 40) cache.delete(cache.keys().next().value as string);
         setJobs(payload.jobs);
         setTotal(payload.total);
         setCursor(payload.nextCursor);
@@ -293,7 +313,8 @@ export function JobsExplorer({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [queryString, urlQuery]);
+    // initial* are the server-rendered first page, used only to seed the cache once; they are stable.
+  }, [queryString, urlQuery, initialJobs, initialTotal, initialCursor]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || isPaging) return;
