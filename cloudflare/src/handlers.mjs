@@ -10,7 +10,9 @@ import {
   chunks,
   enqueueDueBoards,
   markBoardsQueued,
+  pruneFailedTasks,
   pruneSyncRuns,
+  reconcileFailedTasks,
   reconcileProviderHealth,
   refreshTitleSuggestions,
   releaseBoards,
@@ -32,6 +34,8 @@ export async function scheduled(controller, env, ctx) {
       archiveAndCleanupClosedJobs(env, dailyAt),
       reconcileProviderHealth(env.DB, dailyAt),
       pruneSyncRuns(env.DB, dailyAt),
+      reconcileFailedTasks(env.DB, dailyAt),
+      pruneFailedTasks(env.DB, dailyAt),
       refreshTitleSuggestions(env.DB, dailyAt),
     );
   }

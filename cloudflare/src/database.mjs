@@ -181,6 +181,12 @@ export async function applyBoardSnapshot(db, result, options = {}) {
         last_success_at = excluded.last_success_at,
         updated_at = excluded.updated_at
     `).bind(board.provider, incoming.length, now, now, activeJobsDelta),
+    // A board that dead-lettered on an earlier refresh but now succeeds is no longer a live
+    // failure, so its open failed_tasks rows are resolved. Without this, unresolvedFailures only
+    // ever climbs -- a recovered board would keep inflating the count forever.
+    db.prepare(`
+      UPDATE failed_tasks SET resolved_at = ? WHERE board_key = ? AND resolved_at IS NULL
+    `).bind(now, board.key),
   ]);
 
   return { runId, changedJobs, closedJobs, retry: false };
@@ -295,6 +301,42 @@ export async function pruneSyncRuns(db, now = new Date().toISOString(), retentio
     const result = await db.prepare(`
       DELETE FROM sync_runs WHERE id IN (
         SELECT id FROM sync_runs WHERE started_at < datetime(?, ?) LIMIT 5000
+      )
+    `).bind(now, `-${retentionDays} days`).run();
+    const changes = Number(result.meta?.changes ?? 0);
+    deleted += changes;
+    if (changes < 5_000) break;
+  }
+  return { deleted };
+}
+
+// A dead-lettered board only clears itself via the recovery path in applyBoardSnapshot, which fires
+// on a *successful* refresh. A board classified `invalid` (permanent 404/HTML) backs off for 30
+// days and may never succeed again, so its open failed_tasks rows would linger as phantom
+// "unresolved" failures indefinitely. Once a day, resolve any open row whose board is no longer in
+// the live `error` state -- error is the only status that represents an active, retrying failure.
+export async function reconcileFailedTasks(db, now = new Date().toISOString()) {
+  const result = await db.prepare(`
+    UPDATE failed_tasks SET resolved_at = ?
+    WHERE resolved_at IS NULL
+      AND board_key IN (
+        SELECT key FROM boards WHERE status <> 'error'
+      )
+  `).bind(now).run();
+  return { resolved: Number(result.meta?.changes ?? 0) };
+}
+
+// Resolved dead-letter rows are kept only long enough to be seen in the ops view, then removed so
+// failed_tasks does not grow without bound the way sync_runs did. Unresolved rows are never pruned
+// -- they are the live backlog and should stay visible until the board recovers or is fixed.
+export async function pruneFailedTasks(db, now = new Date().toISOString(), retentionDays = 7) {
+  let deleted = 0;
+  for (let pass = 0; pass < 20; pass += 1) {
+    const result = await db.prepare(`
+      DELETE FROM failed_tasks WHERE id IN (
+        SELECT id FROM failed_tasks
+        WHERE resolved_at IS NOT NULL AND resolved_at < datetime(?, ?)
+        LIMIT 5000
       )
     `).bind(now, `-${retentionDays} days`).run();
     const changes = Number(result.meta?.changes ?? 0);
