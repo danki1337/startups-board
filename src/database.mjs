@@ -374,7 +374,9 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
     ? "coalesce(published_at, '') ASC, key"
     : filters.sort === "company"
       ? "lower(coalesce(company_name, company_identifier)) ASC, key"
-      : "coalesce(published_at, '') DESC, key";
+      // Raw column so the (is_active, published_at DESC) index satisfies the sort; SQLite orders
+      // NULLs last in DESC, matching the previous coalesce('')-to-last behaviour.
+      : "published_at DESC, key";
 
   const limit = clampInteger(filters.limit, 50, 1, 100);
   const offset = clampInteger(filters.offset, 0, 0, 1_000_000);

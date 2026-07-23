@@ -134,10 +134,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
 
   const filterBindingCount = bindings.length;
   const cursor = decodeCursor(params.get("cursor"));
-  if (cursor) {
-    conditions.push(cursorCondition(sort));
-    bindings.push(cursor.value, cursor.value, cursor.key);
-  }
+  if (cursor) pushCursorCondition(conditions, bindings, sort, cursor);
 
   const limit = clampInteger(params.get("limit"), 100, 1, 100);
   const where = conditions.join(" AND ");
@@ -182,10 +179,29 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     jobs: rows.map(toPublicJob),
     total,
     limit,
-    nextCursor: rows.length === limit && last
-      ? encodeCursor({ value: sortValue(last, sort), key: last.key })
-      : null,
+    nextCursor: nextCursor(rows, last, limit, sort, cursor),
   };
+}
+
+// A full page continues from its last row. A short page in the newest sort's dated phase means the
+// dated rows are exhausted, so hand off to the NULL-dated tail (phase 2) with a sentinel cursor
+// rather than stopping -- otherwise the ~7% of undated jobs would be unreachable by scrolling.
+function nextCursor(
+  rows: JobRow[],
+  last: JobRow | undefined,
+  limit: number,
+  sort: SortOption,
+  cursor: { value: string | null; key: string } | null,
+): string | null {
+  // A full page continues from its last row; its published_at (date or null) selects the phase.
+  if (rows.length === limit && last) return encodeCursor({ value: sortValue(last, sort), key: last.key });
+  // A short page ends pagination -- except when a *dated cursor* page (not page one, whose nulls-last
+  // ordering already surfaced any undated rows) has exhausted the dated rows: hand off to the NULL
+  // tail so those jobs stay reachable. Restricted to dated cursor pages so nulls are never re-fetched.
+  if (sort === "newest" && cursor !== null && cursor.value !== null) {
+    return encodeCursor({ value: null, key: "" });
+  }
+  return null;
 }
 
 // Typeahead for the role-title field. Reads the small job_titles aggregate (~99k rows, one per
@@ -211,19 +227,43 @@ export async function queryTitleSuggestions(query: string, limit = 8) {
 function orderBy(sort: SortOption) {
   if (sort === "oldest") return "coalesce(j.published_at, '') ASC, j.key";
   if (sort === "company") return "lower(coalesce(j.company_name, j.company_identifier)) ASC, j.key";
-  return "coalesce(j.published_at, '') DESC, j.key";
+  // Raw column (not coalesce) so the (is_active, published_at DESC, key) index satisfies the sort
+  // with a covering scan instead of reading and sorting the whole table. SQLite orders NULLs last in
+  // DESC, which matches the old coalesce('')-to-last behaviour for undated rows.
+  return "j.published_at DESC, j.key";
 }
 
-function cursorCondition(sort: SortOption) {
+// Keyset pagination. For the default newest sort this is null-aware so the ~7% of rows with no
+// publish date (which sort last) stay reachable while the comparison remains index-friendly.
+function pushCursorCondition(
+  conditions: string[],
+  bindings: unknown[],
+  sort: SortOption,
+  cursor: { value: string | null; key: string },
+) {
+  if (sort === "newest") {
+    if (cursor.value === null) {
+      // Phase 2: the trailing NULL-dated rows, walked by key. Scoped by the other filters, so this
+      // reads only the matching NULL rows rather than the whole 82k tail.
+      conditions.push("(j.published_at IS NULL AND j.key > ?)");
+      bindings.push(cursor.key);
+    } else {
+      // Phase 1: older dates, ties broken by key. Pure index range seek -- no NULL scan per page.
+      conditions.push("(j.published_at < ? OR (j.published_at = ? AND j.key > ?))");
+      bindings.push(cursor.value, cursor.value, cursor.key);
+    }
+    return;
+  }
   const column = sort === "company"
     ? "lower(coalesce(j.company_name, j.company_identifier))"
     : "coalesce(j.published_at, '')";
-  const comparison = sort === "newest" ? "<" : ">";
-  return `(${column} ${comparison} ? OR (${column} = ? AND j.key > ?))`;
+  conditions.push(`(${column} > ? OR (${column} = ? AND j.key > ?))`);
+  bindings.push(cursor.value ?? "", cursor.value ?? "", cursor.key);
 }
 
-function sortValue(row: JobRow, sort: SortOption) {
+function sortValue(row: JobRow, sort: SortOption): string | null {
   if (sort === "company") return (row.companyName || row.companyIdentifier || "").toLowerCase();
+  if (sort === "newest") return row.publishedAt ?? null; // null preserved so the cursor knows the tail
   return row.publishedAt ?? "";
 }
 
@@ -258,15 +298,16 @@ function ftsQuery(value: string | null) {
   return tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(" AND ");
 }
 
-function encodeCursor(value: { value: string; key: string }) {
+function encodeCursor(value: { value: string | null; key: string }) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(value))));
 }
 
-function decodeCursor(value: string | null) {
+function decodeCursor(value: string | null): { value: string | null; key: string } | null {
   if (!value) return null;
   try {
     const cursor = JSON.parse(decodeURIComponent(escape(atob(value))));
-    return typeof cursor.value === "string" && typeof cursor.key === "string" ? cursor : null;
+    const validValue = typeof cursor.value === "string" || cursor.value === null;
+    return validValue && typeof cursor.key === "string" ? cursor : null;
   } catch {
     return null;
   }
