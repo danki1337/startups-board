@@ -1,5 +1,6 @@
 import { getProvider, InvalidPayloadError } from "./providers.mjs";
 import { requestWithRetry } from "./validation.mjs";
+import { isLikelyScam } from "./quality.mjs";
 
 // Tuned per provider rather than globally: a shared pool lets one slow ATS starve every other.
 // The Workday/Greenhouse/Lever/iCIMS/BambooHR/Ashby/Paylocity figures match the pools the reference
@@ -124,7 +125,11 @@ export async function syncBoard(board, options = {}) {
     const rawJobs = await provider.fetchJobs(board, (url, requestInit) =>
       requestWithRetry(url, { timeoutMs, retries, fetchImpl, requestInit }),
     );
-    const jobs = rawJobs.map((job) => provider.normalizeJob(board, job, syncedAt));
+    const jobs = rawJobs
+      .map((job) => provider.normalizeJob(board, job, syncedAt))
+      // Drop recruitment scams / offshore job-spam before they reach the index. Filtered here rather
+      // than at query time so they never count toward a board's job total or the active index.
+      .filter((job) => !isLikelyScam(job.title));
 
     return {
       board: {
