@@ -724,6 +724,14 @@ function CompanyLogo({ job }: { job: Job }) {
           referrerPolicy="no-referrer"
           className="size-full object-contain p-0.5"
           onError={() => setFailed(true)}
+          // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
+          // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
+          // failed logo so it falls back to the clean monogram.
+          onLoad={(event) => {
+            const img = event.currentTarget;
+            const ratio = img.naturalWidth / (img.naturalHeight || 1);
+            if (ratio > 1.6 || ratio < 0.625) setFailed(true);
+          }}
         />
       </span>
     );
