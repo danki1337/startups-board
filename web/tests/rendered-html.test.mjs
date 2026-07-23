@@ -93,10 +93,14 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /endReached=/);
   assert.match(explorer, /<SearchField/);
   assert.match(explorer, /<table/);
-  // Filters are multi-select pills plus plain selects for date/sort; the old single-value
-  // FilterSelect could not express "Remote or Hybrid".
+  // Filters are multi-select pills plus HeroUI Select dropdowns (FilterSelect) for the single-value
+  // fields; the multi-select pills express "Remote or Hybrid" that one dropdown cannot.
   assert.match(explorer, /MultiSelect/);
-  assert.match(explorer, /PlainSelect/);
+  assert.match(explorer, /FilterSelect/);
+  assert.match(explorer, /<Select\.Trigger/);
+  // Saved views and the company watchlist toggle live in the results toolbar.
+  assert.match(explorer, /ViewsToolbar/);
+  assert.match(explorer, /watchlistOnly/);
   // The pills use HeroUI's ToggleButtonGroup, which owns selection state and the aria wiring the
   // hand-rolled buttons used to set themselves.
   assert.match(explorer, /<ToggleButtonGroup/);

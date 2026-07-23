@@ -351,6 +351,20 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
   addSetCondition(conditions, "category", filters.category);
   addSetCondition(conditions, "employment_type", filters.employmentType);
 
+  // Company watchlist. Newline-separated because company names frequently contain commas, which the
+  // comma-based set filters would split on. Matched the same lenient way as the single-company
+  // filter (substring against name-or-identifier), so a starred company and its clickable link
+  // return exactly the same jobs -- including Workday boards whose display name is a humanized slice
+  // of a piped identifier ("Aaco" from "aaco|wd1|site").
+  const companies = String(filters.companies ?? "")
+    .split("\n").map((entry) => entry.trim()).filter(Boolean).slice(0, 60);
+  if (companies.length) {
+    const clauses = companies.map(
+      (entry) => `lower(coalesce(company_name, company_identifier)) LIKE ${sqlLike(entry)} ESCAPE '\\'`,
+    );
+    conditions.push(`(${clauses.join(" OR ")})`);
+  }
+
   const postedWithin = Number.parseInt(filters.postedWithin ?? "", 10);
   if (Number.isFinite(postedWithin) && postedWithin > 0) {
     conditions.push(`published_at >= datetime('now', '-${Math.min(3650, postedWithin)} days')`);

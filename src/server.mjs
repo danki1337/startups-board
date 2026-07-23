@@ -60,6 +60,7 @@ export function startApiServer(options = {}) {
             city: url.searchParams.get("city"),
             roleFamily: url.searchParams.get("roleFamily"),
             industry: url.searchParams.get("industry"),
+            companies: url.searchParams.get("companies"),
             provider: url.searchParams.get("provider"),
             workplace: url.searchParams.get("workplace"),
             category: url.searchParams.get("category"),

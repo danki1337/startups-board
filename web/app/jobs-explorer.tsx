@@ -84,6 +84,9 @@ type Filters = {
   employmentType: string[];
   postedWithin: string;
   sort: string;
+  // Show only jobs at companies on the local watchlist. The actual company list is stored in
+  // localStorage (device-local), so only this on/off intent lives in the filter state and URL.
+  watchlistOnly: boolean;
 };
 
 const emptyFilters: Filters = {
@@ -101,6 +104,7 @@ const emptyFilters: Filters = {
   employmentType: [],
   postedWithin: "",
   sort: "newest",
+  watchlistOnly: false,
 };
 
 function filtersFromSearchParams(query: string): Filters {
@@ -121,6 +125,7 @@ function filtersFromSearchParams(query: string): Filters {
     employmentType: list("employmentType"),
     postedWithin: params.get("postedWithin") ?? "",
     sort: params.get("sort") ?? "newest",
+    watchlistOnly: params.get("watchlist") === "1",
   };
 }
 
@@ -140,7 +145,23 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.employmentType.length) params.set("employmentType", filters.employmentType.join(","));
   if (filters.postedWithin) params.set("postedWithin", filters.postedWithin);
   if (filters.sort !== "newest") params.set("sort", filters.sort);
+  if (filters.watchlistOnly) params.set("watchlist", "1");
   return params;
+}
+
+const WATCHLIST_KEY = "startups-board:watchlist";
+const SAVED_VIEWS_KEY = "startups-board:saved-views";
+
+type SavedView = { name: string; query: string };
+
+function readStored<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function JobsExplorer({
@@ -165,16 +186,51 @@ export function JobsExplorer({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
+  // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
+  // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
+  // client render match, then hydrated from storage in an effect below.
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const storageHydrated = useRef(false);
   // The server already rendered page one for the current URL, so the first filter effect must not
   // immediately refetch the identical query. When the server could not reach D1 (local dev) the
   // first fetch must still run, otherwise the page would sit on the sample rows forever.
   const skipNextFetch = useRef(hasServerData);
 
-  const queryString = useMemo(() => filtersToSearchParams(filters).toString(), [filters]);
+  const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
+
+  // The URL carries the on/off intent (watchlist=1); the fetch expands it into the actual company
+  // list so "only jobs from the list" is complete across pagination, not just the current page.
+  // Only actually filter by the watchlist when it has entries; an empty list would send no companies
+  // and silently show everything, so the toggle stays inert until the first company is starred.
+  const watchlistActive = filters.watchlistOnly && watchlist.length > 0;
+  const urlQuery = useMemo(() => filtersToSearchParams(filters).toString(), [filters]);
+  const queryString = useMemo(() => {
+    const params = filtersToSearchParams(filters);
+    if (filters.watchlistOnly && watchlist.length > 0) {
+      params.delete("watchlist");
+      params.set("companies", watchlist.slice(0, 100).join("\n"));
+    } else {
+      params.delete("watchlist");
+    }
+    return params.toString();
+  }, [filters, watchlist]);
 
   function update(patch: Partial<Filters>) {
     setFilters((current) => ({ ...current, ...patch }));
   }
+
+  const toggleWatch = useCallback((company: string) => {
+    setWatchlist((current) =>
+      current.includes(company) ? current.filter((name) => name !== company) : [...current, company]);
+  }, []);
+
+  const saveView = useCallback((name: string) => {
+    const trimmed = name.trim().slice(0, 40);
+    if (!trimmed) return;
+    const query = filtersToSearchParams(filters).toString();
+    setSavedViews((current) => [...current.filter((view) => view.name !== trimmed), { name: trimmed, query }]);
+  }, [filters]);
 
   function toggle(key: "workplace" | "category" | "source" | "employmentType", value: string) {
     setFilters((current) => {
@@ -186,10 +242,27 @@ export function JobsExplorer({
     });
   }
 
+  // Hydrate the device-local watchlist and saved views from storage once, after the first render so
+  // it cannot cause a server/client markup mismatch. The setState is the whole point of this mount
+  // effect, so the cascading-render lint rule does not apply.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
+    setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
+    storageHydrated.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (storageHydrated.current) window.localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
+  }, [watchlist]);
+  useEffect(() => {
+    if (storageHydrated.current) window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
+  }, [savedViews]);
+
   // Refetch page one whenever the filters change, and mirror them into the URL so a filtered view
   // is shareable and survives reload.
   useEffect(() => {
-    const nextUrl = `${window.location.pathname}${queryString ? `?${queryString}` : ""}`;
+    const nextUrl = `${window.location.pathname}${urlQuery ? `?${urlQuery}` : ""}`;
     window.history.replaceState(null, "", nextUrl);
 
     if (skipNextFetch.current) {
@@ -220,7 +293,7 @@ export function JobsExplorer({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [queryString]);
+  }, [queryString, urlQuery]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || isPaging) return;
@@ -267,8 +340,9 @@ export function JobsExplorer({
       const label = postedWithinOptions.find((option) => option.value === filters.postedWithin)?.label;
       chips.push({ label: label ?? filters.postedWithin, clear: () => update({ postedWithin: "" }) });
     }
+    if (watchlistActive) chips.push({ label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
     return chips;
-  }, [filters]);
+  }, [filters, watchlistActive]);
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
@@ -448,6 +522,17 @@ export function JobsExplorer({
           )}
         </div>
 
+        <ViewsToolbar
+          savedViews={savedViews}
+          currentQuery={urlQuery}
+          onSaveView={saveView}
+          onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
+          onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
+          watchlistCount={watchlist.length}
+          watchlistOnly={watchlistActive}
+          onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
+        />
+
         <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
             <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
@@ -469,7 +554,14 @@ export function JobsExplorer({
               components={virtuosoComponents}
               computeItemKey={(_index, job) => job.id}
               fixedHeaderContent={TableHeader}
-              itemContent={(_index, job) => <JobCells job={job} onFilter={update} />}
+              itemContent={(_index, job) => (
+                <JobCells
+                  job={job}
+                  onFilter={update}
+                  isWatched={watchlistSet.has(job.company)}
+                  onToggleWatch={toggleWatch}
+                />
+              )}
               fixedItemHeight={72}
               increaseViewportBy={{ top: 240, bottom: 480 }}
               endReached={() => void loadMore()}
@@ -495,6 +587,118 @@ export function JobsExplorer({
         </p>
       </section>
     </main>
+  );
+}
+
+// Saved views (recall a whole filter set by name) and the company watchlist toggle. Both are
+// device-local conveniences, kept in one slim toolbar above the results.
+function ViewsToolbar({
+  savedViews,
+  currentQuery,
+  onSaveView,
+  onApplyView,
+  onDeleteView,
+  watchlistCount,
+  watchlistOnly,
+  onToggleWatchlistOnly,
+}: {
+  savedViews: SavedView[];
+  currentQuery: string;
+  onSaveView: (name: string) => void;
+  onApplyView: (view: SavedView) => void;
+  onDeleteView: (name: string) => void;
+  watchlistCount: number;
+  watchlistOnly: boolean;
+  onToggleWatchlistOnly: () => void;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  // A view captures the whole current filter set, so there is nothing to save on an unfiltered page.
+  const canSave = currentQuery.length > 0;
+
+  function commit() {
+    onSaveView(name);
+    setName("");
+    setNaming(false);
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 px-1">
+      <button
+        type="button"
+        onClick={watchlistCount > 0 ? onToggleWatchlistOnly : undefined}
+        aria-pressed={watchlistOnly}
+        disabled={watchlistCount === 0}
+        title={watchlistCount === 0 ? "Star a company to build your watchlist" : "Show only watchlisted companies"}
+        className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-[background-color,scale] duration-150 active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-55 ${
+          watchlistOnly
+            ? "bg-[var(--accent-strong)] text-white"
+            : "bg-[var(--control)] text-[var(--ink)] enabled:hover:bg-[var(--control-hover)]"
+        }`}
+      >
+        <span aria-hidden="true">{watchlistOnly ? "★" : "☆"}</span>
+        Watchlist
+        <span className="tabular-nums opacity-70">{watchlistCount}</span>
+      </button>
+
+      <span className="mx-0.5 h-4 w-px bg-[var(--border)]" aria-hidden="true" />
+
+      {savedViews.map((view) => (
+        <span
+          key={view.name}
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-[var(--control)] pe-1.5 ps-2.5 text-[12px] font-medium text-[var(--ink)]"
+        >
+          <button
+            type="button"
+            onClick={() => onApplyView(view)}
+            title={`Apply saved view “${view.name}”`}
+            className="rounded transition-colors duration-150 hover:text-[var(--accent-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          >
+            {view.name}
+          </button>
+          <button
+            type="button"
+            onClick={() => onDeleteView(view.name)}
+            aria-label={`Delete saved view ${view.name}`}
+            className="rounded px-0.5 text-[var(--muted)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          >
+            ×
+          </button>
+        </span>
+      ))}
+
+      {naming ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            commit();
+          }}
+          className="inline-flex items-center gap-1"
+        >
+          <TextField aria-label="Name this view" autoFocus>
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={() => (name.trim() ? commit() : setNaming(false))}
+              onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
+              placeholder="View name"
+              maxLength={40}
+              className="min-h-8 w-32 rounded-lg border border-[var(--border)] bg-[var(--control)] px-2.5 text-[12px] text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </TextField>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNaming(true)}
+          disabled={!canSave}
+          title={canSave ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+          className="inline-flex min-h-8 items-center gap-1 rounded-lg px-2.5 text-[12px] font-medium text-[var(--muted-strong)] transition-colors duration-150 enabled:hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          <span aria-hidden="true">＋</span> Save view
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -642,7 +846,17 @@ function TableHeader() {
   );
 }
 
-function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filters>) => void }) {
+function JobCells({
+  job,
+  onFilter,
+  isWatched,
+  onToggleWatch,
+}: {
+  job: Job;
+  onFilter: (patch: Partial<Filters>) => void;
+  isWatched: boolean;
+  onToggleWatch: (company: string) => void;
+}) {
   const postedDate = job.publishedAt ? new Date(job.publishedAt) : new Date(referenceDate);
   if (!job.publishedAt) {
     postedDate.setUTCDate(referenceDate.getUTCDate() - Math.max(0, (job.postedDaysAgo ?? 1) - 1));
@@ -660,9 +874,20 @@ function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filte
             <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
               <button
                 type="button"
+                onClick={() => onToggleWatch(job.company)}
+                aria-pressed={isWatched}
+                title={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
+                className={`shrink-0 rounded text-[13px] leading-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+                  isWatched ? "text-[var(--accent-strong)]" : "text-[var(--border)] hover:text-[var(--muted-strong)]"
+                }`}
+              >
+                {isWatched ? "★" : "☆"}
+              </button>
+              <button
+                type="button"
                 onClick={() => onFilter({ company: job.company })}
                 title={`Show only jobs at ${job.company}`}
-                className="max-w-[55%] truncate rounded underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="max-w-[52%] truncate rounded underline-offset-2 transition-colors duration-150 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>

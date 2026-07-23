@@ -106,6 +106,20 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   addSetFilter(conditions, bindings, "j.category", params.get("category"));
   addSetFilter(conditions, bindings, "j.employment_type", params.get("employmentType"));
 
+  // Company watchlist. Newline-separated (not comma) because company names frequently contain commas
+  // ("Alphabet, Inc."), and capped so the clause and request URL stay bounded. Matched the same
+  // lenient way as the single-company filter (substring against name-or-identifier) so a starred
+  // company and its clickable link return the same jobs -- including Workday boards whose display
+  // name is a humanized slice of a piped identifier ("Aaco" from "aaco|wd1|site").
+  const companies = (params.get("companies") ?? "")
+    .split("\n").map((entry) => entry.trim().toLowerCase()).filter(Boolean).slice(0, 60);
+  if (companies.length) {
+    const clause = companies
+      .map(() => "lower(coalesce(j.company_name, j.company_identifier)) LIKE ?").join(" OR ");
+    conditions.push(`(${clause})`);
+    bindings.push(...companies.map((entry) => `%${entry}%`));
+  }
+
   // Doubles as the staleness control: ~22% of active postings are older than 30 days, which is the
   // threshold ghost-job research treats as the first warning sign.
   const postedWithin = Number.parseInt(params.get("postedWithin") ?? "", 10);
