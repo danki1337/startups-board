@@ -145,6 +145,19 @@ button:disabled,
   border-bottom: 0;
 }
 
+/* Source chevron: hidden until the row is hovered. Opacity only — a transform inside a virtualized
+   row is unnecessary and keeps row height perfectly stable for Virtuoso's fixed-height model. */
+.jobs-table .src-chevron {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.jobs-table tbody tr:hover .src-chevron {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jobs-table .src-chevron { transition: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

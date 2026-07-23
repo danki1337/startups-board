@@ -697,12 +697,13 @@ function JobCells({ job, onFilter }: { job: Job; onFilter: (patch: Partial<Filte
           href={job.url}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] transition-[color,background-color] duration-150 hover:bg-black/4 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          className="inline-flex min-h-10 items-center justify-end gap-2 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] transition-colors duration-150 hover:text-[var(--accent-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
           aria-label={`Open ${job.title} at ${job.company} on ${job.source}`}
         >
           <AtsMark source={job.source} />
           {job.source}
-          <span aria-hidden="true" className="text-[13px]">↗</span>
+          {/* Reveals on row hover (rule in globals.css) — the redesign's affordance. */}
+          <span aria-hidden="true" className="src-chevron text-[16px] leading-none text-[var(--muted)]">›</span>
         </a>
       </td>
     </>
