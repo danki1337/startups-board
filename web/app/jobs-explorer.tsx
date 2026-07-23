@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button, Chip, Input, ListBox, SearchField, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
-  categoryOptions,
   sourceOptions,
   workplaceOptions,
   type Job,
@@ -61,12 +60,6 @@ const industryOptions = [
   ...INDUSTRY_OPTIONS.map((name) => ({ label: name, value: name })),
 ];
 
-const sortOptions = [
-  { label: "Newest first", value: "newest" },
-  { label: "Oldest first", value: "oldest" },
-  { label: "Company A–Z", value: "company" },
-];
-
 // Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
 // single source rather than five parallel useStates that could drift apart.
 type Filters = {
@@ -79,7 +72,6 @@ type Filters = {
   roleFamily: string;
   industry: string;
   workplace: string[];
-  category: string[];
   source: string[];
   employmentType: string[];
   postedWithin: string;
@@ -99,7 +91,6 @@ const emptyFilters: Filters = {
   roleFamily: "",
   industry: "",
   workplace: [],
-  category: [],
   source: [],
   employmentType: [],
   postedWithin: "",
@@ -120,7 +111,6 @@ function filtersFromSearchParams(query: string): Filters {
     roleFamily: params.get("roleFamily") ?? "",
     industry: params.get("industry") ?? "",
     workplace: list("workplace"),
-    category: list("category"),
     source: list("provider"),
     employmentType: list("employmentType"),
     postedWithin: params.get("postedWithin") ?? "",
@@ -140,7 +130,6 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
   if (filters.industry) params.set("industry", filters.industry);
   if (filters.workplace.length) params.set("workplace", filters.workplace.join(","));
-  if (filters.category.length) params.set("category", filters.category.join(","));
   if (filters.source.length) params.set("provider", filters.source.join(","));
   if (filters.employmentType.length) params.set("employmentType", filters.employmentType.join(","));
   if (filters.postedWithin) params.set("postedWithin", filters.postedWithin);
@@ -236,7 +225,7 @@ export function JobsExplorer({
     setSavedViews((current) => [...current.filter((view) => view.name !== trimmed), { name: trimmed, query }]);
   }, [filters]);
 
-  function toggle(key: "workplace" | "category" | "source" | "employmentType", value: string) {
+  function toggle(key: "workplace" | "source" | "employmentType", value: string) {
     setFilters((current) => {
       const values = current[key];
       return {
@@ -354,7 +343,6 @@ export function JobsExplorer({
     if (filters.roleFamily) chips.push({ label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
     if (filters.industry) chips.push({ label: filters.industry, clear: () => update({ industry: "" }) });
     for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
-    for (const value of filters.category) chips.push({ label: value, clear: () => toggle("category", value) });
     for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
     for (const value of filters.employmentType) chips.push({ label: value, clear: () => toggle("employmentType", value) });
     if (filters.postedWithin) {
@@ -452,28 +440,26 @@ export function JobsExplorer({
               />
             </TextField>
 
-            <FilterSelect
+            {/* Type-to-search over the full country list (~200 options is unwieldy as a plain dropdown). */}
+            <SearchSelect
               label="Country"
-              value={filters.country}
+              placeholder="Country"
               options={countrySelectOptions}
-              onChange={(value) => update({ country: value })}
+              value={filters.country}
+              onSelect={(value) => update({ country: value })}
             />
 
-            <FilterSelect
-              label="City"
-              value={filters.city}
+            {/* Combined city control: search the known-cities list and pick one for an exact match, or
+                type a free region string. Picking clears the free text and vice versa. */}
+            <SearchSelect
+              label="City or region"
+              placeholder="City or region"
               options={cityOptions}
-              onChange={(value) => update({ city: value })}
+              value={filters.city}
+              onSelect={(value) => update({ city: value, location: "" })}
+              freeText={filters.location}
+              onFreeText={(text) => update({ location: text, city: "" })}
             />
-
-            <TextField aria-label="Filter by city or region" fullWidth className="min-w-0">
-              <Input
-                value={filters.location}
-                onChange={(event) => update({ location: event.target.value })}
-                placeholder="City or region"
-                className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
-              />
-            </TextField>
 
             <FilterSelect
               label="Date posted"
@@ -481,26 +467,14 @@ export function JobsExplorer({
               options={postedWithinOptions}
               onChange={(value) => update({ postedWithin: value })}
             />
-            <FilterSelect
-              label="Sort"
-              value={filters.sort}
-              options={sortOptions}
-              onChange={(value) => update({ sort: value })}
-            />
           </div>
 
-          <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-3">
             <MultiSelect
               label="Workplace"
               options={workplaceOptions}
               selected={filters.workplace}
               onToggle={(value) => toggle("workplace", value)}
-            />
-            <MultiSelect
-              label="Function"
-              options={categoryOptions}
-              selected={filters.category}
-              onToggle={(value) => toggle("category", value)}
             />
             <MultiSelect
               label="Employment"
@@ -559,9 +533,6 @@ export function JobsExplorer({
             <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
             {total === 1 ? "job" : "jobs"}
             {isLoading && <span className="ms-2 font-normal">Updating…</span>}
-          </p>
-          <p className="text-[13px] text-[var(--muted)]">
-            {sortOptions.find((option) => option.value === filters.sort)?.label}
           </p>
         </div>
 
@@ -718,6 +689,157 @@ function ViewsToolbar({
         >
           <span aria-hidden="true">＋</span> Save view
         </button>
+      )}
+    </div>
+  );
+}
+
+// A searchable single-select: a text input that filters a static option list as you type and shows a
+// dropdown of matches. Used where a plain dropdown is unwieldy (the ~200-entry country list) and
+// where a pick and a free-text search should share one field (city).
+//
+// When `onFreeText` is supplied the field is dual-purpose: typing sets the free text (city -> a
+// location substring search) and picking an option sets the exact value, each clearing the other.
+function SearchSelect({
+  label,
+  placeholder,
+  options,
+  value,
+  onSelect,
+  freeText,
+  onFreeText,
+}: {
+  label: string;
+  placeholder: string;
+  options: readonly { label: string; value: string }[];
+  value: string;
+  onSelect: (value: string) => void;
+  freeText?: string;
+  onFreeText?: (text: string) => void;
+}) {
+  const allowFreeText = typeof onFreeText === "function";
+  const listboxId = useId();
+  // null while the committed value is shown; a string once the user starts searching.
+  const [query, setQuery] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(-1);
+
+  // "" values are the "All …" rows, treated as no selection so the field shows its placeholder.
+  const selectedLabel = value ? options.find((option) => option.value === value)?.label ?? "" : "";
+  const committed = value ? selectedLabel : (freeText ?? "");
+  const inputValue = query ?? committed;
+
+  const needle = query?.trim().toLowerCase() ?? "";
+  const matches = useMemo(
+    () => (needle ? options.filter((option) => option.label.toLowerCase().includes(needle)) : options).slice(0, 60),
+    [needle, options],
+  );
+
+  // onSelect and onFreeText each apply a full filter update where one field clears the other (picking
+  // a city clears the region text and vice versa), so exactly one is called per interaction --
+  // calling both would have the second overwrite the first.
+  function commit(option: { label: string; value: string }) {
+    onSelect(option.value);
+    setQuery(null);
+    setIsOpen(false);
+    setHighlighted(-1);
+  }
+
+  function clear() {
+    onSelect("");
+    setQuery(null);
+    setHighlighted(-1);
+  }
+
+  function onType(text: string) {
+    setQuery(text);
+    setIsOpen(true);
+    setHighlighted(-1);
+    // Typing is a free-text search; the parent handler also clears any previously picked exact value.
+    if (allowFreeText) onFreeText!(text);
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      if (!matches.length) return;
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setHighlighted((current) => (current + step + matches.length) % matches.length);
+    } else if (event.key === "Enter") {
+      if (isOpen && highlighted >= 0 && matches[highlighted]) {
+        event.preventDefault();
+        commit(matches[highlighted]);
+      } else {
+        setIsOpen(false);
+      }
+    } else if (event.key === "Escape") {
+      setQuery(null);
+      setIsOpen(false);
+    }
+  }
+
+  const showList = isOpen && matches.length > 0;
+  const hasValue = Boolean(value || (allowFreeText && freeText));
+
+  return (
+    <div className="relative min-w-0">
+      <input
+        value={inputValue}
+        onChange={(event) => onType(event.target.value)}
+        onFocus={(event) => {
+          setIsOpen(true);
+          event.target.select();
+        }}
+        // Delay so a click on an option lands before the list unmounts.
+        onBlur={() => window.setTimeout(() => { setIsOpen(false); setQuery(null); }, 120)}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        aria-label={label}
+        role="combobox"
+        aria-expanded={showList}
+        aria-controls={listboxId}
+        aria-autocomplete="list"
+        autoComplete="off"
+        className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--control)] py-2 pe-9 ps-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+      />
+      {hasValue ? (
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={clear}
+          aria-label={`Clear ${label}`}
+          className="absolute inset-y-0 end-2.5 flex items-center rounded text-[var(--muted)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          ×
+        </button>
+      ) : (
+        <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 end-3 flex items-center text-xs text-[var(--muted)]">▾</span>
+      )}
+
+      {showList && (
+        <ul
+          id={listboxId}
+          role="listbox"
+          aria-label={label}
+          className="absolute inset-x-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-auto rounded-xl bg-white py-1 shadow-[var(--shadow-panel)] outline outline-1 -outline-offset-1 outline-black/10"
+        >
+          {matches.map((option, index) => (
+            <li key={option.value || "__any"} role="option" aria-selected={option.value === value}>
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => commit(option)}
+                onMouseEnter={() => setHighlighted(index)}
+                className={`flex w-full items-center px-3.5 py-2 text-start text-base sm:text-sm ${
+                  index === highlighted ? "bg-[var(--control-hover)]" : ""
+                } ${option.value === value && value ? "text-[var(--accent-strong)]" : "text-[var(--ink)]"}`}
+              >
+                {option.label}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

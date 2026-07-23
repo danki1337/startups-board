@@ -69,7 +69,10 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /Workplace/);
   assert.match(html, /Ashby/);
   assert.match(html, /Role title/);
-  assert.match(html, /All countries/);
+  // Country and city are searchable combobox inputs (SearchSelect), so their placeholders — not a
+  // rendered option list — are what appear in the server markup.
+  assert.match(html, /placeholder="Country"/);
+  assert.match(html, /placeholder="City or region"/);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
   // back to a bundled fixture.
   assert.match(html, /Staff Platform Engineer/);
