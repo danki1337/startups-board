@@ -156,9 +156,16 @@ export async function syncBoard(board, options = {}) {
 
 // 404/410 are the obvious dead-board signals, but the larger source of wasted retries is a stale
 // identifier whose ATS still answers 200 with something that is not a board (BambooHR alone
-// accounted for ~35% of all failed runs). Both back off for 30 days instead of every 15 minutes.
+// accounted for ~35% of all failed runs). All permanent failures back off 30 days instead of
+// retrying every 15 minutes and re-dead-lettering.
+//
+// Any 4xx other than the two retryable ones (408 timeout, 429 rate-limit) means the board as
+// constructed will never succeed -- Workday returns a stable 422 for an invalid tenant/site, iCIMS
+// a stable 403. 5xx stays transient (retried), because those are the ATS's own outages.
 function isPermanentBoardFailure(error) {
-  if (error.status === 404 || error.status === 410) return true;
+  if (typeof error.status === "number" && error.status >= 400 && error.status < 500) {
+    return error.status !== 408 && error.status !== 429;
+  }
   return error instanceof InvalidPayloadError;
 }
 

@@ -404,3 +404,27 @@ test("does not split an emoji when truncating job descriptions", async () => {
   assert.equal(result.jobs[0].descriptionPlain.at(-1), "…");
   assert.doesNotMatch(JSON.stringify(result.jobs[0]), /\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f][0-9a-f]{2})/i);
 });
+
+test("classifies a stable 4xx as invalid and a 5xx as a retryable error", async () => {
+  const board = parseAtsUrl("https://acme.wd5.myworkdayjobs.com/en-US/External");
+  // Workday returns 422 for an invalid tenant/site; it must back off (invalid), not retry forever.
+  const unprocessable = await syncBoard(board, {
+    retries: 0,
+    fetchImpl: async () => new Response("", { status: 422 }),
+  });
+  assert.equal(unprocessable.board.status, "invalid");
+
+  // A 403 (e.g. iCIMS behind Cloudflare) is likewise permanent for us.
+  const forbidden = await syncBoard(board, {
+    retries: 0,
+    fetchImpl: async () => new Response("", { status: 403 }),
+  });
+  assert.equal(forbidden.board.status, "invalid");
+
+  // A 5xx is the ATS's own outage: stays a transient error so it is retried later.
+  const serverError = await syncBoard(board, {
+    retries: 0,
+    fetchImpl: async () => new Response("", { status: 503 }),
+  });
+  assert.equal(serverError.board.status, "error");
+});
