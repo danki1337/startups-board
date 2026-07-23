@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, Chip, Input, ListBox, SearchField, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Button, Input, ListBox, SearchField, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   sourceOptions,
@@ -998,14 +998,14 @@ const virtuosoComponents = {
 
 function TableHeader() {
   return (
-    <tr className="bg-[var(--canvas)]">
+    <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
           company sits beneath it as context, rather than the company owning the first column. */}
-      <TableHeading className="w-[40%]">Role</TableHeading>
-      <TableHeading className="w-[21%]">Location</TableHeading>
-      <TableHeading className="w-[13%]">Workplace</TableHeading>
+      <TableHeading className="w-[41%]">Role</TableHeading>
+      <TableHeading className="w-[22%]">Location</TableHeading>
       <TableHeading className="w-[13%]">Posted</TableHeading>
-      <TableHeading className="w-[13%] text-end">Source</TableHeading>
+      <TableHeading className="w-[13%]">Workplace</TableHeading>
+      <TableHeading className="w-[11%] text-end">Source</TableHeading>
     </tr>
   );
 }
@@ -1061,10 +1061,7 @@ function JobCells({
                 {job.company}
               </button>
               <span aria-hidden="true">·</span>
-              <span className="truncate">
-                {job.category}
-                {job.employmentType ? ` · ${job.employmentType}` : ""}
-              </span>
+              <span className="truncate">{job.category}</span>
             </span>
           </div>
         </div>
@@ -1090,11 +1087,6 @@ function JobCells({
           )}
         </span>
       </td>
-      <td className="px-5 py-3.5">
-        <Chip size="sm" variant="soft" className="whitespace-nowrap text-[12px]">
-          {job.workplace}
-        </Chip>
-      </td>
       <td className="whitespace-nowrap px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
             client can legitimately render a slightly different string. title keeps the exact date. */}
@@ -1105,6 +1097,16 @@ function JobCells({
         >
           {relative ?? dateFormatter.format(postedDate)}
         </time>
+      </td>
+      <td className="px-5 py-3.5">
+        {/* Workplace over employment type, stacked, matching the design's two-line Workplace column
+            (the employment type used to sit in the role subtitle). */}
+        <span className="flex flex-col leading-tight">
+          <span className="text-sm text-[var(--ink)]">{job.workplace}</span>
+          {job.employmentType && (
+            <span className="text-[12px] text-[var(--muted)]">{job.employmentType}</span>
+          )}
+        </span>
       </td>
       <td className="whitespace-nowrap px-5 py-3.5 text-end">
         <a
@@ -1128,7 +1130,7 @@ function CompanyLogo({ job }: { job: Job }) {
   const [failed, setFailed] = useState(false);
   if (job.companyLogoUrl && !failed) {
     return (
-      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white outline outline-1 -outline-offset-1 outline-black/10">
+      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -1150,10 +1152,11 @@ function CompanyLogo({ job }: { job: Job }) {
       </span>
     );
   }
-  // Circular violet-gradient mark for companies without a logo, matching the redesign.
+  // Rounded-square violet-gradient mark for companies without a logo, matching the design's app-icon
+  // style logos.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-full text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
+      className="flex size-9 shrink-0 items-center justify-center rounded-[10px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
       style={{ background: "linear-gradient(150deg, #b9a5ff 0%, #8f8bf6 100%)" }}
       aria-hidden="true"
     >

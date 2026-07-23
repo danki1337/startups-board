@@ -118,7 +118,10 @@ button:disabled,
 }
 
 .jobs-table thead th {
-  background: var(--canvas);
+  /* Filled header bar, matching the design — a light tint rather than the canvas colour. Also the
+     opaque background the sticky header needs so rows don't show through as they scroll under it. */
+  background: var(--control-hover);
+  border-bottom: 1px solid oklch(0 0 0 / 0.08);
 }
 
 .jobs-table tbody tr td {
