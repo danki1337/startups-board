@@ -48,10 +48,10 @@ function relativePosted(date: Date, now: number): string | null {
 const employmentOptions = ["Full time", "Part time", "Contract", "Internship", "Temporary"];
 const postedWithinOptions = [
   { label: "Any time", value: "" },
-  { label: "Past 24 hours", value: "1" },
-  { label: "Past week", value: "7" },
-  { label: "Past 30 days", value: "30" },
-  { label: "Past 90 days", value: "90" },
+  { label: "Last 24 hours", value: "1" },
+  { label: "Last 7 days", value: "7" },
+  { label: "Last 30 days", value: "30" },
+  { label: "Last 90 days", value: "90" },
 ];
 // "Anywhere" is remote-with-no-country -- a real answer, distinct from an unrecognised location.
 const countrySelectOptions = [
@@ -608,13 +608,21 @@ function LineIcon({ children }: { children: React.ReactNode }) {
   );
 }
 const IconSearch = () => <LineIcon><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" /></LineIcon>;
-const IconTitle = () => <LineIcon><circle cx="8" cy="5" r="2.5" /><path d="M3.5 13c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5" /></LineIcon>;
+const IconLocate = () => <LineIcon><circle cx="8" cy="8" r="4" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" /><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" /></LineIcon>;
 const IconPin = () => <LineIcon><path d="M8 14s4.5-4 4.5-7A4.5 4.5 0 0 0 3.5 7c0 3 4.5 7 4.5 7Z" /><circle cx="8" cy="6.8" r="1.6" /></LineIcon>;
 const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
+const IconCalendar = () => <LineIcon><rect x="2.5" y="3.5" width="11" height="10" rx="2" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></LineIcon>;
+const IconChevronDown = () => <LineIcon><path d="M4.5 6.5 8 10l3.5-3.5" /></LineIcon>;
+const IconUpDown = () => <LineIcon><path d="M5.5 6.5 8 4l2.5 2.5M5.5 9.5 8 12l2.5-2.5" /></LineIcon>;
 
-// The compact single-row filter bar from the design: a segmented Search / Title / Location / Add
-// filter control on the left, and Date + Save view on the right. The remaining filters live behind
-// "Add filter"; this bar is wired to the same filter state as the full panel.
+// Shared pill: a standalone rounded, bordered control — the design uses these rather than one
+// segmented bar.
+const FILTER_PILL =
+  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--control)] px-3.5 text-sm font-medium text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--control-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+
+// The compact filter bar, replicating the design's separate pills: Search, a divider, then Title /
+// Location / Add filter, and — pushed right — a date pill and Save view. The remaining filters live
+// behind "Add filter"; everything here is wired to the same filter state as the full panel.
 function FilterBar({
   filters,
   update,
@@ -632,85 +640,151 @@ function FilterBar({
 }) {
   const [naming, setNaming] = useState(false);
   const [viewName, setViewName] = useState("");
+  const [openPill, setOpenPill] = useState<"title" | "location" | null>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const locationRef = useRef<HTMLDivElement>(null);
+
+  // Close an open Title/Location popover when a pointer lands outside it.
+  useEffect(() => {
+    if (!openPill) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const ref = openPill === "title" ? titleRef : locationRef;
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpenPill(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [openPill]);
+
   function commitSave() {
     onSaveView(viewName);
     setViewName("");
     setNaming(false);
   }
-  const segment = "flex shrink-0 items-center gap-1.5 border-s border-[var(--border)] ps-3 pe-2";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Left: one segmented, bordered bar */}
-      <div className="flex min-h-11 min-w-0 flex-1 items-center rounded-xl border border-[var(--border)] bg-[var(--control)]">
-        <label className="flex min-w-0 flex-1 items-center gap-2 ps-3.5 pe-2">
-          <IconSearch />
-          <input
-            aria-label="Search all job text"
-            value={filters.search}
-            onChange={(event) => update({ search: event.target.value })}
-            placeholder="Search"
-            className="w-full min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:text-sm"
-          />
-        </label>
-        <div className={segment}>
-          <IconTitle />
-          <TitleCombobox bare placeholder="Title" value={filters.title} onChange={(value) => update({ title: value })} />
-        </div>
-        <label className={segment}>
-          <IconPin />
-          <input
-            aria-label="Filter by location"
-            value={filters.location}
-            onChange={(event) => update({ location: event.target.value, city: "" })}
-            placeholder="Location"
-            className="w-24 min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:w-28 sm:text-sm"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={onToggleMore}
-          aria-expanded={showMore}
-          className="flex shrink-0 items-center gap-1 border-s border-[var(--border)] px-3.5 text-sm font-medium text-[var(--muted-strong)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-        >
-          <IconPlus /> Add filter
-        </button>
-      </div>
-
-      {/* Right: date + save view */}
-      <div className="w-full sm:w-44">
-        <FilterSelect
-          label="Date posted"
-          value={filters.postedWithin}
-          options={postedWithinOptions}
-          onChange={(value) => update({ postedWithin: value })}
+      {/* Search */}
+      <div className="inline-flex min-h-11 w-full min-w-0 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--control)] px-3.5 sm:w-80">
+        <IconSearch />
+        <input
+          aria-label="Search all job text"
+          value={filters.search}
+          onChange={(event) => update({ search: event.target.value })}
+          placeholder="Search"
+          className="w-full min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:text-sm"
         />
       </div>
-      {naming ? (
-        <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
-          <TextField aria-label="Name this view" autoFocus>
-            <Input
-              value={viewName}
-              onChange={(event) => setViewName(event.target.value)}
-              onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
-              onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
-              placeholder="View name"
-              maxLength={40}
-              className="min-h-11 w-36 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
-            />
-          </TextField>
-        </form>
-      ) : (
+
+      <span aria-hidden="true" className="mx-0.5 hidden h-6 w-px bg-[var(--border)] sm:block" />
+
+      {/* Title — opens a role-title typeahead */}
+      <div ref={titleRef} className="relative">
         <button
           type="button"
-          onClick={() => setNaming(true)}
-          disabled={!canSaveView}
-          title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
-          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-sm font-medium text-[var(--muted-strong)] transition-colors duration-150 enabled:hover:bg-[var(--control-hover)] enabled:hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          onClick={() => setOpenPill((current) => (current === "title" ? null : "title"))}
+          aria-expanded={openPill === "title"}
+          className={FILTER_PILL}
         >
-          <IconPlus /> Save view
+          <IconLocate />
+          <span className="max-w-40 truncate">{filters.title || "Title"}</span>
+          <IconUpDown />
         </button>
-      )}
+        {openPill === "title" && (
+          <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-72 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]">
+            <TitleCombobox value={filters.title} onChange={(value) => update({ title: value })} placeholder="Filter by role title" />
+          </div>
+        )}
+      </div>
+
+      {/* Location */}
+      <div ref={locationRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpenPill((current) => (current === "location" ? null : "location"))}
+          aria-expanded={openPill === "location"}
+          className={FILTER_PILL}
+        >
+          <IconPin />
+          <span className="max-w-40 truncate">{filters.location || "Location"}</span>
+          <IconUpDown />
+        </button>
+        {openPill === "location" && (
+          <div className="absolute left-0 top-[calc(100%+8px)] z-30 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]">
+            <input
+              autoFocus
+              aria-label="Filter by location"
+              value={filters.location}
+              onChange={(event) => update({ location: event.target.value, city: "" })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === "Escape") setOpenPill(null);
+              }}
+              placeholder="City, region or country"
+              className="min-h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--control)] px-3 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Add filter — reveals the rest of the filters */}
+      <button type="button" onClick={onToggleMore} aria-expanded={showMore} className={FILTER_PILL}>
+        <IconPlus /> Add filter
+      </button>
+
+      {/* Right group, pushed to the end */}
+      <div className="ms-auto flex flex-wrap items-center gap-2">
+        {/* Date posted */}
+        <Select
+          aria-label="Date posted"
+          selectedKey={filters.postedWithin === "" ? SELECT_EMPTY_KEY : filters.postedWithin}
+          onSelectionChange={(key) => update({ postedWithin: key === SELECT_EMPTY_KEY ? "" : String(key ?? "") })}
+        >
+          <Select.Trigger className={FILTER_PILL}>
+            <IconCalendar />
+            <Select.Value className="whitespace-nowrap" />
+            <IconChevronDown />
+          </Select.Trigger>
+          <Select.Popover className="max-h-72 min-w-[var(--trigger-width)] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-lift)]">
+            <ListBox aria-label="Date posted" items={postedWithinOptions} className="outline-none">
+              {(option) => (
+                <ListBox.Item
+                  id={option.value === "" ? SELECT_EMPTY_KEY : option.value}
+                  textValue={option.label}
+                  className="flex min-h-9 cursor-pointer items-center rounded-lg px-3 text-sm text-[var(--ink)] outline-none transition-colors duration-100 data-[focused]:bg-[var(--control-hover)] data-[selected]:bg-[var(--accent-wash)] data-[selected]:text-[var(--accent-strong)]"
+                >
+                  {option.label}
+                </ListBox.Item>
+              )}
+            </ListBox>
+          </Select.Popover>
+        </Select>
+
+        {/* Save view */}
+        {naming ? (
+          <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
+            <TextField aria-label="Name this view" autoFocus>
+              <Input
+                value={viewName}
+                onChange={(event) => setViewName(event.target.value)}
+                onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
+                onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
+                placeholder="View name"
+                maxLength={40}
+                className="min-h-11 w-36 rounded-full border border-[var(--border)] bg-[var(--control)] px-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+              />
+            </TextField>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNaming(true)}
+            disabled={!canSaveView}
+            title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+            className={`${FILTER_PILL} disabled:cursor-not-allowed disabled:opacity-55`}
+          >
+            <IconPlus /> Save view
+          </button>
+        )}
+      </div>
     </div>
   );
 }

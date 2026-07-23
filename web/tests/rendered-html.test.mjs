@@ -66,11 +66,11 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /<title>Startup jobs — Startups\.board/);
   assert.match(html, /<table/);
   assert.match(html, /Workplace/);
-  // The compact filter bar renders Search, Title, Location, Add filter, Date and Save view; the rest
-  // of the filters stay hidden behind "Add filter" until the client toggles them.
+  // The compact filter bar renders Search, Title, Location, Add filter, Date and Save view as pills;
+  // the rest of the filters stay hidden behind "Add filter" until the client toggles them.
   assert.match(html, /placeholder="Search"/);
-  assert.match(html, /placeholder="Title"/);
-  assert.match(html, /placeholder="Location"/);
+  assert.match(html, />Title</);
+  assert.match(html, />Location</);
   assert.match(html, /Add filter/);
   assert.match(html, /Save view/);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
