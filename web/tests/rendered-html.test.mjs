@@ -65,14 +65,14 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   const html = await response.text();
   assert.match(html, /<title>Startup jobs — Startups\.board/);
   assert.match(html, /<table/);
-  assert.match(html, /Company/);
   assert.match(html, /Workplace/);
-  assert.match(html, /Ashby/);
-  assert.match(html, /Role title/);
-  // Country and city are searchable combobox inputs (SearchSelect), so their placeholders — not a
-  // rendered option list — are what appear in the server markup.
-  assert.match(html, /placeholder="Country"/);
-  assert.match(html, /placeholder="City or region"/);
+  // The compact filter bar renders Search, Title, Location, Add filter, Date and Save view; the rest
+  // of the filters stay hidden behind "Add filter" until the client toggles them.
+  assert.match(html, /placeholder="Search"/);
+  assert.match(html, /placeholder="Title"/);
+  assert.match(html, /placeholder="Location"/);
+  assert.match(html, /Add filter/);
+  assert.match(html, /Save view/);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
   // back to a bundled fixture.
   assert.match(html, /Staff Platform Engineer/);
@@ -94,7 +94,7 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /from "react-virtuoso"/);
   assert.match(explorer, /<TableVirtuoso/);
   assert.match(explorer, /endReached=/);
-  assert.match(explorer, /<SearchField/);
+  assert.match(explorer, /<FilterBar/);
   assert.match(explorer, /<table/);
   // Filters are multi-select pills plus HeroUI Select dropdowns (FilterSelect) for the single-value
   // fields; the multi-select pills express "Remote or Hybrid" that one dropdown cannot.

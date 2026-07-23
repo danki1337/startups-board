@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Button, Input, ListBox, SearchField, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
+import { Button, Input, ListBox, Select, TextField, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import { TableVirtuoso, type TableComponents } from "react-virtuoso";
 import {
   sourceOptions,
@@ -194,6 +194,8 @@ export function JobsExplorer({
   // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
   // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
   const [now, setNow] = useState(0);
+  // The compact filter bar shows a few core filters; "Add filter" reveals the rest. Hidden by default.
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -414,139 +416,123 @@ export function JobsExplorer({
         </div>
 
         <div className="rounded-2xl bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)]">
-          <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-            <SearchField
-              aria-label="Search all job text"
-              value={filters.search}
-              onChange={(value) => update({ search: value })}
-              fullWidth
-              className="min-w-0"
-            >
-              <SearchField.Group className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 shadow-none">
-                <SearchField.SearchIcon className="text-[var(--muted)]" />
-                <SearchField.Input
-                  placeholder="Search everything"
-                  className="text-base text-[var(--ink)] placeholder:text-[var(--muted)] sm:text-sm"
+          <FilterBar
+            filters={filters}
+            update={update}
+            onSaveView={saveView}
+            canSaveView={urlQuery.length > 0}
+            showMore={showMoreFilters}
+            onToggleMore={() => setShowMoreFilters((value) => !value)}
+          />
+
+          {/* The remaining filters, revealed by "Add filter". Search, Title, Location and Date live in
+              the bar above; everything else stays hidden until asked for. */}
+          {showMoreFilters && (
+            <>
+              <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                <FilterSelect
+                  label="Role"
+                  value={filters.roleFamily}
+                  options={roleOptions}
+                  onChange={(value) => update({ roleFamily: value })}
                 />
-                <SearchField.ClearButton aria-label="Clear job search" />
-              </SearchField.Group>
-            </SearchField>
+                <FilterSelect
+                  label="Industry"
+                  value={filters.industry}
+                  options={industryOptions}
+                  onChange={(value) => update({ industry: value })}
+                />
+                <TextField aria-label="Filter by company name" fullWidth className="min-w-0">
+                  <Input
+                    value={filters.company}
+                    onChange={(event) => update({ company: event.target.value })}
+                    placeholder="Company name"
+                    className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
+                  />
+                </TextField>
+                {/* Type-to-search over the full country list (~200 options is unwieldy as a plain dropdown). */}
+                <SearchSelect
+                  label="Country"
+                  placeholder="Country"
+                  options={countrySelectOptions}
+                  value={filters.country}
+                  onSelect={(value) => update({ country: value })}
+                />
+                {/* Exact city select; the free-text region search is the Location field in the bar. */}
+                <SearchSelect
+                  label="City"
+                  placeholder="City"
+                  options={cityOptions}
+                  value={filters.city}
+                  onSelect={(value) => update({ city: value, location: "" })}
+                  freeText={filters.location}
+                  onFreeText={(text) => update({ location: text, city: "" })}
+                />
+              </div>
 
-            <FilterSelect
-              label="Role"
-              value={filters.roleFamily}
-              options={roleOptions}
-              onChange={(value) => update({ roleFamily: value })}
-            />
+              <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-3">
+                <MultiSelect
+                  label="Workplace"
+                  options={workplaceOptions}
+                  selected={filters.workplace}
+                  onToggle={(value) => toggle("workplace", value)}
+                />
+                <MultiSelect
+                  label="Employment"
+                  options={employmentOptions}
+                  selected={filters.employmentType}
+                  onToggle={(value) => toggle("employmentType", value)}
+                />
+                <MultiSelect
+                  label="ATS"
+                  options={sourceOptions}
+                  selected={filters.source}
+                  onToggle={(value) => toggle("source", value)}
+                  withIcons
+                />
+              </div>
 
-            <FilterSelect
-              label="Industry"
-              value={filters.industry}
-              options={industryOptions}
-              onChange={(value) => update({ industry: value })}
-            />
+              {activeChips.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
+                  <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
+                  {activeChips.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={chip.clear}
+                      className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                      aria-label={`Remove filter ${chip.label}`}
+                    >
+                      {chip.label}
+                      <span aria-hidden="true" className="text-[var(--muted)]">×</span>
+                    </button>
+                  ))}
+                  <Button
+                    variant="secondary"
+                    className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
+                    onPress={() => setFilters(emptyFilters)}
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              )}
 
-            <TitleCombobox
-              value={filters.title}
-              onChange={(value) => update({ title: value })}
-            />
-
-            <TextField aria-label="Filter by company name" fullWidth className="min-w-0">
-              <Input
-                value={filters.company}
-                onChange={(event) => update({ company: event.target.value })}
-                placeholder="Company name"
-                className="min-h-11 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] shadow-none placeholder:text-[var(--muted)] sm:text-sm"
-              />
-            </TextField>
-
-            {/* Type-to-search over the full country list (~200 options is unwieldy as a plain dropdown). */}
-            <SearchSelect
-              label="Country"
-              placeholder="Country"
-              options={countrySelectOptions}
-              value={filters.country}
-              onSelect={(value) => update({ country: value })}
-            />
-
-            {/* Combined city control: search the known-cities list and pick one for an exact match, or
-                type a free region string. Picking clears the free text and vice versa. */}
-            <SearchSelect
-              label="City or region"
-              placeholder="City or region"
-              options={cityOptions}
-              value={filters.city}
-              onSelect={(value) => update({ city: value, location: "" })}
-              freeText={filters.location}
-              onFreeText={(text) => update({ location: text, city: "" })}
-            />
-
-            <FilterSelect
-              label="Date posted"
-              value={filters.postedWithin}
-              options={postedWithinOptions}
-              onChange={(value) => update({ postedWithin: value })}
-            />
-          </div>
-
-          <div className="mt-3 grid gap-2.5 border-t border-black/6 pt-3 lg:grid-cols-2 xl:grid-cols-3">
-            <MultiSelect
-              label="Workplace"
-              options={workplaceOptions}
-              selected={filters.workplace}
-              onToggle={(value) => toggle("workplace", value)}
-            />
-            <MultiSelect
-              label="Employment"
-              options={employmentOptions}
-              selected={filters.employmentType}
-              onToggle={(value) => toggle("employmentType", value)}
-            />
-            <MultiSelect
-              label="ATS"
-              options={sourceOptions}
-              selected={filters.source}
-              onToggle={(value) => toggle("source", value)}
-              withIcons
-            />
-          </div>
-
-          {activeChips.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
-              <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
-              {activeChips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={chip.clear}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-                  aria-label={`Remove filter ${chip.label}`}
-                >
-                  {chip.label}
-                  <span aria-hidden="true" className="text-[var(--muted)]">×</span>
-                </button>
-              ))}
-              <Button
-                variant="secondary"
-                className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
-                onPress={() => setFilters(emptyFilters)}
-              >
-                Clear all
-              </Button>
-            </div>
+              <div className="mt-3 border-t border-black/6 pt-3">
+                <ViewsToolbar
+                  savedViews={savedViews}
+                  currentQuery={urlQuery}
+                  onSaveView={saveView}
+                  onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
+                  onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
+                  watchlistCount={watchlist.length}
+                  watchlistOnly={watchlistActive}
+                  onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
+                  showSave={false}
+                />
+              </div>
+            </>
           )}
         </div>
-
-        <ViewsToolbar
-          savedViews={savedViews}
-          currentQuery={urlQuery}
-          onSaveView={saveView}
-          onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
-          onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
-          watchlistCount={watchlist.length}
-          watchlistOnly={watchlistActive}
-          onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
-        />
 
         <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
@@ -603,6 +589,132 @@ export function JobsExplorer({
   );
 }
 
+// Small line icons for the compact filter bar (16px, currentColor stroke), matching the design's
+// monochrome glyphs without pulling in an icon dependency.
+function LineIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="size-4 shrink-0 text-[var(--muted)]"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+const IconSearch = () => <LineIcon><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" /></LineIcon>;
+const IconTitle = () => <LineIcon><circle cx="8" cy="5" r="2.5" /><path d="M3.5 13c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5" /></LineIcon>;
+const IconPin = () => <LineIcon><path d="M8 14s4.5-4 4.5-7A4.5 4.5 0 0 0 3.5 7c0 3 4.5 7 4.5 7Z" /><circle cx="8" cy="6.8" r="1.6" /></LineIcon>;
+const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
+
+// The compact single-row filter bar from the design: a segmented Search / Title / Location / Add
+// filter control on the left, and Date + Save view on the right. The remaining filters live behind
+// "Add filter"; this bar is wired to the same filter state as the full panel.
+function FilterBar({
+  filters,
+  update,
+  onSaveView,
+  canSaveView,
+  showMore,
+  onToggleMore,
+}: {
+  filters: Filters;
+  update: (patch: Partial<Filters>) => void;
+  onSaveView: (name: string) => void;
+  canSaveView: boolean;
+  showMore: boolean;
+  onToggleMore: () => void;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [viewName, setViewName] = useState("");
+  function commitSave() {
+    onSaveView(viewName);
+    setViewName("");
+    setNaming(false);
+  }
+  const segment = "flex shrink-0 items-center gap-1.5 border-s border-[var(--border)] ps-3 pe-2";
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Left: one segmented, bordered bar */}
+      <div className="flex min-h-11 min-w-0 flex-1 items-center rounded-xl border border-[var(--border)] bg-[var(--control)]">
+        <label className="flex min-w-0 flex-1 items-center gap-2 ps-3.5 pe-2">
+          <IconSearch />
+          <input
+            aria-label="Search all job text"
+            value={filters.search}
+            onChange={(event) => update({ search: event.target.value })}
+            placeholder="Search"
+            className="w-full min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:text-sm"
+          />
+        </label>
+        <div className={segment}>
+          <IconTitle />
+          <TitleCombobox bare placeholder="Title" value={filters.title} onChange={(value) => update({ title: value })} />
+        </div>
+        <label className={segment}>
+          <IconPin />
+          <input
+            aria-label="Filter by location"
+            value={filters.location}
+            onChange={(event) => update({ location: event.target.value, city: "" })}
+            placeholder="Location"
+            className="w-24 min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:w-28 sm:text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onToggleMore}
+          aria-expanded={showMore}
+          className="flex shrink-0 items-center gap-1 border-s border-[var(--border)] px-3.5 text-sm font-medium text-[var(--muted-strong)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          <IconPlus /> Add filter
+        </button>
+      </div>
+
+      {/* Right: date + save view */}
+      <div className="w-full sm:w-44">
+        <FilterSelect
+          label="Date posted"
+          value={filters.postedWithin}
+          options={postedWithinOptions}
+          onChange={(value) => update({ postedWithin: value })}
+        />
+      </div>
+      {naming ? (
+        <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
+          <TextField aria-label="Name this view" autoFocus>
+            <Input
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+              onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
+              onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
+              placeholder="View name"
+              maxLength={40}
+              className="min-h-11 w-36 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </TextField>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNaming(true)}
+          disabled={!canSaveView}
+          title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-sm font-medium text-[var(--muted-strong)] transition-colors duration-150 enabled:hover:bg-[var(--control-hover)] enabled:hover:text-[var(--ink)] disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          <IconPlus /> Save view
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Saved views (recall a whole filter set by name) and the company watchlist toggle. Both are
 // device-local conveniences, kept in one slim toolbar above the results.
 function ViewsToolbar({
@@ -614,6 +726,7 @@ function ViewsToolbar({
   watchlistCount,
   watchlistOnly,
   onToggleWatchlistOnly,
+  showSave = true,
 }: {
   savedViews: SavedView[];
   currentQuery: string;
@@ -623,6 +736,8 @@ function ViewsToolbar({
   watchlistCount: number;
   watchlistOnly: boolean;
   onToggleWatchlistOnly: () => void;
+  // The compact filter bar already owns "Save view"; hide it here to avoid two save controls.
+  showSave?: boolean;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
@@ -680,7 +795,7 @@ function ViewsToolbar({
         </span>
       ))}
 
-      {naming ? (
+      {showSave && (naming ? (
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -710,7 +825,7 @@ function ViewsToolbar({
         >
           <span aria-hidden="true">＋</span> Save view
         </button>
-      )}
+      ))}
     </div>
   );
 }
@@ -1169,7 +1284,18 @@ function CompanyLogo({ job }: { job: Job }) {
 // Typeahead over real job titles. The role dropdown above filters by family (29 buckets); this
 // completes the exact ~99,000 titles that actually exist, so a search cannot be typed for a title
 // the index does not contain.
-function TitleCombobox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function TitleCombobox({
+  value,
+  onChange,
+  bare = false,
+  placeholder = "Role title",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  // `bare` drops the input's own border/height so it can sit inside the segmented filter bar.
+  bare?: boolean;
+  placeholder?: string;
+}) {
   const [suggestions, setSuggestions] = useState<{ title: string; jobCount: number }[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
@@ -1246,21 +1372,27 @@ function TitleCombobox({ value, onChange }: { value: string; onChange: (value: s
         // Blur is delayed so a click on a suggestion lands before the list unmounts.
         onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
         onKeyDown={onKeyDown}
-        placeholder="Role title"
+        placeholder={placeholder}
         autoComplete="off"
         role="combobox"
         aria-expanded={showList}
         aria-controls="role-title-listbox"
         aria-autocomplete="list"
         aria-activedescendant={highlighted >= 0 ? `role-title-option-${highlighted}` : undefined}
-        className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+        className={
+          bare
+            ? "w-24 min-w-0 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted)] sm:w-28 sm:text-sm"
+            : "min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--control)] px-3.5 text-base text-[var(--ink)] outline-none shadow-none transition-[box-shadow,background-color] duration-150 placeholder:text-[var(--muted)] hover:bg-[var(--control-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus)] sm:text-sm"
+        }
       />
 
       {showList && (
         <ul
           id="role-title-listbox"
           role="listbox"
-          className="absolute inset-x-0 top-[calc(100%+4px)] z-20 max-h-72 overflow-auto rounded-xl bg-white py-1 shadow-[var(--shadow-panel)] outline outline-1 -outline-offset-1 outline-black/10"
+          className={`absolute top-[calc(100%+8px)] z-20 max-h-72 overflow-auto rounded-xl bg-white py-1 shadow-[var(--shadow-panel)] outline outline-1 -outline-offset-1 outline-black/10 ${
+            bare ? "left-0 w-[260px]" : "inset-x-0"
+          }`}
         >
           {suggestions.map((suggestion, index) => (
             <li key={suggestion.title} id={`role-title-option-${index}`} role="option" aria-selected={index === highlighted}>
