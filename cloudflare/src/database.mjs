@@ -321,11 +321,16 @@ function compactJob(job) {
     workplace: job.workplace ?? "Unspecified",
     employmentType: job.employmentType ?? null,
     category: job.category ?? "Other",
-    publishedAt: job.publishedAt ?? null,
     url: job.url,
   };
   return {
     ...values,
+    publishedAt: job.publishedAt ?? null,
+    // publishedAt is deliberately NOT part of the fingerprint. Workday only publishes relative
+    // dates ("Posted 3 Days Ago"), so the derived absolute date drifts on every refresh; with it
+    // in the hash, every Workday job rewrote twice a day -- 5.6M of the 6M daily row writes, the
+    // dominant D1 cost. A date-only drift changes nothing user-meaningful; any real edit still
+    // differs in some other field, and that update carries the fresh publishedAt with it.
     fingerprint: createHash("sha256").update(JSON.stringify(values)).digest("hex"),
   };
 }
