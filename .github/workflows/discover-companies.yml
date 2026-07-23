@@ -87,3 +87,13 @@ jobs:
           git commit -m "Refresh ATS company registry"
           git pull --rebase origin main
           git push origin HEAD:main
+
+      # Committing alone only updates git: production D1 received boards exactly once, at
+      # provisioning, and every later harvest sat invisible in the repo. This pushes each week's
+      # registry into the Worker; the upsert ignores boards that already exist, so re-sending the
+      # full file costs one request per 2,000 rows and only new boards get queued for a crawl.
+      - name: Import the registry into production
+        env:
+          ADMIN_IMPORT_URL: ${{ secrets.ADMIN_IMPORT_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: node cloudflare/scripts/import-boards.mjs data/discovered-boards.json
