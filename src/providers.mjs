@@ -57,8 +57,11 @@ const PROVIDERS = {
         return null;
       }
 
-      const identifier = firstPathSegment(url);
-      if (!isSharedHostIdentifier(identifier) || GREENHOUSE_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
+      // Greenhouse board tokens are case-insensitive, so "/Unframe" and "/unframe" are the same board.
+      // Canonicalise to lowercase so Common Crawl finding both spellings does not create two boards
+      // (and two of every job). iCIMS already does the same for the same reason.
+      const identifier = firstPathSegment(url).toLowerCase();
+      if (!isSharedHostIdentifier(identifier) || GREENHOUSE_RESERVED_PATHS.has(identifier)) return null;
 
       return board({
         provider: "greenhouse",
@@ -225,7 +228,8 @@ const PROVIDERS = {
       if (!isSharedHostIdentifier(identifier) || RIPPLING_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
       return board({
         provider: "rippling",
-        identifier,
+        // Case-insensitive board slug; lowercase so mixed-case spellings collapse to one board.
+        identifier: identifier.toLowerCase(),
         region: "global",
         boardUrl: `https://ats.rippling.com/${encodeURIComponent(identifier)}/jobs`,
         apiUrl: `https://api.rippling.com/platform/api/ats/v1/board/${encodeURIComponent(identifier)}/jobs`,
@@ -252,7 +256,8 @@ const PROVIDERS = {
       if (!isSharedHostIdentifier(identifier) || SMARTRECRUITERS_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
       return board({
         provider: "smartrecruiters",
-        identifier,
+        // Case-insensitive company slug; lowercase so mixed-case spellings collapse to one board.
+        identifier: identifier.toLowerCase(),
         region: "global",
         boardUrl: `https://jobs.smartrecruiters.com/${encodeURIComponent(identifier)}`,
         apiUrl: `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(identifier)}/postings`,
