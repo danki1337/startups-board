@@ -29,6 +29,22 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
+// A short "3h ago" / "20m ago" label for freshly posted roles; null once a posting is a week old, so
+// the caller falls back to the absolute date. Only used for real publish timestamps — synthesised
+// fallback dates keep the calendar date.
+function relativePosted(date: Date, now: number): string | null {
+  const diffMs = now - date.getTime();
+  if (diffMs < 0) return null; // clock skew / future date -> show the date instead
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return null;
+}
+
 const employmentOptions = ["Full time", "Part time", "Contract", "Internship", "Temporary"];
 const postedWithinOptions = [
   { label: "Any time", value: "" },
@@ -175,6 +191,9 @@ export function JobsExplorer({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
+  // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
+  // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
+  const [now, setNow] = useState(0);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -242,6 +261,7 @@ export function JobsExplorer({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
+    setNow(Date.now());
     storageHydrated.current = true;
   }, []);
 
@@ -552,6 +572,7 @@ export function JobsExplorer({
                   onFilter={update}
                   isWatched={watchlistSet.has(job.company)}
                   onToggleWatch={toggleWatch}
+                  now={now}
                 />
               )}
               fixedItemHeight={72}
@@ -994,16 +1015,21 @@ function JobCells({
   onFilter,
   isWatched,
   onToggleWatch,
+  now,
 }: {
   job: Job;
   onFilter: (patch: Partial<Filters>) => void;
   isWatched: boolean;
   onToggleWatch: (company: string) => void;
+  now: number;
 }) {
   const postedDate = job.publishedAt ? new Date(job.publishedAt) : new Date(referenceDate);
   if (!job.publishedAt) {
     postedDate.setUTCDate(referenceDate.getUTCDate() - Math.max(0, (job.postedDaysAgo ?? 1) - 1));
   }
+  // Relative label only for real timestamps, and only once `now` is set on the client (0 during SSR
+  // -> null -> the absolute date renders, matching the server markup).
+  const relative = job.publishedAt && now ? relativePosted(postedDate, now) : null;
 
   return (
     <>
@@ -1070,7 +1096,15 @@ function JobCells({
         </Chip>
       </td>
       <td className="whitespace-nowrap px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
-        <time dateTime={postedDate.toISOString().slice(0, 10)}>{dateFormatter.format(postedDate)}</time>
+        {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
+            client can legitimately render a slightly different string. title keeps the exact date. */}
+        <time
+          dateTime={postedDate.toISOString().slice(0, 10)}
+          title={dateFormatter.format(postedDate)}
+          suppressHydrationWarning
+        >
+          {relative ?? dateFormatter.format(postedDate)}
+        </time>
       </td>
       <td className="whitespace-nowrap px-5 py-3.5 text-end">
         <a
