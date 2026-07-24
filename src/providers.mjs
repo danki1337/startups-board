@@ -566,6 +566,51 @@ export function parseAtsUrl(value, providerHint) {
   return null;
 }
 
+// A Getro (or any portfolio aggregator) board re-lists a company's jobs that also live on the
+// company's own ATS board, linking straight to that native job URL. This pulls the *target* ATS
+// identity out of such a URL so ingestion can suppress the aggregator copy when the native posting
+// already exists. Two shapes are returned:
+//   { provider, sourceId } — the target's globally-unique job id (Greenhouse/Ashby/Lever/SR), so a
+//     board-slug rebrand or a host/casing difference still matches on id alone; and
+//   { key }                — Workday only, whose req ids repeat across tenants, so the full native
+//     job key (tenant|wdN|site + id) is the safe match. parseAtsUrl already folds every Workday URL
+//     family (host-based, path-based, localized) into the same board key the native crawler stores.
+// Returns null for career-site URLs we do not crawl natively (Amazon, Apple, ...), which are
+// therefore unique to the aggregator and must be kept.
+export function aggregatorJobIdentity(value) {
+  const url = safeUrl(value);
+  if (!url) return null;
+  const host = url.hostname.toLowerCase();
+  const segments = url.pathname.split("/").filter(Boolean);
+
+  if (host === "boards.greenhouse.io" || host === "job-boards.greenhouse.io") {
+    const jobsIndex = segments.indexOf("jobs");
+    const sourceId = jobsIndex >= 0 ? segments[jobsIndex + 1] : null;
+    return sourceId ? { provider: "greenhouse", sourceId } : null;
+  }
+  // {org}/{jobId}[/application] — the id sits right after the org, not at the path tail.
+  if (host === "jobs.ashbyhq.com" && segments.length >= 2) {
+    return { provider: "ashby", sourceId: segments[1] };
+  }
+  if ((host === "jobs.lever.co" || host === "jobs.eu.lever.co") && segments.length >= 2) {
+    return { provider: "lever", sourceId: segments[1] };
+  }
+  // {company}/{id}[-title-slug] — the native source_id is the leading numeric run.
+  if (host === "jobs.smartrecruiters.com" && segments.length >= 2) {
+    const digits = /^\d+/.exec(segments[1]);
+    return digits ? { provider: "smartrecruiters", sourceId: digits[0] } : null;
+  }
+  if (/(^|\.)myworkdayjobs\.com$/.test(host) || /(^|\.)myworkdaysite\.com$/.test(host)) {
+    // Only a specific posting (…/job/…) is a duplicate; bare career/board pages are not.
+    if (!segments.includes("job")) return null;
+    const board = parseAtsUrl(value, "workday");
+    const sourceId = segments.at(-1);
+    return board && sourceId ? { key: `${board.key}:${sourceId}` } : null;
+  }
+
+  return null;
+}
+
 async function fetchLeverJobs(candidate, request) {
   const jobs = [];
 

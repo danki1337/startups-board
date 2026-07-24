@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseAtsUrl } from "../src/providers.mjs";
+import { aggregatorJobIdentity, parseAtsUrl } from "../src/providers.mjs";
 
 test("parses a global Lever job URL without lowercasing the site identifier", () => {
   const result = parseAtsUrl("https://jobs.lever.co/AcmeCo/2b319d7a");
@@ -130,4 +130,47 @@ test("rejects unrelated and provider system URLs", () => {
   assert.equal(parseAtsUrl("https://jobs.gem.com/robots.txt"), null);
   assert.equal(parseAtsUrl("https://www.getro.com/jobs"), null);
   assert.equal(parseAtsUrl("not a URL"), null);
+});
+
+test("maps aggregator target URLs to the native ATS job identity", () => {
+  // Greenhouse/Ashby/Lever/SmartRecruiters match on the globally-unique id extracted from the URL,
+  // which equals the native source_id even when the board slug or its casing was rebranded.
+  assert.deepEqual(
+    aggregatorJobIdentity("https://boards.greenhouse.io/star-catcher/jobs/4326578009"),
+    { provider: "greenhouse", sourceId: "4326578009" },
+  );
+  assert.deepEqual(
+    aggregatorJobIdentity("https://job-boards.greenhouse.io/capco/jobs/8038012?gh_jid=8038012"),
+    { provider: "greenhouse", sourceId: "8038012" },
+  );
+  assert.deepEqual(
+    aggregatorJobIdentity("https://jobs.ashbyhq.com/ostrom/7b54377b-d5de-4d3c-83e7-c507995f8dbf"),
+    { provider: "ashby", sourceId: "7b54377b-d5de-4d3c-83e7-c507995f8dbf" },
+  );
+  assert.deepEqual(
+    aggregatorJobIdentity("https://jobs.ashbyhq.com/ostrom/7b54377b/application"),
+    { provider: "ashby", sourceId: "7b54377b" },
+  );
+  assert.deepEqual(
+    aggregatorJobIdentity("https://jobs.lever.co/palantir/67110929-adea-41c3-851a-8882e222d9e4"),
+    { provider: "lever", sourceId: "67110929-adea-41c3-851a-8882e222d9e4" },
+  );
+  assert.deepEqual(
+    aggregatorJobIdentity("https://jobs.smartrecruiters.com/WesternDigital/744000139130068-lead"),
+    { provider: "smartrecruiters", sourceId: "744000139130068" },
+  );
+
+  // Workday req ids repeat across tenants, so the whole native key is returned and it must equal
+  // the key the native crawler builds for the same posting.
+  const workday = aggregatorJobIdentity(
+    "https://adobe.wd5.myworkdayjobs.com/external_experienced/job/New-York/Product-Security-Engineer_R168782",
+  );
+  const nativeBoard = parseAtsUrl("https://adobe.wd5.myworkdayjobs.com/external_experienced");
+  assert.equal(workday.key, `${nativeBoard.key}:Product-Security-Engineer_R168782`);
+
+  // Career sites we do not crawl, board/landing pages, and junk stay unique to the aggregator.
+  assert.equal(aggregatorJobIdentity("https://www.amazon.jobs/en/jobs/123/swe"), null);
+  assert.equal(aggregatorJobIdentity("https://boards.greenhouse.io/star-catcher"), null);
+  assert.equal(aggregatorJobIdentity("https://adobe.wd5.myworkdayjobs.com/external_experienced"), null);
+  assert.equal(aggregatorJobIdentity("not a URL"), null);
 });

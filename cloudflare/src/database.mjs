@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
+import { aggregatorJobIdentity } from "../../src/providers.mjs";
 import { nextSyncAt } from "./config.mjs";
+
+// Providers that re-list other boards' jobs rather than hosting their own, so their snapshots are
+// deduplicated against the native postings at ingestion.
+const AGGREGATOR_PROVIDERS = new Set(["getro"]);
+// D1 rejects a query with more than 100 bound parameters, so IN(...) probes chunk below this.
+const D1_MAX_BIND = 100;
 
 export async function enqueueDueBoards(env, options = {}) {
   const now = options.now ?? new Date().toISOString();
@@ -66,7 +73,15 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   const currentBySourceId = new Map(
     (currentResult.results ?? []).map((job) => [String(job.sourceId), job]),
   );
-  const incoming = result.jobs.map(compactJob);
+  let incoming = result.jobs.map(compactJob);
+  // A Getro board re-lists jobs that also live on the company's own ATS board (Greenhouse, Ashby,
+  // Workday, ...). Drop those whose native posting already exists so we don't show the same job
+  // twice. Dropping them from `incoming` (rather than writing them inactive) means an already-open
+  // duplicate lands in keysToClose and any that reappear on later crawls are simply never
+  // reactivated -- so the suppression sticks with zero write churn.
+  if (AGGREGATOR_PROVIDERS.has(board.provider)) {
+    incoming = await suppressDuplicatedAggregatorJobs(db, incoming);
+  }
   const companyName = incoming.find((job) => job.companyName)?.companyName ?? null;
   // A logo can come from the job payload (Getro, Spark Hire), from a constructible tenant URL
   // (Workday), or from scraping the board page (resolved upstream and passed in on the result).
@@ -191,6 +206,59 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   ]);
 
   return { runId, changedJobs, closedJobs, retry: false };
+}
+
+// Returns the aggregator's incoming jobs minus any whose native ATS twin is already active. Each
+// job's URL points at the underlying posting; aggregatorJobIdentity turns that into either a
+// (provider, source_id) probe -- matched via the jobs(provider, source_id) index -- or, for
+// Workday whose req ids repeat across tenants, the exact native job key (a primary-key lookup).
+export async function suppressDuplicatedAggregatorJobs(db, incoming) {
+  const identities = incoming.map((job) => aggregatorJobIdentity(job.url));
+
+  // (provider, source_id) probes, grouped by provider so each native ATS is one batched seek.
+  const sourceIdsByProvider = new Map();
+  // Full native job keys (Workday), matched by primary key.
+  const keys = new Set();
+  for (const identity of identities) {
+    if (!identity) continue;
+    if (identity.key) {
+      keys.add(identity.key);
+    } else {
+      if (!sourceIdsByProvider.has(identity.provider)) sourceIdsByProvider.set(identity.provider, new Set());
+      sourceIdsByProvider.get(identity.provider).add(identity.sourceId);
+    }
+  }
+
+  const activeSourceIds = new Map(); // provider -> Set of source_ids that exist as active natives
+  for (const [provider, ids] of sourceIdsByProvider) {
+    const found = new Set();
+    // D1 caps a query at 100 bound parameters; the leading provider bind leaves room for 99 ids.
+    for (const group of chunks([...ids], D1_MAX_BIND - 1)) {
+      const placeholders = group.map(() => "?").join(",");
+      const rows = await db.prepare(`
+        SELECT source_id AS sourceId FROM jobs
+        WHERE provider = ? AND is_active = 1 AND source_id IN (${placeholders})
+      `).bind(provider, ...group).all();
+      for (const row of rows.results ?? []) found.add(String(row.sourceId));
+    }
+    activeSourceIds.set(provider, found);
+  }
+
+  const activeKeys = new Set();
+  for (const group of chunks([...keys], D1_MAX_BIND)) {
+    const placeholders = group.map(() => "?").join(",");
+    const rows = await db.prepare(`
+      SELECT key FROM jobs WHERE is_active = 1 AND key IN (${placeholders})
+    `).bind(...group).all();
+    for (const row of rows.results ?? []) activeKeys.add(String(row.key));
+  }
+
+  return incoming.filter((_, index) => {
+    const identity = identities[index];
+    if (!identity) return true;
+    if (identity.key) return !activeKeys.has(identity.key);
+    return !activeSourceIds.get(identity.provider)?.has(identity.sourceId);
+  });
 }
 
 async function recordBoardFailure(db, board, runId) {
