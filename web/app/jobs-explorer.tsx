@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input, TextField } from "@heroui/react";
-import { TableVirtuoso, type TableComponents } from "react-virtuoso";
+import { TableVirtuoso, type TableComponents, type VirtuosoHandle } from "react-virtuoso";
 import {
   sourceOptions,
   workplaceOptions,
@@ -135,13 +135,20 @@ const emptyFilters: Filters = {
 
 function filtersFromSearchParams(query: string): Filters {
   const params = new URLSearchParams(query);
-  const list = (key: string) => (params.get(key) ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+  // De-duplicated: a hand-edited or double-appended "?industry=A,A" used to yield two chips with
+  // the same React key, which collides in the list and makes removing one remove both.
+  const list = (key: string) => [
+    ...new Set((params.get(key) ?? "").split(",").map((v) => v.trim()).filter(Boolean)),
+  ];
   return {
     search: params.get("search") ?? "",
     title: params.get("title") ?? "",
     location: params.get("location") ?? "",
     company: params.get("company") ?? "",
-    country: params.get("country") ?? "",
+    // "anywhere" was a value the chip row rendered but the Country list had no option for, so it
+    // showed as an active filter the dropdown reported as unset and only the chip could clear. It
+    // means "no country filter", so it is normalised away on the way in.
+    country: (params.get("country") ?? "") === "anywhere" ? "" : params.get("country") ?? "",
     city: list("city"),
     roleFamily: params.get("roleFamily") ?? "",
     industry: list("industry"),
@@ -153,6 +160,13 @@ function filtersFromSearchParams(query: string): Filters {
     watchlistOnly: params.get("watchlist") === "1",
   };
 }
+
+// The query keys this page owns. Anything else in the URL belongs to whoever linked here and is
+// preserved verbatim.
+const FILTER_PARAM_KEYS = [
+  "search", "title", "location", "company", "country", "city", "roleFamily", "industry",
+  "workplace", "provider", "employmentType", "postedWithin", "sort", "watchlist",
+];
 
 function filtersToSearchParams(filters: Filters) {
   const params = new URLSearchParams();
@@ -253,6 +267,11 @@ export function JobsExplorer({
   // The filter query a response must still match to be applied, so an in-flight page that a filter
   // change has superseded is discarded rather than merged into the new result set.
   const queryRef = useRef("");
+  // The virtualizer keeps its scroll offset when the data underneath it changes, so applying a
+  // filter while scrolled to row 250 dropped the user into the middle of the new 100-row set -- or
+  // at its end, which immediately fired endReached and auto-paged. It reads as "the filter did
+  // nothing". Reset to the top whenever a new result set replaces the old one.
+  const tableRef = useRef<VirtuosoHandle>(null);
 
   const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
 
@@ -322,7 +341,13 @@ export function JobsExplorer({
   // Refetch page one whenever the filters change, and mirror them into the URL so a filtered view
   // is shareable and survives reload.
   useEffect(() => {
-    const nextUrl = `${window.location.pathname}${urlQuery ? `?${urlQuery}` : ""}`;
+    // Carry through anything the filter model does not own -- campaign tags, referrers -- instead of
+    // erasing it from the address bar the moment the page hydrates.
+    const merged = new URLSearchParams(window.location.search);
+    for (const key of FILTER_PARAM_KEYS) merged.delete(key);
+    for (const [key, value] of new URLSearchParams(urlQuery)) merged.set(key, value);
+    const mergedQuery = merged.toString();
+    const nextUrl = `${window.location.pathname}${mergedQuery ? `?${mergedQuery}` : ""}`;
     window.history.replaceState(null, "", nextUrl);
     queryRef.current = queryString;
     // A paging failure belongs to the result set it happened in. Left uncleared it was sticky for
@@ -368,6 +393,7 @@ export function JobsExplorer({
         setCorrectedTo(payload.correctedTo ?? null);
         setCursor(payload.nextCursor);
         setError(null);
+        tableRef.current?.scrollToIndex({ index: 0 });
       } catch (caught) {
         // An abort is this effect superseding itself, not a failure -- leave the state alone so the
         // newer request owns it.
@@ -492,6 +518,7 @@ export function JobsExplorer({
         </div>
         <div className="t-skel-content">
           <TableVirtuoso
+            ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
             className="jobs-table-scroll bg-white"
             style={{ height: "100%" }}
@@ -740,19 +767,25 @@ function SearchCheckList({
 function TitleCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [query, setQuery] = useState(value);
   const [suggestions, setSuggestions] = useState<{ title: string; jobCount: number }[]>([]);
+  // A down titles endpoint used to render exactly the same "No matching titles" as a genuine
+  // zero-result query, so a broken lookup was indistinguishable from an empty one.
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
 
   useEffect(() => {
     const term = query.trim();
     const controller = new AbortController();
+    setState("loading");
     // An empty query fetches the most common titles, so the dropdown opens on a starting list.
     const timer = window.setTimeout(async () => {
       try {
         const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}&limit=${TITLE_SUGGESTION_LIMIT}`, { signal: controller.signal });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(`Titles API returned ${response.status}`);
         const payload = (await response.json()) as { titles: { title: string; jobCount: number }[] };
         setSuggestions(payload.titles ?? []);
-      } catch {
-        // A failed lookup just means no suggestions.
+        setState("ready");
+      } catch (caught) {
+        if ((caught as Error).name === "AbortError") return;
+        setState("failed");
       }
     }, 160);
     return () => {
@@ -793,7 +826,9 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
         })}
         {rows.length === 0 && (
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
-            {query.trim().length < 2 ? "Type to search job titles" : "No matching titles"}
+            {state === "loading" ? "Loading titles…"
+              : state === "failed" ? "Couldn't load titles. Type a title to filter by it anyway."
+              : "No matching titles"}
           </p>
         )}
       </ScrollShadow>

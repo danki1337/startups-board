@@ -14,8 +14,6 @@ node_modules/
 web/app/_icloud-conflicts/
 web/tsconfig.tsbuildinfo
 web/.openai/
-web/db/schema 2.ts
-web/tests/rendered-html.test 2.mjs
 .claude/settings.local.json
 test/_icloud-conflicts/
 .claude/

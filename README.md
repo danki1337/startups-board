@@ -90,13 +90,16 @@ The production path separates short web requests from long ATS crawls:
 
 1. Cloudflare Sites hosts the frontend, the read API, and a protected ingestion
    route. Its D1 database stores compact current-job rows and board state.
-2. `.github/workflows/refresh-jobs.yml` runs daily, fetches every known public ATS
-   board, and uploads each completed board immediately. A failed run can resume
-   on the next schedule without constructing a giant in-memory payload.
+2. Refreshes run from the Worker itself, not from CI: a `*/15` cron claims the
+   boards whose `next_sync_at` has passed and fans them out to per-provider
+   queues, so a slow ATS cannot hold up the rest. Active boards come back every
+   12 hours.
 3. `.github/workflows/discover-companies.yml` runs weekly, samples unseen Common
    Crawl index pages, and commits the expanded independent company registry.
-4. A successful empty/active board snapshot closes listings absent from that
-   board. A failed snapshot never closes existing jobs.
+4. `.github/workflows/ci.yml` builds and tests on every push and pull request.
+5. Only a successful snapshot closes listings absent from that board. A failed
+   one -- including a response that is not a job list -- never closes anything;
+   see `INVALID_CLOSE_STRIKES` in `cloudflare/src/config.mjs`.
 
 Full job descriptions remain in the optional local SQLite history, not in D1.
 The hosted database retains the fields needed for search, filters, sorting, and
@@ -104,17 +107,15 @@ the original application link. This is important because the current local
 database is about 692 MB, mostly description text, while D1's free per-database
 limit is 500 MB.
 
-After pushing this repository to GitHub, add these repository Actions secrets:
+The discovery workflow imports what it finds through the admin API, so add
+these repository Actions secrets:
 
-- `REMOTE_SYNC_URL`: `https://YOUR-SITE/api/internal/sync`
-- `REMOTE_SYNC_TOKEN`: the same random value configured as the Sites runtime
-  secret `SYNC_TOKEN`
-- `REMOTE_SITES_TOKEN`: the Sites bypass token, required while the deployed site
-  remains owner-only
+- `ADMIN_IMPORT_URL`: `https://YOUR-WORKER/api/internal/admin/import-boards`
+- `ADMIN_TOKEN`: the same value configured as the Worker secret `ADMIN_TOKEN`
 
-Then run **Refresh hosted jobs** once with a small `sync_limit` such as `25`.
-When that succeeds, run it without a limit for the initial import. Subsequent
-runs write only new, changed, reopened, or closed jobs.
+Deploy with `npm run cloudflare:deploy`, which builds the frontend first --
+wrangler uploads `web/dist` directly, so deploying without a build silently
+re-ships the previous artifact.
 
 ### Expected hosting cost
 

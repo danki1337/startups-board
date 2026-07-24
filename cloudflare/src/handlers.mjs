@@ -13,6 +13,7 @@ import {
   pruneFailedTasks,
   pruneSyncRuns,
   reconcileFailedTasks,
+  reconcileStuckSyncRuns,
   reconcileProviderHealth,
   refreshTitleSuggestions,
   releaseBoards,
@@ -35,6 +36,7 @@ export async function scheduled(controller, env, ctx) {
       reconcileProviderHealth(env.DB, dailyAt),
       pruneSyncRuns(env.DB, dailyAt),
       reconcileFailedTasks(env.DB, dailyAt),
+      reconcileStuckSyncRuns(env.DB, dailyAt),
       pruneFailedTasks(env.DB, dailyAt),
       refreshTitleSuggestions(env.DB, dailyAt),
     );
@@ -64,7 +66,9 @@ export async function queue(batch, env) {
       if (message.body?.type === "discovery") {
         await processDiscoveryTask(env, message.body);
       } else {
-        await processBoardTask(env, message.body);
+        // Only the first delivery advances the board.s failure ladder; the queue.s own retries of
+        // the same refresh must not compound with it.
+        await processBoardTask(env, message.body, { escalate: (message.attempts ?? 1) <= 1 });
       }
       message.ack();
     } catch (error) {
@@ -141,7 +145,7 @@ export async function scheduleDueBoards(env, options = {}) {
   return { selected: boards.length, queued };
 }
 
-async function processBoardTask(env, task) {
+async function processBoardTask(env, task, options = {}) {
   if (!task?.board?.key) throw new Error("Queue task is missing a board");
   const result = await syncBoard(task.board, {
     timeoutMs: 30_000,
@@ -151,7 +155,7 @@ async function processBoardTask(env, task) {
   const logo = await resolveLogoIfStale(env, task.board, result);
   result.companyLogoUrl = logo.url;
   result.logoChecked = logo.checked;
-  const applied = await applyBoardSnapshot(env.DB, result);
+  const applied = await applyBoardSnapshot(env.DB, result, { escalate: options.escalate });
   if (applied.retry) throw new Error(result.board.error || "ATS refresh failed");
   return applied;
 }

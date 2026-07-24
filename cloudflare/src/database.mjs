@@ -75,7 +75,7 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   `).bind(runId, board.key, board.provider, now).run();
 
   if (board.status === "error") {
-    await recordBoardFailure(db, board, runId);
+    await recordBoardFailure(db, board, runId, { escalate: options.escalate });
     return { runId, changedJobs, closedJobs, retry: true };
   }
 
@@ -91,7 +91,7 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   // come back invalid INVALID_CLOSE_STRIKES times in a row do we accept the empty snapshot and let
   // the close pass run.
   if (board.status === "invalid") {
-    const strikes = await recordBoardFailure(db, board, runId, { status: "invalid" });
+    const strikes = await recordBoardFailure(db, board, runId, { status: "invalid", escalate: options.escalate });
     if (strikes < INVALID_CLOSE_STRIKES) {
       return { runId, changedJobs, closedJobs, retry: false };
     }
@@ -304,7 +304,12 @@ async function recordBoardFailure(db, board, runId, options = {}) {
   const status = options.status === "invalid" ? "invalid" : "error";
   const current = await db.prepare("SELECT failure_count AS failureCount FROM boards WHERE key = ?")
     .bind(board.key).first();
-  const failureCount = Number(current?.failureCount ?? 0) + 1;
+  // The queue retries a failed refresh up to five times on its own short ladder, and every one of
+  // those attempts used to also advance failure_count -- so the two backoffs compounded. A 12-minute
+  // ATS outage burned all five retries inside the outage, left the board at failure_count 6, and
+  // pushed next_sync_at out by 16 hours: a brief blip consumed the whole escalation ladder. Only the
+  // first delivery of a refresh escalates; its retries record the error without advancing the count.
+  const failureCount = Number(current?.failureCount ?? 0) + (options.escalate === false ? 0 : 1);
   const now = board.syncedAt;
   await db.batch([
     db.prepare(`
@@ -409,11 +414,32 @@ export async function reconcileProviderHealth(db, now = new Date().toISOString()
   return { reconciled: rows.length };
 }
 
+// applyBoardSnapshot writes its sync_runs row as 'running' and only flips it at the end, so any
+// refresh that dies mid-write -- a D1 timeout partway through the job batches, an evicted isolate --
+// leaves the row 'running' forever. Nothing reconciled them: the daily crons covered
+// provider_health, failed_tasks and pruning, but not this, so the ops view showed a growing set of
+// runs that never finished and could not be distinguished from ones genuinely in flight.
+//
+// A refresh cannot outlive the queue consumer's own ceiling, so anything still 'running' after a
+// couple of hours is abandoned by definition.
+export async function reconcileStuckSyncRuns(db, now = new Date().toISOString(), staleHours = 3) {
+  const result = await db.prepare(`
+    UPDATE sync_runs SET status = 'abandoned', error = 'Run did not complete', completed_at = ?
+    WHERE status = 'running' AND started_at < ?
+  `).bind(now, isoShift(now, -staleHours * 60 * 60 * 1_000)).run();
+  return { reconciled: Number(result.meta?.changes ?? 0) };
+}
+
 // One sync_runs row is written per board refresh and nothing removed them, so the table grew
 // without bound. Two weeks is enough history to debug a bad crawl.
+//
+// The pass cap has to clear the write rate or the table still grows: the */15 cron can enqueue
+// 2,000 boards, so 96 runs a day is up to 192,000 new rows, and 20 passes of 5,000 only removed
+// 100,000. 50 passes covers the ceiling with headroom. Migration 0010 adds the started_at index the
+// delete needs -- without it each pass scanned the table to find its batch.
 export async function pruneSyncRuns(db, now = new Date().toISOString(), retentionDays = 14) {
   let deleted = 0;
-  for (let pass = 0; pass < 20; pass += 1) {
+  for (let pass = 0; pass < 50; pass += 1) {
     const result = await db.prepare(`
       DELETE FROM sync_runs WHERE id IN (
         SELECT id FROM sync_runs WHERE started_at < ? LIMIT 5000

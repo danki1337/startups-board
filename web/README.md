@@ -11,7 +11,9 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by vinext. The page currently uses a representative dataset in `app/jobs.ts`; the next implementation step is connecting it to the normalized jobs database produced by the discovery service.
+Open the local URL printed by vinext. The page reads the real index: in production the
+server render queries D1 directly, and in local dev it falls back to the SQLite API on
+port 3002 (`npm run serve` from the repository root).
 
 ## Verify
 
@@ -23,6 +25,6 @@ npm test
 ## Main files
 
 - `app/jobs-explorer.tsx` — interactive search and filters
-- `app/jobs.ts` — typed preview job data
+- `app/jobs.ts` — the shared `Job` type and filter option lists
 - `app/globals.css` — visual system and motion
 - `app/layout.tsx` — metadata and social preview
