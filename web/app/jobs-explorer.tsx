@@ -68,8 +68,11 @@ const postedWithinOptions = [
 ];
 // `code` carries the ISO country so the checklists can render an SVG flag; the emoji is gone from
 // the label (it lives in the <Flag> glyph now).
-// Roughly 7% of postings resolve a city but not a country, so their location cell showed no flag
-// at all next to a perfectly recognisable city. The city taxonomy already carries the country.
+// Falls back to the city's country when a posting resolved one but not the other. Measured against
+// production this currently never fires -- of 1.23M active jobs, 799k have a country and the other
+// 436k have NEITHER a country nor a city, because the ATS location string was unparseable ("2
+// Locations", "UHealth Doral DT"). Kept as insurance for when the ingester improves; adding flags to
+// those 436k rows is an ingestion-side geocoding problem, not something the UI can infer.
 const CITY_COUNTRY = new Map(CITY_OPTIONS.map((entry) => [entry.name.toLowerCase(), entry.country]));
 function cityCountry(city: string | null | undefined) {
   return city ? CITY_COUNTRY.get(city.trim().toLowerCase()) ?? null : null;
@@ -1550,7 +1553,7 @@ function JobsSkeleton() {
         <tbody>
           {Array.from({ length: 8 }, (_, row) => (
             <tr key={row}>
-              <td className="px-5 py-3.5">
+              <td className="px-5 py-3">
                 <div className="flex items-center gap-3">
                   <span className="skeleton size-9 shrink-0 rounded-[10px]" />
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -1559,11 +1562,11 @@ function JobsSkeleton() {
                   </div>
                 </div>
               </td>
-              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-2/3 rounded" /></td>
-              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-16 rounded" /></td>
-              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-14 rounded" /></td>
-              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-16 rounded" /></td>
-              <td className="px-5 py-3.5"><span className="skeleton ms-auto block h-3 w-16 rounded" /></td>
+              <td className="px-5 py-3"><span className="skeleton block h-3 w-2/3 rounded" /></td>
+              <td className="px-5 py-3"><span className="skeleton block h-3 w-16 rounded" /></td>
+              <td className="px-5 py-3"><span className="skeleton block h-3 w-14 rounded" /></td>
+              <td className="px-5 py-3"><span className="skeleton block h-3 w-16 rounded" /></td>
+              <td className="px-5 py-3"><span className="skeleton ms-auto block h-3 w-16 rounded" /></td>
             </tr>
           ))}
         </tbody>
@@ -1599,7 +1602,7 @@ function JobCells({
 
   return (
     <>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
           <div className="min-w-0">
@@ -1634,7 +1637,7 @@ function JobCells({
           </div>
         </div>
       </td>
-      <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
+      <td className="px-5 py-3 text-sm text-[var(--muted-strong)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           {job.country || cityCountry(job.city) ? (
             <Flag code={job.country || cityCountry(job.city)} />
@@ -1657,7 +1660,7 @@ function JobCells({
           )}
         </span>
       </td>
-      <td className="whitespace-nowrap px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
+      <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted-strong)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
             client can legitimately render a slightly different string. title keeps the exact date. */}
         {postedDate ? (
@@ -1672,9 +1675,9 @@ function JobCells({
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
       </td>
-      <td className="px-5 py-3.5 text-sm text-[var(--ink)]">{job.employmentType}</td>
-      <td className="px-5 py-3.5 text-sm text-[var(--ink)]">{job.workplace}</td>
-      <td className="whitespace-nowrap px-5 py-3.5 text-end">
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">{job.employmentType}</td>
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">{job.workplace}</td>
+      <td className="whitespace-nowrap px-5 py-3 text-end">
         <a
           href={job.url}
           target="_blank"
@@ -1694,9 +1697,13 @@ function JobCells({
 
 function CompanyLogo({ job }: { job: Job }) {
   const [failed, setFailed] = useState(false);
+  // Logos are remote and lazy-loaded, so on a slow connection every row showed an empty white box
+  // until its image arrived. A placeholder holds the space, and the image fades in over it.
+  const [loaded, setLoaded] = useState(false);
   if (job.companyLogoUrl && !failed) {
     return (
-      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
+      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
+        {!loaded && <span className="skeleton skeleton-pulse absolute inset-0" aria-hidden="true" />}
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -1704,7 +1711,7 @@ function CompanyLogo({ job }: { job: Job }) {
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="size-full object-contain p-0.5"
+          className={`relative size-full object-contain p-0.5 ${loaded ? "opacity-100" : "opacity-0"}`}
           onError={() => setFailed(true)}
           // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
           // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
@@ -1713,6 +1720,7 @@ function CompanyLogo({ job }: { job: Job }) {
             const img = event.currentTarget;
             const ratio = img.naturalWidth / (img.naturalHeight || 1);
             if (ratio > 1.6 || ratio < 0.625) setFailed(true);
+            else setLoaded(true);
           }}
         />
       </span>

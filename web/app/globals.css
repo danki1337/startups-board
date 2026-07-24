@@ -265,6 +265,12 @@ button:disabled,
   background-color: #f1f1f5;
 }
 
+/* Pulses on its own, for a placeholder that has no .is-pulsing parent to inherit from -- a single
+   avatar waiting on a remote image, rather than a block of rows. */
+.skeleton-pulse {
+  animation: t-skel-pulse var(--pulse-dur) ease-in-out infinite;
+}
+
 /* Scroll shadow. shadcn has no such component and HeroUI dropped theirs in v3, so this is the
    equivalent: the scrollable box masks its own content out at whichever edge still has more to
    scroll, which reads as a soft shadow over any background without needing an overlay element that
