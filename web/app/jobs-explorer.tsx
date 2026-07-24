@@ -979,7 +979,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="dash-4 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
       <span className="text-[var(--muted)]">is</span>
@@ -1520,8 +1520,25 @@ function VirtuosoTable(props: React.ComponentPropsWithoutRef<"table">) {
   );
 }
 
+// Clicking a row opens the posting in a new tab. It lives on the <tr> rather than wrapping cells in
+// anchors, because a table row cannot legally contain one -- and a click that started on a control
+// inside the row (the star, the company, the location, the source link) belongs to that control.
+function VirtuosoRow({ item, ...rowProps }: React.ComponentPropsWithoutRef<"tr"> & { item: Job }) {
+  return (
+    <tr
+      {...rowProps}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest("a,button")) return;
+        window.open(item.url, "_blank", "noopener,noreferrer");
+      }}
+      className="cursor-pointer"
+    />
+  );
+}
+
 const virtuosoComponents = {
   Table: VirtuosoTable,
+  TableRow: VirtuosoRow,
 } satisfies TableComponents<Job>;
 
 function TableHeader() {
@@ -1606,7 +1623,7 @@ function JobCells({
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
           <div className="min-w-0">
-            <span className="block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]" title={job.title}>
+            <span className="tip block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]" data-tip={job.title}>
               {job.title}
             </span>
             <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
@@ -1628,7 +1645,8 @@ function JobCells({
                 title={`Show only jobs at ${job.company}`}
                 // The 52% cap existed to leave room for the category beside it; with that gone the
                 // company gets the whole line, so names stop truncating for no reason.
-                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                data-tip={job.company}
+                className="tip -mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
@@ -1653,7 +1671,8 @@ function JobCells({
               // often a full address that would match only this one posting.
               onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: job.location }))}
               title={job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
-              className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              data-tip={job.location}
+              className="tip -mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
             >
               {job.location}
             </button>

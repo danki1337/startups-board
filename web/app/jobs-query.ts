@@ -258,7 +258,11 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const exactness = isSearch ? exactnessPatterns(params.get("search")) : null;
   const searchScore = `bm25(jobs_fts, ${SEARCH_WEIGHTS}) + ${SEARCH_RECENCY}`
     + (exactness ? ` + (${SEARCH_EXACTNESS})` : "");
-  const innerOrder = isSearch ? "relScore, j.key" : orderBy(sort);
+  // Newest first, including on the search path. Relevance still decides WHICH postings match and
+  // which survive SEARCH_RESULT_CAP -- the score is still computed and still bounds the set -- but
+  // the rows that come back are ordered by posting time, because on a job board recency is what
+  // people are actually scanning for.
+  const innerOrder = isSearch ? `${orderBy(sort)}, relScore` : orderBy(sort);
   // A search over-fetches so identical postings can be collapsed below without leaving a short page:
   // employers routinely run several requisitions with one title, and three "Data Scientist" rows
   // from the same company are three wasted slots on the first page.
@@ -303,7 +307,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     ) base
     LEFT JOIN boards b ON b.key = base.boardKey
     LEFT JOIN companies c ON c.key = b.company_key
-    ORDER BY ${isSearch ? "base.relScore, base.key" : baseOrderBy(sort)}
+    ORDER BY ${baseOrderBy(sort)}
   `).bind(...(exactness ?? []), ...bindings, fetchLimit, ...(isSearch ? [offset] : []));
 
   // The count ignores the cursor clause, otherwise the total would shrink as the user pages. A

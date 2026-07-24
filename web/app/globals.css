@@ -261,6 +261,12 @@ button:disabled,
   --pulse-count: infinite;
 }
 
+/* A 4px dash. CSS border-style: dashed leaves the dash length to the browser, so the chip's
+   outline is an SVG stroke, which does expose it. rx=999 clamps to a pill at any height. */
+.dash-4 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='999' ry='999' fill='none' stroke='%23d9dade' stroke-width='1' stroke-dasharray='4 4'/%3E%3C/svg%3E");
+}
+
 .skeleton {
   background-color: #f1f1f5;
 }
@@ -296,7 +302,10 @@ button:disabled,
    same scroller, and a mask applies to sticky children too, so the header would wash out the moment
    you scrolled. The bottom edge is safe, and the top is drawn instead as a gradient overlay parked
    just under the header -- see .jobs-table-top-fade below. */
-.jobs-table-scroll { --fade-top: 0px; }
+/* Specificity has to beat .scroll-shadow[data-scroll-top] below, or the mask fades the sticky
+   column header along with the rows. The top edge is drawn as an overlay instead. */
+.jobs-table-scroll.scroll-shadow,
+.jobs-table-scroll.scroll-shadow[data-scroll-top] { --fade-top: 0px; }
 .jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 64px; }
 
 /* Sits inside the scroller and sticks to the top, so it rides under the sticky header rather than
@@ -322,6 +331,39 @@ button:disabled,
     transition: none !important;
   }
   .is-pulsing > * { animation: none !important; }
+}
+
+/* ---- Tooltip ----
+   For values the table had to crop. Shown on hover and on keyboard focus, which the native title
+   attribute never does, and readable because it is not clipped by the cell that truncated it. */
+.tip {
+  position: relative;
+}
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  max-width: 320px;
+  width: max-content;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #16161a;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: var(--shadow-lift);
+}
+.tip:hover::after,
+.tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 /* ---- Card resize (transitions.dev) ----

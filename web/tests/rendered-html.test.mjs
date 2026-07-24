@@ -113,7 +113,9 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /FilterCheckbox/);
   // Selected filters are dashed "[icon] is [value]" chips.
   assert.match(explorer, /<FilterChip/);
-  assert.match(explorer, /border-dashed/);
+  // The dashed outline is an SVG stroke, not border-style: dashed, so the dash length is settable.
+  assert.match(explorer, /dash-4/);
+  assert.match(styles, /stroke-dasharray=/);
   // Date posted is a FilterDropdown like every other pill, not a HeroUI Select.
   assert.match(explorer, /<DateDropdown/);
   assert.doesNotMatch(explorer, /<Select\.Trigger/);
@@ -142,7 +144,8 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
 
 testWithBuild("ranks text search by relevance with a bounded count", async () => {
   const query = await readFile(new URL("../app/jobs-query.ts", import.meta.url), "utf8");
-  // Search is ordered by bm25 relevance (title-weighted) blended with recency, not raw date.
+  // Relevance still decides which postings match and which survive the result cap; the rows that
+  // come back are then ordered newest-first, which is what people scan a job board for.
   assert.match(query, /bm25\(jobs_fts/);
   assert.match(query, /SEARCH_WEIGHTS/);
   assert.match(query, /SEARCH_RECENCY/);
