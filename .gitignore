@@ -6,6 +6,7 @@ data/*.db-wal
 !data/.gitkeep
 !data/discovered-boards.json
 !data/discovery-state.json
+!data/seed-boards.json
 .DS_Store
 node_modules/
 .env*

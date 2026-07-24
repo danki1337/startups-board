@@ -20,7 +20,8 @@
     "serve": "node src/cli.mjs serve",
     "system": "node src/cli.mjs system",
     "poc": "node src/cli.mjs run",
-    "test": "node --test"
+    "test": "node --test",
+    "seed:boards": "node scripts/seed-boards.mjs"
   },
   "engines": {
     "node": ">=22.13.0"
