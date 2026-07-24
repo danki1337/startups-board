@@ -142,7 +142,7 @@ function filtersToSearchParams(filters: Filters) {
 // "[icon] is [value]" chips use; `kind` picks the category icon and value glyph there.
 type ChipKind =
   | "search" | "location" | "title" | "company" | "country" | "city" | "roleFamily"
-  | "industry" | "workplace" | "source" | "employmentType" | "postedWithin" | "watchlist";
+  | "industry" | "workplace" | "source" | "employmentType" | "watchlist";
 type ActiveChip = { kind: ChipKind; label: string; value?: string; clear: () => void };
 
 const WATCHLIST_KEY = "startups-board:watchlist";
@@ -363,10 +363,8 @@ export function JobsExplorer({
     for (const value of filters.workplace) chips.push({ kind: "workplace", label: value, clear: () => toggle("workplace", value) });
     for (const value of filters.source) chips.push({ kind: "source", label: value, clear: () => toggle("source", value) });
     for (const value of filters.employmentType) chips.push({ kind: "employmentType", label: value, clear: () => toggle("employmentType", value) });
-    if (filters.postedWithin) {
-      const label = postedWithinOptions.find((option) => option.value === filters.postedWithin)?.label;
-      chips.push({ kind: "postedWithin", label: label ?? filters.postedWithin, clear: () => update({ postedWithin: "" }) });
-    }
+    // postedWithin deliberately gets no chip: the date pill already displays its own selection
+    // ("Last 7 days"), so a chip would double it. "Any time" in the same dropdown clears it.
     if (watchlistActive) chips.push({ kind: "watchlist", label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
     return chips;
   }, [filters, watchlistActive]);
@@ -1256,7 +1254,6 @@ const CHIP_ICONS: Partial<Record<ChipKind, () => React.ReactElement>> = {
   workplace: IconWorkplace,
   source: IconAts,
   employmentType: IconJobType,
-  postedWithin: IconCalendar,
 };
 
 // One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
