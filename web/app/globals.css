@@ -248,6 +248,27 @@ button:disabled,
   background-color: #f1f1f5;
 }
 
+/* Scroll shadow. shadcn has no such component and HeroUI dropped theirs in v3, so this is the
+   equivalent: the scrollable box masks its own content out at whichever edge still has more to
+   scroll, which reads as a soft shadow over any background without needing an overlay element that
+   would sit above the rows and eat pointer events. The data attributes are set from scroll
+   position, so neither edge fades when everything already fits. */
+.scroll-shadow {
+  --fade: 28px;
+  --fade-top: 0px;
+  --fade-bottom: 0px;
+  overflow: auto;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--fade-top),
+    #000 calc(100% - var(--fade-bottom)),
+    transparent 100%
+  );
+}
+.scroll-shadow[data-scroll-top] { --fade-top: var(--fade); }
+.scroll-shadow[data-scroll-bottom] { --fade-bottom: var(--fade); }
+
 @media (prefers-reduced-motion: reduce) {
   .t-skel-skeleton,
   .t-skel-content {

@@ -597,7 +597,7 @@ export function JobsExplorer({
           {/* Selected filters as dashed "[icon] is [value]" chips, with Save view and Clear all
               pushed to the end of the same row. */}
           {activeChips.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
               {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
               <span className="ms-auto flex items-center gap-2">
                 <SaveViewPill onSaveView={saveView} canSaveView />
@@ -705,7 +705,7 @@ function SearchCheckList({
   return (
     <div>
       <SearchBox full value={query} onChange={setQuery} label={searchLabel} />
-      <div className="mt-1 max-h-64 overflow-auto">
+      <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
           return (
@@ -730,7 +730,7 @@ function SearchCheckList({
         {ordered.length > shown.length && (
           <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">Keep typing to narrow {ordered.length - shown.length} more…</p>
         )}
-      </div>
+      </ScrollShadow>
     </div>
   );
 }
@@ -770,7 +770,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
   return (
     <div>
       <SearchBox full value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
-      <div className="mt-1 max-h-80 overflow-auto">
+      <ScrollShadow className="mt-1 max-h-80">
         {rows.map((row) => {
           const checked = row.title === value;
           return (
@@ -796,7 +796,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
             {query.trim().length < 2 ? "Type to search job titles" : "No matching titles"}
           </p>
         )}
-      </div>
+      </ScrollShadow>
     </div>
   );
 }
@@ -827,7 +827,7 @@ function SidebarPills({
             aria-pressed={checked}
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
               checked
-                ? "border-transparent bg-[var(--accent-strong)] text-white"
+                ? "border-[#FF73E5]/30 bg-[#FF73E5]/15 text-[var(--accent-strong)]"
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
             }`}
           >
@@ -1005,6 +1005,39 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 const V4_PILL =
   "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[#F5F5FA] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
+// A scrollable box that fades its own content at whichever edge still has more to scroll, so a long
+// option list reads as continuing rather than ending. Driven off scroll position rather than a
+// static gradient, so a list that already fits shows no fade at all.
+function ScrollShadow({ className = "", children }: { className?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+
+  const measure = useCallback(() => {
+    const node = ref.current;
+    if (!node) return;
+    const { scrollTop, scrollHeight, clientHeight } = node;
+    setEdges({ top: scrollTop > 1, bottom: Math.ceil(scrollTop + clientHeight) < scrollHeight - 1 });
+  }, []);
+
+  // Re-measure when the list itself changes (typing in the search box filters it), not just on
+  // scroll -- otherwise a list that shrinks to fit keeps a fade with nothing left to scroll to.
+  useEffect(() => {
+    measure();
+  }, [measure, children]);
+
+  return (
+    <div
+      ref={ref}
+      onScroll={measure}
+      data-scroll-top={edges.top || undefined}
+      data-scroll-bottom={edges.bottom || undefined}
+      className={`scroll-shadow ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 // A plain action in that same pill, so a standalone button (Clear all, Clear filters) matches the
 // controls beside it instead of importing a second button look.
 function PillButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
@@ -1121,7 +1154,9 @@ function FilterDropdown({
         onClick={() => setPhase((current) => (current === "open" ? "closing" : "open"))}
         aria-expanded={open}
         aria-haspopup="dialog"
-        className={V4_PILL}
+        // An open dropdown carries the same focused treatment as the search field, so the pill the
+        // panel belongs to is obvious when several sit side by side.
+        className={`${V4_PILL} ${open ? "bg-[#F5F5FA] shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]" : ""}`}
       >
         <Icon />
         <span>{label}</span>
@@ -1167,7 +1202,7 @@ function SearchSelectList({
   return (
     <div>
       <SearchBox full value={query} onChange={setQuery} label="Search countries" />
-      <div className="mt-1 max-h-64 overflow-auto">
+      <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
           const checked = option.value === value;
           return (
@@ -1189,7 +1224,7 @@ function SearchSelectList({
           );
         })}
         {shown.length === 0 && <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>}
-      </div>
+      </ScrollShadow>
     </div>
   );
 }
@@ -1321,7 +1356,7 @@ function TableHeading({ children, className = "" }: { children: React.ReactNode;
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 text-start text-[13px] font-medium text-[var(--muted)] ${className}`}
+      className={`px-5 pb-3 text-start text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -1346,19 +1381,13 @@ const virtuosoComponents = {
 } satisfies TableComponents<Job>;
 
 function TableHeader() {
-  const heading = (Icon: () => React.ReactElement, label: string) => (
-    <span className="inline-flex items-center gap-1.5 [&>svg]:size-3.5">
-      <Icon />
-      {label}
-    </span>
-  );
   return (
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
           company sits beneath it as context, rather than the company owning the first column. */}
-      <TableHeading className="w-[34%]">{heading(IconUser, "Role")}</TableHeading>
-      <TableHeading className="w-[20%]">{heading(IconPin, "Location")}</TableHeading>
-      <TableHeading className="w-[12%]">{heading(IconCalendar, "Posted")}</TableHeading>
+      <TableHeading className="w-[34%]">Role</TableHeading>
+      <TableHeading className="w-[20%]">Location</TableHeading>
+      <TableHeading className="w-[12%]">Posted</TableHeading>
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
       <TableHeading className="w-[11%] text-end">Source</TableHeading>
