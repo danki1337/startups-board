@@ -137,6 +137,14 @@ function filtersToSearchParams(filters: Filters) {
   return params;
 }
 
+// One selected-filter chip. `label` is the display-ready string the bar variant shows; `value`
+// (when set) is the bare value without its "Location:"-style prefix, which the v3 dashed
+// "[icon] is [value]" chips use; `kind` picks the category icon and value glyph there.
+type ChipKind =
+  | "search" | "location" | "title" | "company" | "country" | "city" | "roleFamily"
+  | "industry" | "workplace" | "source" | "employmentType" | "postedWithin" | "watchlist";
+type ActiveChip = { kind: ChipKind; label: string; value?: string; clear: () => void };
+
 const WATCHLIST_KEY = "startups-board:watchlist";
 const SAVED_VIEWS_KEY = "startups-board:saved-views";
 
@@ -166,8 +174,9 @@ export function JobsExplorer({
   hasServerData?: boolean;
   initialQuery?: string;
   // "bar" is the original compact top filter bar; "sidebar" is the second main-page layout with a
-  // right-hand accordion of filter sections (used by the /v2 route).
-  variant?: "bar" | "sidebar";
+  // right-hand accordion of filter sections (/v2); "chips" is the third: the bar plus dashed
+  // "[icon] is [value]" chips for selected filters and a single multistate Filter flyout (/v3).
+  variant?: "bar" | "sidebar" | "chips";
 }) {
   // Seeded from the server-supplied query string rather than window.location, so the server and
   // client render identical markup. Reading window here caused a hydration mismatch whenever the
@@ -337,28 +346,28 @@ export function JobsExplorer({
   }, [cursor, isPaging, queryString]);
 
   const activeChips = useMemo(() => {
-    const chips: { label: string; clear: () => void }[] = [];
-    if (filters.search.trim()) chips.push({ label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
-    if (filters.location.trim()) chips.push({ label: `Location: ${filters.location.trim()}`, clear: () => update({ location: "" }) });
-    if (filters.title.trim()) chips.push({ label: `Role: ${filters.title.trim()}`, clear: () => update({ title: "" }) });
-    if (filters.company.trim()) chips.push({ label: `Company: ${filters.company.trim()}`, clear: () => update({ company: "" }) });
+    const chips: ActiveChip[] = [];
+    if (filters.search.trim()) chips.push({ kind: "search", label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
+    if (filters.location.trim()) chips.push({ kind: "location", label: `Location: ${filters.location.trim()}`, value: filters.location.trim(), clear: () => update({ location: "" }) });
+    if (filters.title.trim()) chips.push({ kind: "title", label: `Role: ${filters.title.trim()}`, value: filters.title.trim(), clear: () => update({ title: "" }) });
+    if (filters.company.trim()) chips.push({ kind: "company", label: `Company: ${filters.company.trim()}`, value: filters.company.trim(), clear: () => update({ company: "" }) });
     if (filters.country) {
       const label = filters.country === "anywhere"
         ? "🌍 Anywhere"
         : `${countryFlag(filters.country) ?? ""} ${countryName(filters.country) ?? filters.country}`;
-      chips.push({ label: label.trim(), clear: () => update({ country: "" }) });
+      chips.push({ kind: "country", label: label.trim(), clear: () => update({ country: "" }) });
     }
-    for (const value of filters.city) chips.push({ label: value, clear: () => toggle("city", value) });
-    if (filters.roleFamily) chips.push({ label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
-    for (const value of filters.industry) chips.push({ label: value, clear: () => toggle("industry", value) });
-    for (const value of filters.workplace) chips.push({ label: value, clear: () => toggle("workplace", value) });
-    for (const value of filters.source) chips.push({ label: value, clear: () => toggle("source", value) });
-    for (const value of filters.employmentType) chips.push({ label: value, clear: () => toggle("employmentType", value) });
+    for (const value of filters.city) chips.push({ kind: "city", label: value, clear: () => toggle("city", value) });
+    if (filters.roleFamily) chips.push({ kind: "roleFamily", label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
+    for (const value of filters.industry) chips.push({ kind: "industry", label: value, clear: () => toggle("industry", value) });
+    for (const value of filters.workplace) chips.push({ kind: "workplace", label: value, clear: () => toggle("workplace", value) });
+    for (const value of filters.source) chips.push({ kind: "source", label: value, clear: () => toggle("source", value) });
+    for (const value of filters.employmentType) chips.push({ kind: "employmentType", label: value, clear: () => toggle("employmentType", value) });
     if (filters.postedWithin) {
       const label = postedWithinOptions.find((option) => option.value === filters.postedWithin)?.label;
-      chips.push({ label: label ?? filters.postedWithin, clear: () => update({ postedWithin: "" }) });
+      chips.push({ kind: "postedWithin", label: label ?? filters.postedWithin, clear: () => update({ postedWithin: "" }) });
     }
-    if (watchlistActive) chips.push({ label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
+    if (watchlistActive) chips.push({ kind: "watchlist", label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
     return chips;
   }, [filters, watchlistActive]);
 
@@ -373,7 +382,7 @@ export function JobsExplorer({
         data={jobs}
         components={virtuosoComponents}
         computeItemKey={(_index, job) => job.id}
-        fixedHeaderContent={TableHeader}
+        fixedHeaderContent={variant === "chips" ? TableHeaderWithJobType : TableHeader}
         itemContent={(_index, job) => (
           <JobCells
             job={job}
@@ -381,6 +390,7 @@ export function JobsExplorer({
             isWatched={watchlistSet.has(job.company)}
             onToggleWatch={toggleWatch}
             now={now}
+            jobType={variant === "chips"}
           />
         )}
         fixedItemHeight={72}
@@ -492,23 +502,31 @@ export function JobsExplorer({
             toggle={toggle}
             onSaveView={saveView}
             canSaveView={urlQuery.length > 0}
+            menu={variant === "chips" ? "stack" : "panels"}
           />
 
           {activeChips.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
-              <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
-              {activeChips.map((chip) => (
-                <button
-                  key={chip.label}
-                  type="button"
-                  onClick={chip.clear}
-                  className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-                  aria-label={`Remove filter ${chip.label}`}
-                >
-                  {chip.label}
-                  <span aria-hidden="true" className="text-[var(--muted)]">×</span>
-                </button>
-              ))}
+              {variant === "chips" ? (
+                // v3: each selected filter as a dashed "[icon] is [value]" pill.
+                activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)
+              ) : (
+                <>
+                  <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
+                  {activeChips.map((chip) => (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={chip.clear}
+                      className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[var(--control)] px-2.5 text-[12px] font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                      aria-label={`Remove filter ${chip.label}`}
+                    >
+                      {chip.label}
+                      <span aria-hidden="true" className="text-[var(--muted)]">×</span>
+                    </button>
+                  ))}
+                </>
+              )}
               <Button
                 variant="secondary"
                 className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
@@ -566,6 +584,9 @@ const IconCalendar = () => <LineIcon><rect x="2.5" y="3.5" width="11" height="10
 const IconChevronDown = () => <LineIcon><path d="M4.5 6.5 8 10l3.5-3.5" /></LineIcon>;
 const IconUpDown = () => <LineIcon><path d="M5.5 6.5 8 4l2.5 2.5M5.5 9.5 8 12l2.5-2.5" /></LineIcon>;
 const IconChevronRight = () => <LineIcon><path d="M6.5 4.5 10 8l-3.5 3.5" /></LineIcon>;
+const IconChevronLeft = () => <LineIcon><path d="M9.5 4.5 6 8l3.5 3.5" /></LineIcon>;
+const IconSliders = () => <LineIcon><path d="M2.5 5.5h1.7M8 5.5h5.5M2.5 10.5h5.5M11.8 10.5h1.7" /><circle cx="6" cy="5.5" r="1.7" /><circle cx="9.9" cy="10.5" r="1.7" /></LineIcon>;
+const IconUser = () => <LineIcon><circle cx="8" cy="5.3" r="2.4" /><path d="M3.5 13.5c0-2.4 2-3.9 4.5-3.9s4.5 1.5 4.5 3.9" /></LineIcon>;
 const IconIndustry = () => <LineIcon><path d="M2 13.5V8l3 1.6V8l3 1.6V5.5l3.5 2v6z" /><path d="M2 13.5h11.5" /></LineIcon>;
 const IconWorkplace = () => <LineIcon><rect x="3" y="2.5" width="6" height="11" rx="1" /><path d="M5.2 5h1.6M5.2 7.3h1.6M5.2 9.6h1.6" /><path d="M9 6.5h3.5v7H9" /><path d="M10.7 9h.01M10.7 11h.01" /></LineIcon>;
 const IconJobType = () => <LineIcon><circle cx="6" cy="5" r="2.2" /><path d="M2.5 12.6c0-2 1.6-3.4 3.5-3.4c.6 0 1.2.1 1.7.4" /><circle cx="11" cy="10.5" r="3" /><path d="M11 9.3v1.3l1 .6" /></LineIcon>;
@@ -1220,6 +1241,135 @@ function SidebarSaveView({
   );
 }
 
+// ---- v3: dashed "is" chips + the single multistate Filter flyout ----
+
+// Category icon per chip kind, for the "[icon] is [value]" chips.
+const CHIP_ICONS: Partial<Record<ChipKind, () => React.ReactElement>> = {
+  search: IconSearch,
+  location: IconPin,
+  title: IconLocate,
+  company: IconUser,
+  country: IconPin,
+  city: IconPin,
+  roleFamily: IconLocate,
+  industry: IconIndustry,
+  workplace: IconWorkplace,
+  source: IconAts,
+  employmentType: IconJobType,
+  postedWithin: IconCalendar,
+};
+
+// One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
+// value (with its glyph — flag, globe, or ATS mark), and an ×. Clicking anywhere removes it.
+function FilterChip({ chip }: { chip: ActiveChip }) {
+  const Icon = CHIP_ICONS[chip.kind];
+  const value = chip.value ?? chip.label;
+  return (
+    <button
+      type="button"
+      onClick={chip.clear}
+      aria-label={`Remove filter ${value}`}
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-[background-color,scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+    >
+      {Icon && <Icon />}
+      <span className="text-[var(--muted)]">is</span>
+      <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
+        {chip.kind === "workplace" && <IconGlobe />}
+        {chip.kind === "source" && (
+          <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
+            <AtsMark source={value} size={4} />
+          </span>
+        )}
+        {value}
+      </span>
+      <span aria-hidden="true" className="ms-0.5 text-[var(--muted)]">×</span>
+    </button>
+  );
+}
+
+// The multistate Filter flyout: one anchored panel that starts on the category list and slides
+// into a category's own panel (back chevron + "Is" tag in the header). Unlike AddFilterMenu's
+// side-by-side panels, only one panel is ever visible. Reuses the sidebar's option controls:
+// searchable checklists for the long facets, toggle pills for the short ones.
+function FilterMenu({
+  filters,
+  toggle,
+}: {
+  filters: Filters;
+  toggle: (key: FilterCategoryKey, value: string) => void;
+}) {
+  const [view, setView] = useState<"root" | FilterCategoryKey>("root");
+  const card =
+    "absolute left-0 top-[calc(100%+8px)] z-30 w-72 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[var(--shadow-lift)]";
+
+  if (view === "root") {
+    return (
+      <div className={card}>
+        {FILTER_CATEGORIES.map((entry) => {
+          const selected = filters[entry.key].length;
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              onClick={() => setView(entry.key)}
+              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-start text-sm text-[var(--ink)] transition-colors duration-100 hover:bg-[var(--control-hover)]"
+            >
+              <entry.Icon />
+              <span className="flex-1 font-medium">{entry.label}</span>
+              {selected > 0 ? (
+                <span className="min-w-5 rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-center text-[12px] font-semibold tabular-nums text-[var(--accent-strong)]">
+                  {selected}
+                </span>
+              ) : (
+                entry.badge && <span className="tabular-nums text-[13px] text-[var(--muted)]">{entry.options.length}+</span>
+              )}
+              <IconChevronRight />
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const category = FILTER_CATEGORIES.find((entry) => entry.key === view) ?? FILTER_CATEGORIES[0];
+  return (
+    <div className={card}>
+      <div className="flex items-center gap-1 px-1 pb-1.5 pt-1">
+        <button
+          type="button"
+          onClick={() => setView("root")}
+          aria-label="Back to all filters"
+          className="flex size-7 items-center justify-center rounded-lg transition-colors duration-100 hover:bg-[var(--control-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          <IconChevronLeft />
+        </button>
+        <span className="flex-1 text-sm font-medium text-[var(--muted-strong)]">{category.label}</span>
+        {/* Match-mode tag from the design; "is" is the only mode the query supports, so it is a
+            static label rather than a control that pretends otherwise. */}
+        <span className="inline-flex items-center gap-0.5 rounded-lg bg-[var(--control-hover)] px-2 py-1 text-[12px] font-medium text-[var(--muted-strong)]">
+          Is <IconUpDown />
+        </span>
+      </div>
+      <div className="px-1 pb-1">
+        {category.key === "workplace" || category.key === "employmentType" || category.key === "source" ? (
+          <SidebarPills
+            options={category.options}
+            selected={filters[category.key]}
+            onToggle={(value) => toggle(category.key, value)}
+            glyph={category.glyph}
+          />
+        ) : (
+          <SearchCheckList
+            options={category.options}
+            selected={filters[category.key]}
+            onToggle={(value) => toggle(category.key, value)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Shared pill: a standalone rounded, bordered control — the design uses these rather than one
 // segmented bar.
 const FILTER_PILL =
@@ -1234,12 +1384,15 @@ function FilterBar({
   toggle,
   onSaveView,
   canSaveView,
+  menu = "panels",
 }: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
   toggle: (key: FilterCategoryKey, value: string) => void;
   onSaveView: (name: string) => void;
   canSaveView: boolean;
+  // "panels" is the v1 two-panel Add filter flyout; "stack" is the v3 single multistate flyout.
+  menu?: "panels" | "stack";
 }) {
   const [naming, setNaming] = useState(false);
   const [viewName, setViewName] = useState("");
@@ -1340,7 +1493,7 @@ function FilterBar({
         )}
       </div>
 
-      {/* Add filter — opens the faceted filter flyout */}
+      {/* Add filter / Filter — opens the faceted flyout (two-panel on v1, multistate on v3) */}
       <div ref={menuRef} className="relative">
         <button
           type="button"
@@ -1348,9 +1501,11 @@ function FilterBar({
           aria-expanded={filterMenuOpen}
           className={FILTER_PILL}
         >
-          <IconPlus /> Add filter
+          {menu === "stack" ? <><IconSliders /> Filter</> : <><IconPlus /> Add filter</>}
         </button>
-        {filterMenuOpen && <AddFilterMenu filters={filters} toggle={toggle} />}
+        {filterMenuOpen && (menu === "stack"
+          ? <FilterMenu filters={filters} toggle={toggle} />
+          : <AddFilterMenu filters={filters} toggle={toggle} />)}
       </div>
 
       {/* Right group, pushed to the end */}
@@ -1540,7 +1695,26 @@ const virtuosoComponents = {
   Table: VirtuosoTable,
 } satisfies TableComponents<Job>;
 
-function TableHeader() {
+function TableHeader({ jobType = false }: { jobType?: boolean } = {}) {
+  if (jobType) {
+    // v3 layout: employment type gets its own column and the lead headings carry small icons.
+    const heading = (Icon: () => React.ReactElement, label: string) => (
+      <span className="inline-flex items-center gap-1.5 [&>svg]:size-3.5">
+        <Icon />
+        {label}
+      </span>
+    );
+    return (
+      <tr className="bg-[var(--control-hover)]">
+        <TableHeading className="w-[34%]">{heading(IconUser, "Role")}</TableHeading>
+        <TableHeading className="w-[20%]">{heading(IconPin, "Location")}</TableHeading>
+        <TableHeading className="w-[12%]">{heading(IconCalendar, "Posted")}</TableHeading>
+        <TableHeading className="w-[12%]">Job type</TableHeading>
+        <TableHeading className="w-[11%]">Workplace</TableHeading>
+        <TableHeading className="w-[11%] text-end">Source</TableHeading>
+      </tr>
+    );
+  }
   return (
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
@@ -1554,18 +1728,26 @@ function TableHeader() {
   );
 }
 
+// fixedHeaderContent wants a niladic component, so the v3 header is a preset of TableHeader.
+function TableHeaderWithJobType() {
+  return <TableHeader jobType />;
+}
+
 function JobCells({
   job,
   onFilter,
   isWatched,
   onToggleWatch,
   now,
+  jobType = false,
 }: {
   job: Job;
   onFilter: (patch: Partial<Filters>) => void;
   isWatched: boolean;
   onToggleWatch: (company: string) => void;
   now: number;
+  // v3 gives employment type its own column; the default stacks it under Workplace.
+  jobType?: boolean;
 }) {
   const postedDate = job.publishedAt ? new Date(job.publishedAt) : new Date(referenceDate);
   if (!job.publishedAt) {
@@ -1642,12 +1824,18 @@ function JobCells({
           {relative ?? dateFormatter.format(postedDate)}
         </time>
       </td>
+      {jobType && (
+        <td className="px-5 py-3.5 text-sm text-[var(--ink)]">
+          {job.employmentType ?? <span className="text-[var(--muted)]">—</span>}
+        </td>
+      )}
       <td className="px-5 py-3.5">
         {/* Workplace over employment type, stacked, matching the design's two-line Workplace column
-            (the employment type used to sit in the role subtitle). */}
+            (the employment type used to sit in the role subtitle). v3 splits the type into its own
+            column, so the cell is single-line there. */}
         <span className="flex flex-col leading-tight">
           <span className="text-sm text-[var(--ink)]">{job.workplace}</span>
-          {job.employmentType && (
+          {!jobType && job.employmentType && (
             <span className="text-[12px] text-[var(--muted)]">{job.employmentType}</span>
           )}
         </span>

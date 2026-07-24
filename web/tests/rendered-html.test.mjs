@@ -100,6 +100,10 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /<AddFilterMenu/);
   assert.match(explorer, /FILTER_CATEGORIES/);
   assert.match(explorer, /FilterCheckbox/);
+  // v3: the single multistate Filter flyout and the dashed "[icon] is [value]" chips.
+  assert.match(explorer, /<FilterMenu/);
+  assert.match(explorer, /<FilterChip/);
+  assert.match(explorer, /border-dashed/);
   // The date pill is a HeroUI Select.
   assert.match(explorer, /<Select\.Trigger/);
   // Saved views and the company watchlist toggle live in the results toolbar.
