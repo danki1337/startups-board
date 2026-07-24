@@ -362,15 +362,18 @@ function addSetFilter(
 }
 
 // Build the FTS5 MATCH expression: each meaningful token becomes a quoted prefix term, AND-ed so
-// every word must appear. Single-character tokens are dropped -- a bare "a" prefix-matches almost
-// every posting, which is both useless and pathologically slow -- so a query that is only a lone
-// letter yields null (no text filter) rather than a scan of the whole table.
+// every word must appear. Tokens are split on the same boundaries the unicode61 tokenizer uses --
+// runs of letters/digits only -- so a query term always corresponds to a real indexed term. Matching
+// the index this way is what stops "c++" from collapsing to the term "c" and prefix-matching every
+// posting that starts with c; "front-end" likewise becomes front AND end, both of which exist.
+// Single-character tokens are dropped: a bare "a" prefix-matches almost everything, which is useless
+// and pathologically slow, so a query of only a lone letter yields null (no text filter, plain browse).
 export function ftsQuery(value: string | null) {
-  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._+#-]*/gu)
+  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
     ?.filter((token) => token.length >= 2)
     .slice(0, 8) ?? [];
   if (!tokens.length) return null;
-  return tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(" AND ");
+  return tokens.map((token) => `"${token}"*`).join(" AND ");
 }
 
 // A cursor is either a keyset position for browse ({value, key}) or an offset for relevance search
