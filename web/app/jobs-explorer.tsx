@@ -158,12 +158,16 @@ export function JobsExplorer({
   initialCursor = null,
   hasServerData = false,
   initialQuery = "",
+  variant = "bar",
 }: {
   initialJobs?: Job[];
   initialTotal?: number;
   initialCursor?: string | null;
   hasServerData?: boolean;
   initialQuery?: string;
+  // "bar" is the original compact top filter bar; "sidebar" is the second main-page layout with a
+  // right-hand accordion of filter sections (used by the /v2 route).
+  variant?: "bar" | "sidebar";
 }) {
   // Seeded from the server-supplied query string rather than window.location, so the server and
   // client render identical markup. Reading window here caused a hydration mismatch whenever the
@@ -174,6 +178,8 @@ export function JobsExplorer({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
+  // Sidebar variant only: whether the right-hand filter panel is shown ("Hide/Show Filters").
+  const [filtersOpen, setFiltersOpen] = useState(true);
   // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
   // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
   const [now, setNow] = useState(0);
@@ -356,6 +362,89 @@ export function JobsExplorer({
     return chips;
   }, [filters, watchlistActive]);
 
+  // The results table (or empty state) is identical across both page variants, so it lives in one
+  // place and is dropped into whichever layout is rendered below.
+  const jobsTable = jobs.length > 0 ? (
+    <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
+      <TableVirtuoso
+        aria-label="Startup jobs from public ATS pages"
+        className="jobs-table-scroll bg-white"
+        style={{ height: "clamp(420px, 68vh, 760px)" }}
+        data={jobs}
+        components={virtuosoComponents}
+        computeItemKey={(_index, job) => job.id}
+        fixedHeaderContent={TableHeader}
+        itemContent={(_index, job) => (
+          <JobCells
+            job={job}
+            onFilter={update}
+            isWatched={watchlistSet.has(job.company)}
+            onToggleWatch={toggleWatch}
+            now={now}
+          />
+        )}
+        fixedItemHeight={72}
+        increaseViewportBy={{ top: 240, bottom: 480 }}
+        endReached={() => void loadMore()}
+      />
+    </div>
+  ) : (
+    <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+      <p className="text-base font-semibold">No matching jobs</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
+      <Button
+        variant="secondary"
+        className="mt-5 min-h-11 rounded-xl px-4 font-medium transition-transform duration-150 active:scale-[0.96]"
+        onPress={() => setFilters(emptyFilters)}
+      >
+        Clear filters
+      </Button>
+    </div>
+  );
+
+  const showViewsToolbar = watchlist.length > 0 || savedViews.length > 0;
+  const viewsToolbar = showViewsToolbar ? (
+    <ViewsToolbar
+      savedViews={savedViews}
+      currentQuery={urlQuery}
+      onSaveView={saveView}
+      onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
+      onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
+      watchlistCount={watchlist.length}
+      watchlistOnly={watchlistActive}
+      onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
+      showSave={false}
+    />
+  ) : null;
+
+  const resultsFooter = (
+    <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
+      Showing {jobs.length.toLocaleString()} of {total.toLocaleString()}
+      {isPaging ? " · Loading…" : jobs.length < total ? " · Scroll for more" : ""}
+    </p>
+  );
+
+  if (variant === "sidebar") {
+    return (
+      <SidebarLayout
+        total={total}
+        isLoading={isLoading}
+        filters={filters}
+        update={update}
+        toggle={toggle}
+        onSaveView={saveView}
+        canSaveView={urlQuery.length > 0}
+        onClearAll={() => setFilters(emptyFilters)}
+        hasActiveFilters={activeChips.length > 0}
+        filtersOpen={filtersOpen}
+        onToggleFilters={() => setFiltersOpen((open) => !open)}
+        jobsTable={jobsTable}
+        viewsToolbar={viewsToolbar}
+        resultsFooter={resultsFooter}
+      />
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
@@ -430,20 +519,8 @@ export function JobsExplorer({
             </div>
           )}
 
-          {(watchlist.length > 0 || savedViews.length > 0) && (
-            <div className="mt-3 border-t border-black/6 pt-3">
-              <ViewsToolbar
-                savedViews={savedViews}
-                currentQuery={urlQuery}
-                onSaveView={saveView}
-                onApplyView={(view) => setFilters(filtersFromSearchParams(view.query))}
-                onDeleteView={(name) => setSavedViews((current) => current.filter((view) => view.name !== name))}
-                watchlistCount={watchlist.length}
-                watchlistOnly={watchlistActive}
-                onToggleWatchlistOnly={() => update({ watchlistOnly: !filters.watchlistOnly })}
-                showSave={false}
-              />
-            </div>
+          {showViewsToolbar && (
+            <div className="mt-3 border-t border-black/6 pt-3">{viewsToolbar}</div>
           )}
         </div>
 
@@ -455,48 +532,9 @@ export function JobsExplorer({
           </p>
         </div>
 
-        {jobs.length > 0 ? (
-          <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
-            <TableVirtuoso
-              aria-label="Startup jobs from public ATS pages"
-              className="jobs-table-scroll bg-white"
-              style={{ height: "clamp(420px, 68vh, 760px)" }}
-              data={jobs}
-              components={virtuosoComponents}
-              computeItemKey={(_index, job) => job.id}
-              fixedHeaderContent={TableHeader}
-              itemContent={(_index, job) => (
-                <JobCells
-                  job={job}
-                  onFilter={update}
-                  isWatched={watchlistSet.has(job.company)}
-                  onToggleWatch={toggleWatch}
-                  now={now}
-                />
-              )}
-              fixedItemHeight={72}
-              increaseViewportBy={{ top: 240, bottom: 480 }}
-              endReached={() => void loadMore()}
-            />
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
-            <p className="text-base font-semibold">No matching jobs</p>
-            <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
-            <Button
-              variant="secondary"
-              className="mt-5 min-h-11 rounded-xl px-4 font-medium transition-transform duration-150 active:scale-[0.96]"
-              onPress={() => setFilters(emptyFilters)}
-            >
-              Clear filters
-            </Button>
-          </div>
-        )}
+        {jobsTable}
 
-        <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
-          Showing {jobs.length.toLocaleString()} of {total.toLocaleString()}
-          {isPaging ? " · Loading…" : jobs.length < total ? " · Scroll for more" : ""}
-        </p>
+        {resultsFooter}
       </section>
     </main>
   );
@@ -621,6 +659,564 @@ function AddFilterMenu({
         })}
       </div>
     </div>
+  );
+}
+
+// The "Date posted" dropdown, shared by the top filter bar and the sidebar-variant toolbar.
+function DatePostedSelect({
+  filters,
+  update,
+}: {
+  filters: Filters;
+  update: (patch: Partial<Filters>) => void;
+}) {
+  return (
+    <Select
+      aria-label="Date posted"
+      selectedKey={filters.postedWithin === "" ? SELECT_EMPTY_KEY : filters.postedWithin}
+      onSelectionChange={(key) => update({ postedWithin: key === SELECT_EMPTY_KEY ? "" : String(key ?? "") })}
+    >
+      <Select.Trigger className={FILTER_PILL}>
+        <IconCalendar />
+        <Select.Value className="whitespace-nowrap" />
+        <IconChevronDown />
+      </Select.Trigger>
+      <Select.Popover className="max-h-72 min-w-[var(--trigger-width)] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-lift)]">
+        <ListBox aria-label="Date posted" items={postedWithinOptions} className="outline-none">
+          {(option) => (
+            <ListBox.Item
+              id={option.value === "" ? SELECT_EMPTY_KEY : option.value}
+              textValue={option.label}
+              className="flex min-h-9 cursor-pointer items-center rounded-lg px-3 text-sm text-[var(--ink)] outline-none transition-colors duration-100 data-[focused]:bg-[var(--control-hover)] data-[selected]:bg-[var(--accent-wash)] data-[selected]:text-[var(--accent-strong)]"
+            >
+              {option.label}
+            </ListBox.Item>
+          )}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  );
+}
+
+// ---- Second main-page layout: results table beside a right-hand filter sidebar ----
+
+// The whole page for variant="sidebar": same header + hero as the bar variant, then a toolbar
+// (result count, date, Hide/Show Filters) above a two-column body of table + FilterSidebar.
+function SidebarLayout({
+  total,
+  isLoading,
+  filters,
+  update,
+  toggle,
+  onSaveView,
+  canSaveView,
+  onClearAll,
+  hasActiveFilters,
+  filtersOpen,
+  onToggleFilters,
+  jobsTable,
+  viewsToolbar,
+  resultsFooter,
+}: {
+  total: number;
+  isLoading: boolean;
+  filters: Filters;
+  update: (patch: Partial<Filters>) => void;
+  toggle: (key: FilterCategoryKey, value: string) => void;
+  onSaveView: (name: string) => void;
+  canSaveView: boolean;
+  onClearAll: () => void;
+  hasActiveFilters: boolean;
+  filtersOpen: boolean;
+  onToggleFilters: () => void;
+  jobsTable: React.ReactNode;
+  viewsToolbar: React.ReactNode;
+  resultsFooter: React.ReactNode;
+}) {
+  return (
+    <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
+      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
+        <div className="mx-auto flex min-h-[60px] w-full max-w-[1320px] items-center justify-between gap-4 px-5 sm:px-8">
+          <div className="flex items-center gap-3">
+            <span className="brand-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </span>
+            <span className="text-[15px] font-semibold tracking-[-0.015em]">Startups.board</span>
+          </div>
+          <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
+            <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
+            <span className="tabular-nums">{total.toLocaleString()}</span> live roles
+          </div>
+        </div>
+      </header>
+
+      <section className="mx-auto w-full max-w-[1320px] px-5 pb-24 pt-10 sm:px-8 sm:pt-12">
+        <div className="mb-9 text-center">
+          <span
+            className="mx-auto mb-7 block h-[38px] w-24 rounded-xl"
+            style={{ background: "var(--chip)" }}
+            aria-hidden="true"
+          />
+          <h1
+            className="mx-auto text-[clamp(34px,5vw,52px)] leading-[1.03] tracking-[-0.01em] text-balance"
+            style={{ fontFamily: "var(--font-pixel), var(--font-inter), sans-serif", fontWeight: 500 }}
+          >
+            Join a high-growth startup
+          </h1>
+          <p className="mx-auto mt-4 max-w-[600px] text-[15px] leading-relaxed text-[var(--muted)]">
+            Find{" "}
+            <span className="font-semibold tabular-nums text-[var(--accent)]">{total.toLocaleString()}</span>{" "}
+            open roles at today&rsquo;s top startups. Updated daily.
+          </p>
+        </div>
+
+        {/* Toolbar: live count on the left, date + filter toggle on the right. */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
+          <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
+            <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
+            {total === 1 ? "job" : "jobs"}
+            {isLoading && <span className="ms-2 font-normal">Updating…</span>}
+          </p>
+          <div className="flex items-center gap-2">
+            <DatePostedSelect filters={filters} update={update} />
+            <button
+              type="button"
+              onClick={onToggleFilters}
+              aria-expanded={filtersOpen}
+              className={FILTER_PILL}
+            >
+              {filtersOpen ? "Hide Filters" : "Show Filters"}
+            </button>
+          </div>
+        </div>
+
+        {viewsToolbar && <div className="mb-4 rounded-2xl bg-[var(--surface)] p-1 shadow-[var(--shadow-panel)]">{viewsToolbar}</div>}
+
+        <div className="flex flex-col items-start gap-5 lg:flex-row">
+          <div className="min-w-0 flex-1">
+            {jobsTable}
+            {resultsFooter}
+          </div>
+
+          {filtersOpen && (
+            <div className="w-full shrink-0 lg:w-[312px]">
+              <FilterSidebar
+                filters={filters}
+                update={update}
+                toggle={toggle}
+                onSaveView={onSaveView}
+                canSaveView={canSaveView}
+                onClearAll={onClearAll}
+                hasActiveFilters={hasActiveFilters}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+// The right-hand accordion of filter sections. Each section expands to a search-and-checklist
+// (Title/Location/Industry/City) or a set of toggle pills (Workplace/Job type/ATS). Everything is
+// wired to the same filter state and update/toggle handlers as the bar variant.
+function FilterSidebar({
+  filters,
+  update,
+  toggle,
+  onSaveView,
+  canSaveView,
+  onClearAll,
+  hasActiveFilters,
+}: {
+  filters: Filters;
+  update: (patch: Partial<Filters>) => void;
+  toggle: (key: FilterCategoryKey, value: string) => void;
+  onSaveView: (name: string) => void;
+  canSaveView: boolean;
+  onClearAll: () => void;
+  hasActiveFilters: boolean;
+}) {
+  const byKey = (key: FilterCategoryKey) => FILTER_CATEGORIES.find((entry) => entry.key === key)!;
+
+  return (
+    <aside aria-label="Filters" className="flex w-full flex-col gap-2.5">
+      <SidebarSection Icon={IconLocate} label="Title" count={filters.title ? 1 : 0} defaultOpen>
+        <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconPin} label="Location" count={filters.location ? 1 : 0}>
+        <LocationSearch
+          value={filters.location}
+          onChange={(value) => update({ location: value, city: [] })}
+        />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconIndustry} label="Industry" count={filters.industry.length}>
+        <SearchCheckList
+          options={byKey("industry").options}
+          selected={filters.industry}
+          onToggle={(value) => toggle("industry", value)}
+        />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconGlobe} label="City" count={filters.city.length}>
+        <SearchCheckList
+          options={byKey("city").options}
+          selected={filters.city}
+          onToggle={(value) => toggle("city", value)}
+        />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconWorkplace} label="Workplace" count={filters.workplace.length}>
+        <SidebarPills
+          options={byKey("workplace").options}
+          selected={filters.workplace}
+          onToggle={(value) => toggle("workplace", value)}
+          glyph="globe"
+        />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconJobType} label="Job type" count={filters.employmentType.length}>
+        <SidebarPills
+          options={byKey("employmentType").options}
+          selected={filters.employmentType}
+          onToggle={(value) => toggle("employmentType", value)}
+        />
+      </SidebarSection>
+
+      <SidebarSection Icon={IconAts} label="ATS" count={filters.source.length}>
+        <SidebarPills
+          options={byKey("source").options}
+          selected={filters.source}
+          onToggle={(value) => toggle("source", value)}
+          glyph="ats"
+        />
+      </SidebarSection>
+
+      <SidebarSaveView onSaveView={onSaveView} canSaveView={canSaveView} />
+
+      {hasActiveFilters && (
+        <button
+          type="button"
+          onClick={onClearAll}
+          className="mx-auto mt-0.5 inline-flex min-h-8 items-center rounded-lg px-3 text-[12px] font-medium text-[var(--muted-strong)] transition-colors duration-150 hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          Clear all filters
+        </button>
+      )}
+    </aside>
+  );
+}
+
+function SidebarChevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className={`size-4 shrink-0 text-[var(--muted)] transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4.5 6.5 8 10l3.5-3.5" />
+    </svg>
+  );
+}
+
+// One collapsible sidebar section: a header (icon, label, active-count badge, chevron) and the
+// section's controls, shown while open.
+function SidebarSection({
+  Icon,
+  label,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  Icon: () => React.ReactElement;
+  label: string;
+  count: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-2xl bg-[var(--surface)] shadow-[var(--shadow-panel)]">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 rounded-2xl px-4 py-3.5 text-start transition-colors duration-150 hover:bg-[var(--control-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      >
+        {/* The line icons hard-code a muted stroke; the descendant selector overrides it so section
+            headers read in the ink colour like the design. */}
+        <span className="[&>svg]:text-[var(--ink)]"><Icon /></span>
+        <span className="flex-1 text-[15px] font-semibold tracking-[-0.01em]">{label}</span>
+        {count > 0 && (
+          <span className="min-w-5 rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-center text-[12px] font-semibold tabular-nums text-[var(--accent-strong)]">
+            {count}
+          </span>
+        )}
+        <SidebarChevron open={open} />
+      </button>
+      {open && <div className="px-3 pb-3.5 pt-0.5">{children}</div>}
+    </div>
+  );
+}
+
+// The search box that heads Location and every checklist section.
+function SidebarSearchInput({
+  value,
+  onChange,
+  placeholder = "Search",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex min-h-10 items-center gap-2 rounded-xl bg-[var(--control-hover)] px-3">
+      <IconSearch />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full min-w-0 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+      />
+    </div>
+  );
+}
+
+// A search box over a static option list, with each match a checkbox row (multi-select).
+function SearchCheckList({
+  options,
+  selected,
+  onToggle,
+}: {
+  options: readonly { label: string; value: string }[];
+  selected: string[];
+  onToggle: (value: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const matches = term ? options.filter((option) => option.label.toLowerCase().includes(term)) : options;
+  // The city/industry lists run to hundreds of entries; cap the rendered rows so a section stays
+  // light, and surface selected-but-unmatched values first so they never hide off the end.
+  const selectedSet = new Set(selected);
+  const ordered = [
+    ...matches.filter((option) => selectedSet.has(option.value)),
+    ...matches.filter((option) => !selectedSet.has(option.value)),
+  ];
+  const shown = ordered.slice(0, 50);
+
+  return (
+    <div>
+      <SidebarSearchInput value={query} onChange={setQuery} />
+      <div className="mt-1 max-h-64 overflow-auto">
+        {shown.map((option) => {
+          const checked = selectedSet.has(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onToggle(option.value)}
+              aria-pressed={checked}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start transition-colors duration-100 hover:bg-[var(--control-hover)]"
+            >
+              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{option.label}</span>
+              <FilterCheckbox checked={checked} />
+            </button>
+          );
+        })}
+        {shown.length === 0 && (
+          <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>
+        )}
+        {ordered.length > shown.length && (
+          <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">Keep typing to narrow {ordered.length - shown.length} more…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Free-text location search (a single value, unlike the checklist facets). Controlled straight off
+// the filter value so an external reset (Clear all) empties it too.
+function LocationSearch({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <SidebarSearchInput value={value} onChange={onChange} placeholder="City, region or country" />
+      <p className="px-2 pt-1.5 text-[12px] text-[var(--muted)]">Free-text match on the posting&rsquo;s location.</p>
+    </div>
+  );
+}
+
+// Title picker: a search box that lists matching real job titles as checkbox rows. Title is a single
+// value, so picking one replaces it and picking the selected one clears it.
+function TitleCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [query, setQuery] = useState(value);
+  const [suggestions, setSuggestions] = useState<{ title: string; jobCount: number }[]>([]);
+
+  useEffect(() => {
+    const term = query.trim();
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (term.length < 2) {
+        setSuggestions([]);
+        return;
+      }
+      try {
+        const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}`, { signal: controller.signal });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { titles: { title: string; jobCount: number }[] };
+        setSuggestions(payload.titles ?? []);
+      } catch {
+        // A failed lookup just means no suggestions.
+      }
+    }, 160);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
+
+  // Always surface the current selection as a checked row, even before typing.
+  const rows = [
+    ...(value && !suggestions.some((s) => s.title === value) ? [{ title: value, jobCount: 0 }] : []),
+    ...suggestions,
+  ];
+
+  return (
+    <div>
+      <SidebarSearchInput value={query} onChange={setQuery} placeholder="Search titles" />
+      <div className="mt-1 max-h-64 overflow-auto">
+        {rows.map((row) => {
+          const checked = row.title === value;
+          return (
+            <button
+              key={row.title}
+              type="button"
+              onClick={() => onChange(checked ? "" : row.title)}
+              aria-pressed={checked}
+              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start transition-colors duration-100 hover:bg-[var(--control-hover)]"
+            >
+              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.title}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                {row.jobCount > 0 && (
+                  <span className="tabular-nums text-[12px] text-[var(--muted)]">{row.jobCount.toLocaleString()}</span>
+                )}
+                <FilterCheckbox checked={checked} />
+              </span>
+            </button>
+          );
+        })}
+        {rows.length === 0 && (
+          <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
+            {query.trim().length < 2 ? "Type to search job titles" : "No matching titles"}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The pill grid for the small facets (Workplace, Job type, ATS): each option a toggle pill, with an
+// optional leading glyph (a globe for workplace, the ATS logo for sources).
+function SidebarPills({
+  options,
+  selected,
+  onToggle,
+  glyph,
+}: {
+  options: readonly { label: string; value: string }[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  glyph?: "globe" | "ats";
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 pt-0.5">
+      {options.map((option) => {
+        const checked = selected.includes(option.value);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onToggle(option.value)}
+            aria-pressed={checked}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+              checked
+                ? "border-transparent bg-[var(--accent-strong)] text-white"
+                : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
+            }`}
+          >
+            {glyph === "globe" && <span className="[&>svg]:text-current"><IconGlobe /></span>}
+            {glyph === "ats" && (
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
+                <AtsMark source={option.value} size={4} />
+              </span>
+            )}
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Full-width "Save view" control for the sidebar, mirroring the bar variant's naming flow.
+function SidebarSaveView({
+  onSaveView,
+  canSaveView,
+}: {
+  onSaveView: (name: string) => void;
+  canSaveView: boolean;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+
+  function commit() {
+    onSaveView(name);
+    setName("");
+    setNaming(false);
+  }
+
+  if (naming) {
+    return (
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          commit();
+        }}
+      >
+        <TextField aria-label="Name this view" autoFocus>
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={() => (name.trim() ? commit() : setNaming(false))}
+            onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
+            placeholder="View name"
+            maxLength={40}
+            className="min-h-11 w-full rounded-full border border-[var(--border)] bg-[var(--control)] px-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+          />
+        </TextField>
+      </form>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setNaming(true)}
+      disabled={!canSaveView}
+      title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+      className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-panel)] transition-colors duration-150 hover:bg-[var(--control-hover)] disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+    >
+      <IconPlus /> Save view
+    </button>
   );
 }
 
@@ -759,31 +1355,7 @@ function FilterBar({
 
       {/* Right group, pushed to the end */}
       <div className="ms-auto flex flex-wrap items-center gap-2">
-        {/* Date posted */}
-        <Select
-          aria-label="Date posted"
-          selectedKey={filters.postedWithin === "" ? SELECT_EMPTY_KEY : filters.postedWithin}
-          onSelectionChange={(key) => update({ postedWithin: key === SELECT_EMPTY_KEY ? "" : String(key ?? "") })}
-        >
-          <Select.Trigger className={FILTER_PILL}>
-            <IconCalendar />
-            <Select.Value className="whitespace-nowrap" />
-            <IconChevronDown />
-          </Select.Trigger>
-          <Select.Popover className="max-h-72 min-w-[var(--trigger-width)] overflow-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-lift)]">
-            <ListBox aria-label="Date posted" items={postedWithinOptions} className="outline-none">
-              {(option) => (
-                <ListBox.Item
-                  id={option.value === "" ? SELECT_EMPTY_KEY : option.value}
-                  textValue={option.label}
-                  className="flex min-h-9 cursor-pointer items-center rounded-lg px-3 text-sm text-[var(--ink)] outline-none transition-colors duration-100 data-[focused]:bg-[var(--control-hover)] data-[selected]:bg-[var(--accent-wash)] data-[selected]:text-[var(--accent-strong)]"
-                >
-                  {option.label}
-                </ListBox.Item>
-              )}
-            </ListBox>
-          </Select.Popover>
-        </Select>
+        <DatePostedSelect filters={filters} update={update} />
 
         {/* Save view */}
         {naming ? (
