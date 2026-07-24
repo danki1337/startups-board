@@ -241,8 +241,9 @@ button:disabled,
 }
 
 /* Pulse lives on the skeleton's children, not the skeleton itself, so the layer's own opacity and
-   filter stay free for the cross-fade above. */
-.t-skel-skeleton.is-pulsing > * {
+   filter stay free for the cross-fade above. Not scoped to .t-skel-skeleton, so the same class can
+   pulse a standalone placeholder (the dropdown list) that has no cross-fade partner. */
+.is-pulsing > * {
   animation: t-skel-pulse var(--pulse-dur) ease-in-out var(--pulse-count);
 }
 @keyframes t-skel-pulse {
@@ -311,7 +312,7 @@ button:disabled,
   .t-skel-content {
     transition: none !important;
   }
-  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
+  .is-pulsing > * { animation: none !important; }
 }
 
 /* Row collapse. Blocks that appear above the results table -- the applied-filter row, the
@@ -330,6 +331,9 @@ button:disabled,
   min-height: 0;
   opacity: 0;
   transition: opacity 100ms var(--ease-out);
+  /* The pills inside cast a shadow 6px below themselves, and overflow:hidden cropped it flat -- the
+     buttons looked sliced off along the bottom. This is the room that shadow needs to land in. */
+  padding-bottom: 6px;
 }
 .row-collapse.is-open {
   grid-template-rows: 1fr;

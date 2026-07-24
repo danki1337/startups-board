@@ -665,9 +665,9 @@ export function JobsExplorer({
               rows are changing. `inert` keeps the clipped controls out of the tab order. */}
           <div className={`row-collapse ${activeChips.length > 0 ? "is-open" : ""}`}>
             <div inert={activeChips.length === 0 ? true : undefined}>
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-[10px] border-t border-[var(--border)] pt-3">
                 {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
-                <span className="ms-auto flex items-center gap-2">
+                <span className="ms-auto flex items-center gap-[10px]">
                   <SaveViewPill onSaveView={saveView} canSaveView />
                   <PillButton onClick={() => setFilters(emptyFilters)}>Clear all</PillButton>
                 </span>
@@ -804,6 +804,23 @@ function SearchCheckList({
   );
 }
 
+// Placeholder rows for a list that is still loading, sized like the real ones so the panel does not
+// resize under the cursor when they arrive.
+function ListSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div className="is-pulsing" aria-hidden="true">
+      <div>
+        {Array.from({ length: rows }, (_, row) => (
+          <div key={row} className="flex items-center justify-between gap-2 px-2 py-[9px]">
+            <span className="skeleton h-3 rounded" style={{ width: `${46 + ((row * 13) % 34)}%` }} />
+            <span className="skeleton h-3 w-6 shrink-0 rounded" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Title picker: a search box that lists matching real job titles as checkbox rows. Title is a single
 // value, so picking one replaces it and picking the selected one clears it.
 function TitleCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -872,10 +889,11 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
             </button>
           );
         })}
-        {rows.length === 0 && (
+        {rows.length === 0 && state === "loading" && <ListSkeleton />}
+        {rows.length === 0 && state !== "loading" && (
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
-            {state === "loading" ? "Loading titles…"
-              : state === "failed" ? "Couldn't load titles. Type a title to filter by it anyway."
+            {state === "failed"
+              ? "Couldn't load titles. Type a title to filter by it anyway."
               : "No matching titles"}
           </p>
         )}
@@ -1357,7 +1375,7 @@ function FilterDropdownBar({
   const options = (key: (typeof FILTER_CATEGORIES)[number]["key"]) =>
     FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-[10px]">
       <FilterDropdown Icon={IconTitleF} label="Title" width="w-72">
         <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
       </FilterDropdown>
@@ -1377,7 +1395,7 @@ function FilterDropdownBar({
         <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
       </FilterDropdown>
 
-      <div className="ms-auto flex items-center gap-2">
+      <div className="ms-auto flex items-center gap-[10px]">
         <SearchBox value={filters.search} onChange={(value) => update({ search: value })} />
         <DateDropdown value={filters.postedWithin} onChange={(value) => update({ postedWithin: value })} />
       </div>
@@ -1596,7 +1614,7 @@ function JobCells({
                 type="button"
                 onClick={() => onFilter({ company: job.company })}
                 title={`Show only jobs at ${job.company}`}
-                className="max-w-[52%] truncate rounded underline-offset-2 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="-mx-1 max-w-[52%] truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
@@ -1624,7 +1642,7 @@ function JobCells({
               // often a full address that would match only this one posting.
               onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: job.location }))}
               title={job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
-              className="truncate rounded text-start underline-offset-2 hover:text-[var(--ink)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
             >
               {job.location}
             </button>
