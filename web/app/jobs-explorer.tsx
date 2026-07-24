@@ -455,23 +455,26 @@ export function JobsExplorer({
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      <header className="border-b border-[var(--border)] bg-[var(--surface)]">
-        <div className="mx-auto flex min-h-[60px] w-full max-w-[1240px] items-center justify-between gap-4 px-5 sm:px-8">
-          <div className="flex items-center gap-3">
-            <span className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span />
-            </span>
-            <span className="text-[15px] font-semibold tracking-[-0.015em]">Startups.board</span>
+      {/* v3 drops the site header entirely — the hero already carries the brand and live count. */}
+      {variant !== "chips" && (
+        <header className="border-b border-[var(--border)] bg-[var(--surface)]">
+          <div className="mx-auto flex min-h-[60px] w-full max-w-[1240px] items-center justify-between gap-4 px-5 sm:px-8">
+            <div className="flex items-center gap-3">
+              <span className="brand-mark" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+              <span className="text-[15px] font-semibold tracking-[-0.015em]">Startups.board</span>
+            </div>
+            <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
+              <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
+              <span className="tabular-nums">{total.toLocaleString()}</span> live roles
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
-            <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
-            <span className="tabular-nums">{total.toLocaleString()}</span> live roles
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <section className="mx-auto w-full max-w-[1240px] px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
         <div className="mb-10 text-center">
@@ -506,8 +509,21 @@ export function JobsExplorer({
           {activeChips.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
               {variant === "chips" ? (
-                // v3: each selected filter as a dashed "[icon] is [value]" pill.
-                activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)
+                <>
+                  {/* v3: each selected filter as a dashed "[icon] is [value]" pill, with Save view
+                      beside Clear all — so saving only surfaces once there is something to save. */}
+                  {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
+                  <span className="ms-auto flex items-center gap-2">
+                    <SaveViewPill onSaveView={saveView} canSaveView compact />
+                    <Button
+                      variant="secondary"
+                      className="min-h-9 rounded-full px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
+                      onPress={() => setFilters(emptyFilters)}
+                    >
+                      Clear all
+                    </Button>
+                  </span>
+                </>
               ) : (
                 <>
                   <span className="text-[12px] font-medium text-[var(--muted)]">Active</span>
@@ -523,15 +539,15 @@ export function JobsExplorer({
                       <span aria-hidden="true" className="text-[var(--muted)]">×</span>
                     </button>
                   ))}
+                  <Button
+                    variant="secondary"
+                    className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
+                    onPress={() => setFilters(emptyFilters)}
+                  >
+                    Clear all
+                  </Button>
                 </>
               )}
-              <Button
-                variant="secondary"
-                className="ms-auto min-h-8 rounded-lg px-3 text-[12px] font-medium transition-transform duration-150 active:scale-[0.96]"
-                onPress={() => setFilters(emptyFilters)}
-              >
-                Clear all
-              </Button>
             </div>
           )}
 
@@ -1372,6 +1388,60 @@ function FilterMenu({
 const FILTER_PILL =
   "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--control)] px-3.5 text-sm font-medium text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--control-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
+// The "Save view" control with its inline naming flow. Lives in the filter bar on v1; v3 places it
+// in the selected-filters row instead (compact sizing to sit beside the chips).
+function SaveViewPill({
+  onSaveView,
+  canSaveView,
+  compact = false,
+}: {
+  onSaveView: (name: string) => void;
+  canSaveView: boolean;
+  compact?: boolean;
+}) {
+  const [naming, setNaming] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const pill = compact
+    ? "inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-colors duration-150 hover:bg-[var(--control-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+    : FILTER_PILL;
+
+  function commitSave() {
+    onSaveView(viewName);
+    setViewName("");
+    setNaming(false);
+  }
+
+  if (naming) {
+    return (
+      <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
+        <TextField aria-label="Name this view" autoFocus>
+          <Input
+            value={viewName}
+            onChange={(event) => setViewName(event.target.value)}
+            onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
+            onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
+            placeholder="View name"
+            maxLength={40}
+            className={`${compact ? "min-h-9" : "min-h-11"} w-36 rounded-full border border-[var(--border)] bg-[var(--control)] px-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]`}
+          />
+        </TextField>
+      </form>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setNaming(true)}
+      disabled={!canSaveView}
+      title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+      className={`${pill} disabled:cursor-not-allowed disabled:opacity-55`}
+    >
+      <IconPlus /> Save view
+    </button>
+  );
+}
+
 // The compact filter bar, replicating the design's separate pills: Search, a divider, then Title /
 // Location / Add filter, and — pushed right — a date pill and Save view. The remaining filters live
 // behind "Add filter"; everything here is wired to the same filter state as the full panel.
@@ -1391,8 +1461,6 @@ function FilterBar({
   // "panels" is the v1 two-panel Add filter flyout; "stack" is the v3 single multistate flyout.
   menu?: "panels" | "stack";
 }) {
-  const [naming, setNaming] = useState(false);
-  const [viewName, setViewName] = useState("");
   const [openPill, setOpenPill] = useState<"title" | "location" | null>(null);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -1419,12 +1487,6 @@ function FilterBar({
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [filterMenuOpen]);
-
-  function commitSave() {
-    onSaveView(viewName);
-    setViewName("");
-    setNaming(false);
-  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -1509,32 +1571,8 @@ function FilterBar({
       <div className="ms-auto flex flex-wrap items-center gap-2">
         <DatePostedSelect filters={filters} update={update} />
 
-        {/* Save view */}
-        {naming ? (
-          <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
-            <TextField aria-label="Name this view" autoFocus>
-              <Input
-                value={viewName}
-                onChange={(event) => setViewName(event.target.value)}
-                onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
-                onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
-                placeholder="View name"
-                maxLength={40}
-                className="min-h-11 w-36 rounded-full border border-[var(--border)] bg-[var(--control)] px-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
-              />
-            </TextField>
-          </form>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setNaming(true)}
-            disabled={!canSaveView}
-            title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
-            className={`${FILTER_PILL} disabled:cursor-not-allowed disabled:opacity-55`}
-          >
-            <IconPlus /> Save view
-          </button>
-        )}
+        {/* Save view lives here on v1; v3 moves it into the selected-filters row instead. */}
+        {menu !== "stack" && <SaveViewPill onSaveView={onSaveView} canSaveView={canSaveView} />}
       </div>
     </div>
   );
