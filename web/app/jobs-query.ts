@@ -99,6 +99,13 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   if (search) {
     conditions.push("jobs_fts MATCH ?");
     bindings.push(search);
+    // Punctuation tech terms (c++, c#, ...) ride alongside the FTS match as a substring filter, so
+    // "c++ engineer" narrows to engineer via the index and then keeps only the C++ titles. Applied
+    // only with a normal FTS term present, which keeps the LIKE bounded to that narrowed set.
+    for (const term of specialSearchTerms(params.get("search"))) {
+      conditions.push("(lower(j.title) LIKE ? OR lower(coalesce(j.company_name, '')) LIKE ?)");
+      bindings.push(`%${term}%`, `%${term}%`);
+    }
   }
   addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", params.get("location"));
   addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", params.get("company"));
@@ -374,6 +381,17 @@ export function ftsQuery(value: string | null) {
     .slice(0, 8) ?? [];
   if (!tokens.length) return null;
   return tokens.map((token) => `"${token}"*`).join(" AND ");
+}
+
+// Tech terms whose punctuation the FTS tokenizer strips, collapsing them to a bare letter the query
+// then drops (so "c++"/"c#" would otherwise match nothing meaningful). When one appears alongside a
+// normal search word, it is applied as a substring filter on top of the FTS match -- fast because
+// the FTS term has already narrowed the set, and exact because "%c++%" hits the real title text.
+const SPECIAL_TERMS = ["c++", "c#", "f#", "c/c++", "objective-c", ".net"];
+
+export function specialSearchTerms(value: string | null) {
+  const lower = (value ?? "").toLowerCase();
+  return SPECIAL_TERMS.filter((term) => lower.includes(term));
 }
 
 // A cursor is either a keyset position for browse ({value, key}) or an offset for relevance search

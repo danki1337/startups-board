@@ -126,4 +126,7 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   assert.match(query, /totalCapped/);
   // A lone single-character token is dropped so "a" cannot prefix-match the whole table.
   assert.match(query, /token\.length >= 2/);
+  // Punctuation tech terms (c++, c#) ride alongside the FTS match as a substring filter.
+  assert.match(query, /SPECIAL_TERMS/);
+  assert.match(query, /specialSearchTerms/);
 });
