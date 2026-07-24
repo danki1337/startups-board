@@ -525,7 +525,7 @@ export function JobsExplorer({
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
           <JobsSkeleton />
         </div>
-        <div className="t-skel-content">
+        <div className="t-skel-content relative">
           <TableVirtuoso
             ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
@@ -539,6 +539,17 @@ export function JobsExplorer({
               const sync = () => {
                 const atEnd = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
                 el.toggleAttribute("data-scroll-bottom", !atEnd);
+                el.toggleAttribute("data-scroll-top", el.scrollTop > 1);
+                // The top fade parks directly under the sticky column header, so it needs that
+                // header's height -- measured rather than hardcoded, since it is styled in Tailwind
+                // and changes with the type scale.
+                const header = el.querySelector("thead");
+                if (header) {
+                  el.parentElement?.style.setProperty(
+                    "--jobs-header-height",
+                    `${header.getBoundingClientRect().height}px`,
+                  );
+                }
               };
               el.addEventListener("scroll", sync, { passive: true });
               sync();
@@ -571,6 +582,9 @@ export function JobsExplorer({
               if (!pagingError) void loadMore();
             }}
           />
+          {/* Drawn as an overlay rather than folded into the scroller's mask: a mask fades sticky
+              children too, so a top fade there would wash out the column header. */}
+          <div className="jobs-table-top-fade" aria-hidden="true" />
         </div>
       </div>
     ) : error ? (
@@ -881,7 +895,11 @@ function SidebarPills({
     <div className="flex flex-wrap gap-2 pt-0.5">
       {options.map((option) => {
         const checked = selected.includes(option.value);
-        const JobTypeIcon = glyph === "jobtype" ? JOB_TYPE_ICONS[option.value.toLowerCase()] : undefined;
+        const OptionIcon = glyph === "jobtype"
+          ? JOB_TYPE_ICONS[option.value.toLowerCase()]
+          : glyph === "globe"
+            ? WORKPLACE_ICONS[option.value.toLowerCase()]
+            : undefined;
         return (
           <button
             key={option.value}
@@ -898,13 +916,12 @@ function SidebarPills({
                 colour and reads heavier than the text beside it. Muting them to the same grey as
                 the category icons in the filter row keeps the label the emphasis. Selected pills
                 pass through, so the icon inverts to white with the text. */}
-            {glyph === "globe" && <span className={checked ? "" : "text-[#868990]"}><IconGlobe /></span>}
             {glyph === "ats" && (
               <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
                 <AtsMark source={option.value} size={4} />
               </span>
             )}
-            {JobTypeIcon && <span className={checked ? "" : "text-[#868990]"}><JobTypeIcon /></span>}
+            {OptionIcon && <span className={checked ? "" : "text-[#868990]"}><OptionIcon /></span>}
             {option.label}
           </button>
         );
@@ -932,7 +949,9 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       <span className="text-[var(--muted)]">is</span>
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
-        {chip.kind === "workplace" && <IconGlobe />}
+        {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
+          <span className="inline-flex text-[#868990]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
+        )}
         {chip.kind === "source" && (
           <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
             <AtsMark source={value} size={4} />
@@ -1038,6 +1057,17 @@ const IconInternship = () => (
   </svg>
 );
 
+const IconRemoteF = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-4 shrink-0">
+    <path d="M9.68379 1.04617C14.6279 0.872232 18.7771 4.73841 18.9525 9.6824C19.1277 14.6264 15.2628 18.7768 10.3188 18.9535C5.37293 19.1302 1.22056 15.2634 1.04517 10.3174C0.869775 5.37147 4.73781 1.22018 9.68379 1.04617ZM2.71417 9.15367C3.51503 9.61203 3.99771 9.59357 4.87303 9.61027C5.90095 9.6299 7.07164 9.95846 7.33598 11.094C7.56952 11.9608 7.39065 12.9259 7.51268 13.7909C7.61474 14.5142 8.06677 15.3015 8.13837 16.0586C8.17454 16.441 8.16467 16.7032 8.06328 17.0758C8.34021 17.135 8.58074 17.1956 8.86331 17.2394C9.79876 17.3833 10.7532 17.3467 11.6748 17.1315C12.011 16.456 12.2816 15.776 12.0212 15.017C11.9297 14.7505 11.8109 14.525 11.6847 14.2745C11.405 13.6905 11.2397 13.2173 11.4645 12.5523C11.5999 12.1521 11.8883 11.7594 12.283 11.5863C12.9552 11.2914 13.6839 11.4675 14.3986 11.2518C14.9246 11.0932 15.1077 10.9275 15.5542 10.6457C16.0824 10.3099 16.7081 10.1612 17.331 10.2235C17.3194 10.0873 17.3246 9.93074 17.3216 9.79152C17.3175 9.56061 17.3008 9.33009 17.272 9.10096C17.1402 8.02742 16.7716 6.99654 16.193 6.08276C16.1188 5.96552 15.9193 5.6615 15.8221 5.5648C14.8629 5.94506 14.7873 6.37014 14.0942 7.05523C13.2555 7.8924 12.0448 8.43844 10.8854 7.93199C10.3356 7.69181 9.92879 7.31229 9.69661 6.74822C9.50556 6.28404 9.53889 5.77592 9.35635 5.32234C9.26048 5.08407 8.84845 4.92668 8.63678 4.77694C8.39969 4.61107 8.19953 4.39786 8.04895 4.15077C7.93818 3.96461 7.85354 3.76409 7.79738 3.55487C7.77776 3.48065 7.70327 3.05676 7.70025 3.052L7.68178 3.04976C5.91917 3.59694 4.36691 4.96018 3.51126 6.58661C3.19451 7.18753 2.96384 7.83001 2.82604 8.49517C2.7801 8.71659 2.7574 8.94456 2.71417 9.15367Z" fill="currentColor" />
+  </svg>
+);
+
+// Only Remote carries a glyph: a globe next to "On-site" was saying the opposite of the label.
+const WORKPLACE_ICONS: Record<string, () => React.ReactElement> = {
+  remote: IconRemoteF,
+};
+
 // Job-type glyphs keyed by value; currentColor lets them invert to white on the selected pill.
 // Category icon per chip kind. These are the same filled glyphs the filter row uses, so a chip and
 // the dropdown it came from are drawn identically; only search/company/location have no pill of
@@ -1076,7 +1106,7 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 // actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
 // value -- below 0.95 it reads as the button flinching.
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[#F5F5FA] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[#F5F5FA] active:bg-[#F5F5FA] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // A scrollable box that fades its own content at whichever edge still has more to scroll, so a long
 // option list reads as continuing rather than ending. Driven off scroll position rather than a
@@ -1173,14 +1203,12 @@ function SearchBox({
 function FilterDropdown({
   Icon,
   label,
-  count,
   width = "w-64",
   align = "start",
   children,
 }: {
   Icon: () => React.ReactElement;
   label: string;
-  count: number;
   width?: string;
   // "end" hangs the panel off the trigger's right edge instead of its left, for pills near the end
   // of the row whose panel is wider than they are and would otherwise run off the viewport.
@@ -1233,11 +1261,6 @@ function FilterDropdown({
       >
         <Icon />
         <span>{label}</span>
-        {count > 0 && (
-          <span className="min-w-5 rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-center text-[12px] font-semibold tabular-nums text-[var(--accent-strong)]">
-            {count}
-          </span>
-        )}
         <IconUpDown />
       </button>
       {open && (
@@ -1317,22 +1340,22 @@ function FilterDropdownBar({
     FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <FilterDropdown Icon={IconTitleF} label="Title" count={filters.title ? 1 : 0} width="w-72">
+      <FilterDropdown Icon={IconTitleF} label="Title" width="w-72">
         <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
       </FilterDropdown>
-      <FilterDropdown Icon={IconJobTypeF} label="Job type" count={filters.employmentType.length} width="w-72">
+      <FilterDropdown Icon={IconJobTypeF} label="Job type" width="w-72">
         <SidebarPills options={options("employmentType")} selected={filters.employmentType} onToggle={(value) => toggle("employmentType", value)} glyph="jobtype" />
       </FilterDropdown>
-      <FilterDropdown Icon={IconWorkplaceF} label="Workplace" count={filters.workplace.length} width="w-72">
+      <FilterDropdown Icon={IconWorkplaceF} label="Workplace" width="w-72">
         <SidebarPills options={options("workplace")} selected={filters.workplace} onToggle={(value) => toggle("workplace", value)} glyph="globe" />
       </FilterDropdown>
-      <FilterDropdown Icon={IconCountryF} label="Country" count={filters.country && filters.country !== "anywhere" ? 1 : 0}>
+      <FilterDropdown Icon={IconCountryF} label="Country">
         <SearchSelectList options={countryOptions} value={filters.country} onChange={(value) => update({ country: value })} />
       </FilterDropdown>
-      <FilterDropdown Icon={IconIndustryF} label="Industry" count={filters.industry.length}>
+      <FilterDropdown Icon={IconIndustryF} label="Industry">
         <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} searchLabel="Search industries" />
       </FilterDropdown>
-      <FilterDropdown Icon={IconAtsF} label="ATS" count={filters.source.length} width="w-72">
+      <FilterDropdown Icon={IconAtsF} label="ATS" width="w-72">
         <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
       </FilterDropdown>
 
@@ -1350,7 +1373,7 @@ function FilterDropdownBar({
 function DateDropdown({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const current = postedWithinOptions.find((option) => option.value === value) ?? postedWithinOptions[0];
   return (
-    <FilterDropdown Icon={IconDateF} label={current.short} count={0} width="w-44" align="end">
+    <FilterDropdown Icon={IconDateF} label={current.short} width="w-44" align="end">
       {(close) => (
         <div className="flex flex-col">
           {postedWithinOptions.map((option) => (

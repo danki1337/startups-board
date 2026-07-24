@@ -396,24 +396,64 @@ function nextCursor(
 // It is only ever applied to the suggestion LIST. The title filter itself is a substring match
 // (`lower(title) LIKE '%value%'`), so picking the folded "Product Designer" still matches every
 // variant it stood for -- the collapse loses nothing, it just stops showing the same role ten times.
+// Words that are never part of a role name -- an engagement type or a work arrangement. These can
+// strip a title all the way down to one word: "Designer Contract" is a Designer.
+const HARD_QUALIFIERS = new Set([
+  "freelance", "freelancer", "contract", "contractor", "temp", "temporary",
+  "permanent", "perm", "ftc", "parttime", "fulltime", "part-time", "full-time",
+  "remote", "hybrid", "onsite", "on-site", "internship", "coop", "co-op",
+]);
+
+// Words that usually qualify a role but can also BE one -- "Design Lead", "Design Intern". These
+// only strip while at least two words would remain.
+const SOFT_QUALIFIERS = new Set([
+  "jr", "jr.", "junior", "sr", "sr.", "senior", "lead", "principal", "staff",
+  "pleno", "s\u00eanior", "j\u00fanior", "intern", "apprentice", "trainee",
+]);
+
+const TRAILING_MODIFIERS = new Set([...HARD_QUALIFIERS, ...SOFT_QUALIFIERS]);
+
 export function canonicalTitle(title: string) {
+  let result = String(title ?? "");
+
   // Anything parenthesised or bracketed is a qualifier, never the role: "(UI/UX)", "(Contract)",
-  // "(m/w/d)". Safe to drop unconditionally.
-  let result = title.replace(/[([{][^)\]}]*[)\]}]?/g, " ").replace(/\s+/g, " ").trim();
+  // "(m/w/d)". Safe to drop outright.
+  result = result.replace(/[([{][^)\]}]*[)\]}]?/g, " ").replace(/\s+/g, " ").trim();
 
-  // A pipe, dash or comma usually starts a suffix -- but only when a whole role stands in front of
-  // it. "Product Designer, App Store" is a Product Designer; "Engineer, Machine Learning" is not
-  // simply an Engineer, and folding it away would merge genuinely different roles. Requiring two
-  // words in the head is what separates the two cases.
-  const head = result.split(/\s+[|–—]\s*|\s+-\s+|,\s*/)[0].trim();
-  if (head && head.split(/\s+/).length >= 2) result = head;
+  // Everything from the first separator onward is a suffix -- but only when a whole role already
+  // stands in front of it. "Product Designer, App Store" is a Product Designer; "Engineer, Machine
+  // Learning" and "UI/UX Designer" are not simply an Engineer or a UI. Requiring two words in the
+  // head is what separates those cases. A hyphen must be followed by a space so "Front-End" and
+  // "on-site" survive, but "Product Designer- San Francisco" does not.
+  const SEPARATOR = /\s*[:|/–—]\s*|\s*,\s*|\s+&\s+|\s+and\s+|\s*-\s+/i;
+  const head = result.split(SEPARATOR)[0].trim();
+  const suffix = result.slice(head.length).replace(SEPARATOR, "").trim();
+  // Two words in the head means the role is already complete and the rest is a qualifier. With a
+  // one-word head the suffix usually carries the specialty ("Engineer, Machine Learning"), so it
+  // only folds when the suffix is itself pure boilerplate -- a duration or an engagement word.
+  const suffixIsBoilerplate = suffix.length > 0 && (
+    /^\d+\s*(?:month|months|mo|week|weeks|year|years|hr|hrs|hour|hours)\b/i.test(suffix)
+    || suffix.split(/\s+/).every((word) => TRAILING_MODIFIERS.has(word.toLowerCase().replace(/[.,;:]+$/, "")))
+  );
+  if (head && (head.split(/\s+/).length >= 2 || suffixIsBoilerplate)) result = head;
 
-  return result
-    // Trailing level markers: "II", "IV", "3", "L4".
-    .replace(/\s+(?:l|level\s*)?\d+$/i, "")
-    .replace(/\s+(?:i{1,3}|iv|v|vi{1,3}|ix|x)$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  // Strip trailing level and engagement words, repeatedly ("Product Designer Contract II"), but
+  // never down to a single word -- "Design Lead" is a role, "Product Designer Lead" is a variant.
+  let words = result.split(/\s+/).filter(Boolean);
+  while (words.length > 1) {
+    const last = words[words.length - 1].toLowerCase().replace(/[.,;:]+$/, "");
+    // A pure level code ("II", "3", "L4") is never part of a role name, so it can strip a title all
+    // the way down to one word -- "Designer II" is a Designer. A seniority WORD cannot: "Design
+    // Lead" is a role, so those still need two words to survive.
+    const isLevelCode = /^(?:l|lvl|level)?\d+$/.test(last) || /^(?:i{1,3}|iv|v|vi{1,3}|ix|x)$/.test(last);
+    if (isLevelCode) { words = words.slice(0, -1); if (words[words.length - 1]?.toLowerCase() === "level") words = words.slice(0, -1); continue; }
+    if (HARD_QUALIFIERS.has(last)) { words = words.slice(0, -1); continue; }
+    if (words.length > 2 && SOFT_QUALIFIERS.has(last)) { words = words.slice(0, -1); continue; }
+    break;
+  }
+  result = words.join(" ");
+
+  return result.replace(/[\s\-–—/|:,&.]+$/, "").replace(/\s+/g, " ").trim();
 }
 
 // Folds rows onto their canonical title, summing counts, keeping the most common spelling as the

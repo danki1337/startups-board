@@ -282,11 +282,29 @@ button:disabled,
 .scroll-shadow[data-scroll-top] { --fade-top: var(--fade); }
 .scroll-shadow[data-scroll-bottom] { --fade-bottom: var(--fade); }
 
-/* The results table gets the bottom edge only. Its column header is sticky INSIDE the scroller, and
-   a mask applies to sticky children too -- a top fade would wash the header out as soon as you
-   scrolled. There is nothing above the first row to hint at anyway. */
+/* The results table cannot use the mask for its TOP edge: its column header is sticky inside the
+   same scroller, and a mask applies to sticky children too, so the header would wash out the moment
+   you scrolled. The bottom edge is safe, and the top is drawn instead as a gradient overlay parked
+   just under the header -- see .jobs-table-top-fade below. */
 .jobs-table-scroll { --fade-top: 0px; }
 .jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 40px; }
+
+/* Sits inside the scroller and sticks to the top, so it rides under the sticky header rather than
+   over it. Zero height with a taller child, so it occupies no row space. */
+.jobs-table-top-fade {
+  position: absolute;
+  top: var(--jobs-header-height, 41px);
+  left: 0;
+  right: 0;
+  height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+  z-index: 3;
+}
+.jobs-table-scroll[data-scroll-top] ~ .jobs-table-top-fade {
+  opacity: 1;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .t-skel-skeleton,
