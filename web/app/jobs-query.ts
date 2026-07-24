@@ -303,7 +303,16 @@ function nextCursor(
 // "Senior Software Engineer".
 export async function queryTitleSuggestions(query: string, limit = 8) {
   const term = query.trim().toLowerCase().slice(0, 60);
-  if (term.length < 2) return [];
+  const cap = Math.min(30, Math.max(1, limit));
+
+  // No (or too-short) query: seed the field with the most common titles so the dropdown shows a
+  // starting list to pick from rather than an empty box.
+  if (term.length < 2) {
+    const rows = await getD1().prepare(`
+      SELECT title, job_count AS jobCount FROM job_titles ORDER BY job_count DESC LIMIT ?
+    `).bind(cap).all();
+    return (rows.results ?? []) as { title: string; jobCount: number }[];
+  }
 
   const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
   const rows = await getD1().prepare(`
@@ -312,7 +321,7 @@ export async function queryTitleSuggestions(query: string, limit = 8) {
     WHERE lower(title) LIKE ? ESCAPE '\\'
     ORDER BY CASE WHEN lower(title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
     LIMIT ?
-  `).bind(`%${escaped}%`, `${escaped}%`, Math.min(20, limit)).all();
+  `).bind(`%${escaped}%`, `${escaped}%`, cap).all();
 
   return (rows.results ?? []) as { title: string; jobCount: number }[];
 }

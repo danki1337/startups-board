@@ -4,7 +4,8 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const titles = await queryTitleSuggestions(url.searchParams.get("q") ?? "");
+  const limit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+  const titles = await queryTitleSuggestions(url.searchParams.get("q") ?? "", Number.isFinite(limit) ? limit : 8);
 
   return Response.json({ titles }, {
     // Suggestions change at most daily, so repeated prefixes are served from cache.
