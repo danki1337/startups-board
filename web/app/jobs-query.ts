@@ -163,7 +163,19 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", params.get("company"));
   // Role and company are separate fields: searching "stripe" as a role should not match every
   // posting at Stripe, and vice versa.
-  addLikeFilter(conditions, bindings, "lower(j.title)", params.get("title"));
+  // The title filter is a substring match, which means a leading wildcard and therefore an
+  // unindexable scan of every active row. The page query survived that (the date index lets it stop
+  // once it has 20 matches) but the accompanying COUNT has no limit to stop at, so filtering by a
+  // title cost ~4s -- and the Title dropdown only just became usable enough for people to do it.
+  // Narrowing on the FTS title column first cuts that to ~0.2s for an identical result; the LIKE
+  // stays as the exactness check, since FTS ignores word order and punctuation.
+  const titleValue = params.get("title");
+  const titleMatch = titleFtsQuery(titleValue);
+  if (titleMatch) {
+    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
+    bindings.push(titleMatch);
+  }
+  addLikeFilter(conditions, bindings, "lower(j.title)", titleValue);
 
   // "anywhere" is remote-with-no-country, which is a distinct answer from "country unknown".
   const country = params.get("country");
@@ -553,6 +565,17 @@ function sortValue(row: JobRow, sort: SortOption): string | null {
   if (sort === "company") return (row.companyName || row.companyIdentifier || "").toLowerCase();
   if (sort === "newest") return row.publishedAt ?? null; // null preserved so the cursor knows the tail
   return row.publishedAt ?? "";
+}
+
+// Column-scoped FTS terms for the title filter. Same tokenizer rules as ftsQuery so the terms match
+// what the index actually holds, but not prefix-matched: the title filter is an exact phrase the
+// user picked from a list, not something they are still typing.
+function titleFtsQuery(value: string | null) {
+  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
+    ?.filter((token) => token.length >= 2)
+    .slice(0, 8) ?? [];
+  if (!tokens.length) return null;
+  return `title:(${tokens.map((token) => `"${token}"`).join(" AND ")})`;
 }
 
 function addLikeFilter(conditions: string[], bindings: unknown[], column: string, value: string | null) {
