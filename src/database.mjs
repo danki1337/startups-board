@@ -349,7 +349,14 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
   addSetCondition(conditions, "company_industry", filters.industry);
   addSetCondition(conditions, "workplace", filters.workplace);
   addSetCondition(conditions, "category", filters.category);
-  addSetCondition(conditions, "employment_type", filters.employmentType);
+  // Stored values keep each provider's casing/hyphenation ("Full-Time", "full time", ...), so the
+  // match is case- and hyphen-insensitive; an exact IN matched almost nothing.
+  addSetCondition(
+    conditions,
+    "lower(replace(employment_type, '-', ' '))",
+    filters.employmentType,
+    (value) => value.toLowerCase().replaceAll("-", " "),
+  );
 
   // Company watchlist. Newline-separated because company names frequently contain commas, which the
   // comma-based set filters would split on. Matched the same lenient way as the single-company

@@ -104,7 +104,15 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   addSetFilter(conditions, bindings, "j.company_industry", params.get("industry"));
   addSetFilter(conditions, bindings, "j.workplace", params.get("workplace"));
   addSetFilter(conditions, bindings, "j.category", params.get("category"));
-  addSetFilter(conditions, bindings, "j.employment_type", params.get("employmentType"));
+  // Employment types are stored as each provider sent them ("Full-Time", "full time", "Full Time",
+  // ...), so the filter matches case- and hyphen-insensitively; an exact IN matched almost nothing.
+  addSetFilter(
+    conditions,
+    bindings,
+    "lower(replace(j.employment_type, '-', ' '))",
+    params.get("employmentType"),
+    (value) => value.toLowerCase().replaceAll("-", " "),
+  );
 
   // Company watchlist. Newline-separated (not comma) because company names frequently contain commas
   // ("Alphabet, Inc."), and capped so the clause and request URL stay bounded. Matched the same
