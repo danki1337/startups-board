@@ -134,7 +134,9 @@ async function processBoardTask(env, task) {
     retries: 2,
     syncedAt: new Date().toISOString(),
   });
-  result.companyLogoUrl = await resolveLogoIfStale(env, task.board, result);
+  const logo = await resolveLogoIfStale(env, task.board, result);
+  result.companyLogoUrl = logo.url;
+  result.logoChecked = logo.checked;
   const applied = await applyBoardSnapshot(env.DB, result);
   if (applied.retry) throw new Error(result.board.error || "ATS refresh failed");
   return applied;
@@ -143,9 +145,14 @@ async function processBoardTask(env, task) {
 // Most ATS job APIs carry no logo, so the board's own HTML is scraped for one. That is an extra
 // request per board, which is only affordable because the answer is cached on the companies row and
 // rechecked about once a month -- and skipped entirely when the payload already supplied a logo.
+//
+// Returns { url, checked }: `checked` is true only when a scrape actually ran this refresh, so the
+// snapshot writer can stamp logo_checked_at for real attempts alone. Stamping unconditionally kept
+// pushing the timestamp forward on every refresh, which meant the monthly recheck never fired and a
+// board whose single first-sync scrape failed stayed logo-less forever.
 async function resolveLogoIfStale(env, board, result) {
-  if (result.board.status === "error") return null;
-  if (result.jobs?.some((job) => job.companyLogoUrl)) return null;
+  if (result.board.status === "error") return { url: null, checked: false };
+  if (result.jobs?.some((job) => job.companyLogoUrl)) return { url: null, checked: false };
 
   const company = await env.DB.prepare(`
     SELECT c.logo_url AS logoUrl, c.logo_checked_at AS checkedAt
@@ -153,16 +160,26 @@ async function resolveLogoIfStale(env, board, result) {
     WHERE b.key = ?
   `).bind(board.key).first();
 
-  if (company?.logoUrl) return company.logoUrl;
-  if (company?.checkedAt && Date.parse(company.checkedAt) > Date.now() - LOGO_RECHECK_MS) return null;
+  if (company?.logoUrl) return { url: company.logoUrl, checked: false };
+  if (company?.checkedAt && Date.parse(company.checkedAt) > Date.now() - LOGO_RECHECK_MS) {
+    return { url: null, checked: false };
+  }
 
   try {
-    return await resolveBoardLogo(board, (url) =>
-      requestWithRetry(url, { timeoutMs: 15_000, retries: 1 }));
+    const url = await resolveBoardLogo(board, (target) =>
+      requestWithRetry(target, {
+        timeoutMs: 15_000,
+        retries: 1,
+        // The default accept is application/json (right for the job APIs); this fetch wants the
+        // board's HTML page.
+        requestInit: { headers: { accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" } },
+      }));
+    return { url, checked: true };
   } catch (error) {
-    // A board that serves jobs but not a scrapable page is not a refresh failure.
+    // A board that serves jobs but not a scrapable page is not a refresh failure; still counts as
+    // a check so an unscrapable site backs off for a month rather than being re-fetched daily.
     console.warn("Logo resolution failed", { board: board.key, error: error.message });
-    return null;
+    return { url: null, checked: true };
   }
 }
 

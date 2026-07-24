@@ -856,7 +856,12 @@ async function fetchPaylocityJobs(candidate, request) {
     throw new InvalidPayloadError("Paylocity pageData was not valid JSON");
   }
   if (!Array.isArray(payload.Jobs)) throw new InvalidPayloadError("Expected a Paylocity Jobs array");
-  return payload.Jobs;
+  // pageData carries the employer's logo as a relative GetLogoFileById path; attach it to each job
+  // so the normalizer can surface it the way payload-supplied logos are (Getro, Spark Hire).
+  const companyLogoUrl = typeof payload.LogoUrl === "string" && payload.LogoUrl
+    ? new URL(payload.LogoUrl, "https://recruiting.paylocity.com").href
+    : null;
+  return payload.Jobs.map((job) => ({ ...job, __companyLogoUrl: companyLogoUrl }));
 }
 
 function normalizeLeverJob(candidate, job, syncedAt) {
@@ -1105,6 +1110,7 @@ function normalizePaylocityJob(candidate, job, syncedAt) {
     : candidate.boardUrl;
   return normalizedJob(candidate, syncedAt, {
     sourceId: job.JobId || `${job.JobTitle}|${location}`,
+    companyLogoUrl: job.__companyLogoUrl,
     title: decodeHtml(job.JobTitle),
     location: decodeHtml(location),
     workplace: normalizeWorkplace(job.IsRemote ? "Remote" : `${location ?? ""} ${job.JobTitle ?? ""}`),

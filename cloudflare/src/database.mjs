@@ -83,11 +83,15 @@ export async function applyBoardSnapshot(db, result, options = {}) {
     incoming = await suppressDuplicatedAggregatorJobs(db, incoming);
   }
   const companyName = incoming.find((job) => job.companyName)?.companyName ?? null;
-  // A logo can come from the job payload (Getro, Spark Hire), from a constructible tenant URL
-  // (Workday), or from scraping the board page (resolved upstream and passed in on the result).
+  // A logo can come from the job payload (Getro, Spark Hire, Paylocity), from a constructible
+  // tenant URL (Workday), or from scraping the board page (resolved upstream, on the result).
   const companyLogoUrl = incoming.find((job) => job.companyLogoUrl)?.companyLogoUrl
     ?? result.companyLogoUrl
     ?? null;
+  // Stamp logo_checked_at only when a logo actually arrived or a scrape genuinely ran this refresh
+  // (result.logoChecked). Binding `now` unconditionally kept refreshing the stamp on every sync, so
+  // the "recheck after 30 days" gate upstream never opened and a failed first scrape was permanent.
+  const logoCheckedAt = companyLogoUrl || result.logoChecked ? now : null;
   // Always create the companies row, even when no provider supplied a name. It is what caches the
   // logo lookup, so gating it on companyName would leave those boards rescraped on every refresh.
   const companyKey = `company:${board.key}`;
@@ -99,11 +103,11 @@ export async function applyBoardSnapshot(db, result, options = {}) {
       -- a real one with the identifier fallback.
       name = coalesce(?, companies.name),
       logo_url = coalesce(excluded.logo_url, companies.logo_url),
-      -- Stamped even when nothing was found, so boards without a logo are not rescraped daily.
+      -- Stamped when a check ran even if nothing was found, so unscrapable boards back off a month.
       logo_checked_at = coalesce(excluded.logo_checked_at, companies.logo_checked_at),
       updated_at = excluded.updated_at
   `).bind(
-    companyKey, companyName ?? board.identifier, companyLogoUrl, now, now, now,
+    companyKey, companyName ?? board.identifier, companyLogoUrl, logoCheckedAt, now, now,
     companyName,
   ).run();
   const incomingSourceIds = new Set(incoming.map((job) => job.sourceId));

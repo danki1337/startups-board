@@ -61,3 +61,42 @@ test("returns null when a board exposes no usable image", () => {
   assert.equal(extractLogoUrl("<html><body>no tags</body></html>", "https://jobs.lever.co/acme"), null);
   assert.equal(extractLogoUrl("", "https://jobs.lever.co/acme"), null);
 });
+
+// Ashby serves the EMPLOYER'S uploaded logo from app.ashbyhq.com/api/images/org-theme-*, which the
+// vendor rejection must carve out — while still refusing Ashby's own cdn.ashbyprd favicon.
+test("accepts Ashby org-theme customer logos while rejecting Ashby vendor assets", () => {
+  const html = `
+    <link rel="icon" href="https://cdn.ashbyprd.com/cdn_assets/abc/favicon.svg">
+    <meta property="og:image" content="https://app.ashbyhq.com/api/images/org-theme-logo/0af0921d/cc1e7455/logo.png">
+  `;
+  assert.equal(
+    extractLogoUrl(html, "https://jobs.ashbyhq.com/midjourney"),
+    "https://app.ashbyhq.com/api/images/org-theme-logo/0af0921d/cc1e7455/logo.png",
+  );
+  // A generic app.ashbyhq.com asset outside org-theme-* is still vendor branding.
+  assert.equal(
+    extractLogoUrl(
+      `<meta property="og:image" content="https://app.ashbyhq.com/social/default.png">`,
+      "https://jobs.ashbyhq.com/acme",
+    ),
+    null,
+  );
+});
+
+// SmartRecruiters boards carry the SR product favicon (av-www.smartrecruiters.com) on every page;
+// the employer's image lives on the separate c.smartrecruiters.com bucket.
+test("prefers SmartRecruiters customer images over the SR product favicon", () => {
+  const html = `
+    <link rel="shortcut icon" href="https://av-www.smartrecruiters.com/sr-logo/1.0.6/winston/favicon.ico">
+    <meta property="og:image" content="https://c.smartrecruiters.com/sr-careersite-image-prod/606f/80b1?r=s3-eu-central-1">
+  `;
+  assert.equal(
+    extractLogoUrl(html, "https://jobs.smartrecruiters.com/WesternDigital"),
+    "https://c.smartrecruiters.com/sr-careersite-image-prod/606f/80b1?r=s3-eu-central-1",
+  );
+});
+
+test("rejects the Rippling platform favicon", () => {
+  const html = `<link rel="icon" href="https://static-assets.ripplingcdn.com/ui-platform/common/favicon-32x32.png">`;
+  assert.equal(extractLogoUrl(html, "https://ats.rippling.com/acme/jobs"), null);
+});

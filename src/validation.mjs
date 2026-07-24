@@ -86,7 +86,10 @@ export async function validateBoard(candidate, options = {}) {
 }
 
 export async function requestWithRetry(url, options) {
-  const { timeoutMs, retries, fetchImpl, requestInit = {} } = options;
+  // fetchImpl defaults to the platform fetch: callers only override it in tests. Without the
+  // default, a call site that omitted it (the logo scrape did) threw "fetchImpl is not a function"
+  // on every request.
+  const { timeoutMs, retries, fetchImpl = globalThis.fetch, requestInit = {} } = options;
   let lastError;
 
   for (let attempt = 0; attempt <= retries; attempt += 1) {

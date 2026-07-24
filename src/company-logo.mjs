@@ -29,7 +29,20 @@ const VENDOR_ASSET_PATTERNS = [
   /(^|\.)comeet\.com$/i,
   /(^|\.)getro\.com$/i,
   /^cdn\.paylocity\.com$/i,
+  // SmartRecruiters serves its own favicon/wordmark from av-www.smartrecruiters.com on every board.
+  /(^|\.)smartrecruiters\.com$/i,
+  /(^|\.)ripplingcdn\.com$/i,
 ];
+
+// Customer-owned assets that happen to live on a vendor domain, carved out of the vendor rejection:
+// Ashby boards put the employer's uploaded logo at app.ashbyhq.com/api/images/org-theme-*, and
+// SmartRecruiters keeps customer images on the separate c.smartrecruiters.com bucket.
+function isCustomerAsset(url) {
+  const host = url.hostname.toLowerCase();
+  if (host === "app.ashbyhq.com" && url.pathname.startsWith("/api/images/org-theme-")) return true;
+  if (host === "c.smartrecruiters.com") return true;
+  return false;
+}
 
 export function extractLogoUrl(html, baseUrl) {
   if (!html) return null;
@@ -63,6 +76,7 @@ export function extractLogoUrl(html, baseUrl) {
 }
 
 export function isVendorAsset(url) {
+  if (isCustomerAsset(url)) return false;
   return VENDOR_ASSET_PATTERNS.some((pattern) => pattern.test(url.hostname));
 }
 
