@@ -302,7 +302,24 @@ export async function getBoardSyncStates(databasePath = "data/jobs.db") {
 // demand, so it queries `jobs` directly rather than maintaining a separate aggregate.
 export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {
   const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
-  if (term.length < 2) return [];
+  const cap = clampInteger(limit, 8, 1, 30);
+
+  // No (or too-short) query: the most common titles, so the dropdown opens on a list to pick from
+  // rather than an empty box. Mirrors the D1 path's job_titles lookup.
+  if (term.length < 2) {
+    return querySqlite(
+      resolve(databasePath),
+      `
+        SELECT title, count(*) AS jobCount
+        FROM jobs
+        WHERE is_active = 1
+        GROUP BY title
+        ORDER BY jobCount DESC
+        LIMIT ${cap};
+      `,
+    );
+  }
+
   const like = sqlLike(term);
   const prefix = sqlString(`${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`);
   return querySqlite(
@@ -313,7 +330,7 @@ export async function queryTitleSuggestions(query, databasePath = "data/jobs.db"
       WHERE is_active = 1 AND lower(title) LIKE ${like} ESCAPE '\\'
       GROUP BY title
       ORDER BY CASE WHEN lower(title) LIKE ${prefix} ESCAPE '\\' THEN 0 ELSE 1 END, jobCount DESC
-      LIMIT ${clampInteger(limit, 8, 1, 20)};
+      LIMIT ${cap};
     `,
   );
 }

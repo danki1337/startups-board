@@ -40,7 +40,12 @@ export function startApiServer(options = {}) {
         return;
       }
       if (url.pathname === "/api/titles") {
-        const titles = await queryTitleSuggestions(url.searchParams.get("q"), databasePath);
+        const requestedLimit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+        const titles = await queryTitleSuggestions(
+          url.searchParams.get("q"),
+          databasePath,
+          Number.isFinite(requestedLimit) ? requestedLimit : 8,
+        );
         sendJson(response, 200, { titles });
         return;
       }

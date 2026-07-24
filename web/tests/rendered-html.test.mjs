@@ -66,13 +66,17 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /<title>Startup jobs — Startups\.board/);
   assert.match(html, /<table/);
   assert.match(html, /Workplace/);
-  // The compact filter bar renders Search, Title, Location, Add filter, Date and Save view as pills;
-  // the rest of the filters stay hidden behind "Add filter" until the client toggles them.
+  // The filter row renders one dropdown pill per filter, then the search field and the date pill.
   assert.match(html, /placeholder="Search"/);
   assert.match(html, />Title</);
-  assert.match(html, />Location</);
-  assert.match(html, /Add filter/);
-  assert.match(html, /Save view/);
+  assert.match(html, />Job type</);
+  assert.match(html, />Country</);
+  assert.match(html, />Industry</);
+  assert.match(html, />ATS</);
+  assert.match(html, />Any time</);
+  // City has no dropdown of its own, and sort is not a control at all.
+  assert.doesNotMatch(html, />City</);
+  assert.doesNotMatch(html, />Sort</);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
   // back to a bundled fixture.
   assert.match(html, /Staff Platform Engineer/);
@@ -94,21 +98,27 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /from "react-virtuoso"/);
   assert.match(explorer, /<TableVirtuoso/);
   assert.match(explorer, /endReached=/);
-  assert.match(explorer, /<FilterBar/);
+  assert.match(explorer, /<FilterDropdownBar/);
   assert.match(explorer, /<table/);
-  // The faceted "Add filter" flyout: a category list plus a checkbox multi-select per category.
-  assert.match(explorer, /<AddFilterMenu/);
   assert.match(explorer, /FILTER_CATEGORIES/);
   assert.match(explorer, /FilterCheckbox/);
-  // v3: the single multistate Filter flyout and the dashed "[icon] is [value]" chips.
-  assert.match(explorer, /<FilterMenu/);
+  // Selected filters are dashed "[icon] is [value]" chips.
   assert.match(explorer, /<FilterChip/);
   assert.match(explorer, /border-dashed/);
-  // The date pill is a HeroUI Select.
-  assert.match(explorer, /<Select\.Trigger/);
-  // Saved views and the company watchlist toggle live in the results toolbar.
-  assert.match(explorer, /ViewsToolbar/);
+  // Date posted is a FilterDropdown like every other pill, not a HeroUI Select.
+  assert.match(explorer, /<DateDropdown/);
+  assert.doesNotMatch(explorer, /<Select\.Trigger/);
   assert.match(explorer, /watchlistOnly/);
+  // One page, one layout: the earlier /v2-/v4 experiments and their `variant` switch are gone.
+  assert.doesNotMatch(explorer, /variant/);
+  // Hover feedback is instant everywhere; only press-scale and the dropdown enter keep a transition.
+  assert.doesNotMatch(explorer, /transition-colors/);
+  assert.doesNotMatch(styles, /transition: background-color/);
+  // The dropdown popover still plays its one-shot enter.
+  assert.match(styles, /@keyframes dropdown-in/);
+  assert.match(explorer, /dropdown-in/);
+  // Pink is the primary.
+  assert.match(styles, /--accent: #ff73e5/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);

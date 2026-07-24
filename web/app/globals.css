@@ -13,12 +13,15 @@
   --ink: #16161a;
   --muted-strong: rgba(60, 60, 67, 0.78);
   --muted: rgba(60, 60, 67, 0.6);
-  --accent: #9391f7;
-  --accent-strong: #6f6de8;
-  --accent-wash: #efeefe;
-  --chip: #cdb7ff;
+  /* Pink is the primary. --accent is the brand hue (decorative surfaces, focus ring);
+     --accent-strong is the text-safe shade — it carries ~4.9:1 on --accent-wash, which the brand
+     pink itself does not. */
+  --accent: #ff73e5;
+  --accent-strong: #c2189e;
+  --accent-wash: #ffecf9;
+  --chip: #ffb8ee;
   --success: #2f9b65;
-  --focus: #9391f7;
+  --focus: #ff73e5;
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);
@@ -73,8 +76,8 @@ a {
 }
 
 ::selection {
-  background: #c9e2d5;
-  color: #173226;
+  background: #ffd9f5;
+  color: #3a1030;
 }
 
 .brand-mark {
@@ -136,7 +139,7 @@ button:disabled,
 .jobs-table tbody tr td {
   border-bottom: 1px solid oklch(0 0 0 / 0.09);
   background: #ffffff;
-  transition: background-color 150ms ease;
+  /* No transition: hover feedback is instant everywhere in this UI. */
   /* Uniform row height is what lets Virtuoso predict the scroll extent exactly. A wrapped date or
      a two-line location used to make rows twice the estimated height, which is what produced the
      jumping while scrolling. */
@@ -158,16 +161,13 @@ button:disabled,
 }
 
 /* Source chevron: hidden until the row is hovered. Opacity only — a transform inside a virtualized
-   row is unnecessary and keeps row height perfectly stable for Virtuoso's fixed-height model. */
+   row is unnecessary and keeps row height perfectly stable for Virtuoso's fixed-height model.
+   Untransitioned, like every other hover state here. */
 .jobs-table .src-chevron {
   opacity: 0;
-  transition: opacity 0.15s ease;
 }
 .jobs-table tbody tr:hover .src-chevron {
   opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .jobs-table .src-chevron { transition: none; }
 }
 
 /* Dropdown/popover appear: a one-shot enter that fades, lifts, and settles from the trigger corner.
