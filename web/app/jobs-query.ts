@@ -16,9 +16,19 @@ export type JobsPage = {
   // True when `total` was capped (a broad text search) rather than an exact count, so the UI can
   // render it as "5,000+" instead of an exact figure it would be expensive to compute.
   totalCapped: boolean;
+  // Set when a near-empty search was spell-corrected: these results are for `correctedTo`, offered
+  // in place of the user's `correctedFrom` so the UI can show "Showing results for …".
+  correctedFrom?: string;
+  correctedTo?: string;
   limit: number;
   nextCursor: string | null;
 };
+
+// Below this many hits a text search is treated as a possible typo and a spelling correction is
+// tried. Set generously because a misspelling often appears in a handful of real postings too
+// (people mistype in job titles); the "8x more common" guard in correctQuery is what prevents a
+// legitimately niche term from being over-corrected.
+const CORRECTION_THRESHOLD = 60;
 
 // Relevance tuning for text search. bm25 column weights follow the jobs_fts column order
 // (title, company_identifier, company_name, location): a title hit far outweighs a location hit.
@@ -248,6 +258,21 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     next = nextCursor(rows, rows.at(-1), limit, sort, cursor && "key" in cursor ? cursor : null);
   }
 
+  // A near-empty search is likely a typo: try a spelling correction and, if the corrected query
+  // actually differs, return its results labelled so the UI can say "Showing results for …". The
+  // `_corrected` guard runs this at most once, and only on the first page.
+  if (isSearch && rawTotal < CORRECTION_THRESHOLD && offset === 0 && params.get("_corrected") !== "1") {
+    const original = params.get("search") ?? "";
+    const fixed = await correctQuery(db, original);
+    if (fixed && fixed.toLowerCase() !== original.toLowerCase()) {
+      const retryParams = new URLSearchParams(params);
+      retryParams.set("search", fixed);
+      retryParams.set("_corrected", "1");
+      const retry = await queryJobs(retryParams);
+      return { ...retry, correctedFrom: original, correctedTo: fixed };
+    }
+  }
+
   return { jobs: rows.map(toPublicJob), total, totalCapped, limit, nextCursor: next };
 }
 
@@ -392,6 +417,68 @@ const SPECIAL_TERMS = ["c++", "c#", "f#", "c/c++", "objective-c", ".net"];
 export function specialSearchTerms(value: string | null) {
   const lower = (value ?? "").toLowerCase();
   return SPECIAL_TERMS.filter((term) => lower.includes(term));
+}
+
+// Every string within edit distance 1 of a word (insertions, deletions, substitutions,
+// transpositions), plus the word itself. ~50*len candidates; used only to spell-correct near-empty
+// searches, so the fan-out is off the hot path.
+export function editDistance1(word: string): string[] {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz";
+  const set = new Set<string>([word]);
+  for (let i = 0; i <= word.length; i += 1) {
+    for (const ch of alphabet) set.add(word.slice(0, i) + ch + word.slice(i));
+  }
+  for (let i = 0; i < word.length; i += 1) {
+    set.add(word.slice(0, i) + word.slice(i + 1));
+    for (const ch of alphabet) set.add(word.slice(0, i) + ch + word.slice(i + 1));
+    if (i < word.length - 1) set.add(word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2));
+  }
+  return [...set];
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Spell-correct a query against the FTS term dictionary (jobs_vocab). For each word, the most common
+// indexed term within edit distance 1 replaces it -- but only when that term is dramatically more
+// common than the word as typed, so real (if rare) terms are left alone. Returns the rewritten query
+// or null when nothing warranted correction.
+async function correctQuery(
+  db: ReturnType<typeof getD1>,
+  search: string | null,
+): Promise<string | null> {
+  const tokens = (search ?? "").toLowerCase().match(/[\p{L}\p{N}]+/gu)
+    ?.filter((token) => token.length >= 3).slice(0, 4) ?? [];
+  if (!tokens.length) return null;
+
+  let corrected = search ?? "";
+  let changed = false;
+  for (const token of tokens) {
+    const candidates = editDistance1(token);
+    const docByTerm = new Map<string, number>();
+    // D1 caps a query at 100 bound parameters, so the candidate set is probed in chunks.
+    for (let index = 0; index < candidates.length; index += 90) {
+      const group = candidates.slice(index, index + 90);
+      const rows = await db.prepare(
+        `SELECT term, doc FROM jobs_vocab WHERE term IN (${group.map(() => "?").join(",")})`,
+      ).bind(...group).all();
+      for (const row of (rows.results ?? []) as { term: string; doc: number }[]) {
+        docByTerm.set(String(row.term), Number(row.doc));
+      }
+    }
+    const ownDoc = docByTerm.get(token) ?? 0;
+    let best = token;
+    let bestDoc = ownDoc;
+    for (const [term, doc] of docByTerm) {
+      if (doc > bestDoc) { best = term; bestDoc = doc; }
+    }
+    if (best !== token && bestDoc >= Math.max(ownDoc * 8, 40)) {
+      corrected = corrected.replace(new RegExp(`\\b${escapeRegExp(token)}\\b`, "gi"), best);
+      changed = true;
+    }
+  }
+  return changed ? corrected : null;
 }
 
 // A cursor is either a keyset position for browse ({value, key}) or an offset for relevance search

@@ -176,6 +176,7 @@ export function JobsExplorer({
   hasServerData = false,
   initialQuery = "",
   initialTotalCapped = false,
+  initialCorrectedTo = null,
   variant = "bar",
 }: {
   initialJobs?: Job[];
@@ -185,6 +186,8 @@ export function JobsExplorer({
   initialQuery?: string;
   // Whether initialTotal is a capped "N+" figure (a broad search) rather than an exact count.
   initialTotalCapped?: boolean;
+  // The term the server-rendered first page was spell-corrected to, if any.
+  initialCorrectedTo?: string | null;
   // "bar" is the original compact top filter bar; "sidebar" is the /v2 right-hand accordion; "chips"
   // is /v3 (dashed "[icon] is [value]" chips + one multistate Filter flyout); "dropdowns" is /v4: a
   // row of independent dropdown pills, one per filter.
@@ -197,6 +200,8 @@ export function JobsExplorer({
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [total, setTotal] = useState(initialTotal);
   const [totalCapped, setTotalCapped] = useState(initialTotalCapped);
+  // Set when a typo'd search was auto-corrected, so the UI can note the term it actually searched.
+  const [correctedTo, setCorrectedTo] = useState<string | null>(initialCorrectedTo);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
@@ -303,6 +308,7 @@ export function JobsExplorer({
       setJobs(cached.jobs);
       setTotal(cached.total);
       setTotalCapped(cached.totalCapped);
+      setCorrectedTo(null); // re-established by the refresh fetch below
       setCursor(cached.cursor);
     }
 
@@ -314,7 +320,7 @@ export function JobsExplorer({
         params.set("limit", String(pageSize));
         const response = await fetch(`${apiUrl}?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
-        const payload = (await response.json()) as { jobs: Job[]; total: number; totalCapped?: boolean; nextCursor: string | null };
+        const payload = (await response.json()) as { jobs: Job[]; total: number; totalCapped?: boolean; correctedTo?: string; nextCursor: string | null };
         // Bounded LRU: re-inserting moves the key to the newest slot; the oldest is dropped past the cap.
         const cache = resultCache.current;
         cache.delete(queryString);
@@ -323,6 +329,7 @@ export function JobsExplorer({
         setJobs(payload.jobs);
         setTotal(payload.total);
         setTotalCapped(payload.totalCapped ?? false);
+        setCorrectedTo(payload.correctedTo ?? null);
         setCursor(payload.nextCursor);
       } catch (error) {
         if ((error as Error).name !== "AbortError") console.error("Jobs fetch failed", error);
@@ -387,9 +394,19 @@ export function JobsExplorer({
   // /v3 and /v4 give employment type its own table column; /v1 and /v2 stack it under Workplace.
   const jobTypeColumn = variant === "chips" || variant === "dropdowns";
 
+  // A small "Showing results for X" note when a typo'd search was auto-corrected.
+  const correctionNote = correctedTo ? (
+    <p className="mb-2 px-1 text-[13px] text-[var(--muted-strong)]">
+      Showing results for <span className="font-semibold text-[var(--ink)]">{correctedTo}</span>
+    </p>
+  ) : null;
+
   // The results table (or empty state) is identical across both page variants, so it lives in one
   // place and is dropped into whichever layout is rendered below.
-  const jobsTable = jobs.length > 0 ? (
+  const jobsTable = (
+    <>
+    {correctionNote}
+    {jobs.length > 0 ? (
     <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
       <TableVirtuoso
         aria-label="Startup jobs from public ATS pages"
@@ -426,6 +443,8 @@ export function JobsExplorer({
         Clear filters
       </Button>
     </div>
+    )}
+    </>
   );
 
   const showViewsToolbar = watchlist.length > 0 || savedViews.length > 0;

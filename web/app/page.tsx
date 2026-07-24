@@ -49,6 +49,7 @@ export default async function Home({
       initialJobs={initialPage?.jobs ?? []}
       initialTotal={initialPage?.total ?? 0}
       initialTotalCapped={initialPage?.totalCapped ?? false}
+      initialCorrectedTo={initialPage?.correctedTo ?? null}
       initialCursor={initialPage?.nextCursor ?? null}
       hasServerData={initialPage !== null}
       initialQuery={params.toString()}
