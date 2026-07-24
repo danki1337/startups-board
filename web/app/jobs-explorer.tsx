@@ -21,6 +21,12 @@ const titlesUrl = typeof window !== "undefined" && window.location.hostname === 
   ? "http://localhost:3002/api/titles"
   : "/api/titles";
 const pageSize = 100;
+// Shared by the results table and the skeleton stacked behind it, so the two layers are the same
+// size and the cross-fade between them moves nothing.
+const TABLE_HEIGHT = "clamp(420px, 68vh, 760px)";
+// How many role titles the Title dropdown pulls. There are ~99k distinct titles, so "all" is not a
+// literal option -- this is the long tail worth scrolling, backed by the search box above it.
+const TITLE_SUGGESTION_LIMIT = 200;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
@@ -472,9 +478,52 @@ export function JobsExplorer({
         </button>
       </div>
     )}
-    {jobs.length === 0 && isLoading ? (
-      <JobsSkeleton />
-    ) : jobs.length === 0 && error ? (
+    {jobs.length > 0 || isLoading ? (
+      // Skeleton and table are stacked in one slot and cross-faded, so the swap costs no layout and
+      // reads as one motion. `is-revealed` flips the moment there are rows: when the server already
+      // sent them it is true on the first paint (nothing was ever loading, so nothing animates), and
+      // when a search starts from empty it transitions, which is exactly when the reveal is wanted.
+      <div
+        className={`t-skel overflow-hidden rounded-2xl shadow-[var(--shadow-table)] ${jobs.length > 0 ? "is-revealed" : ""}`}
+        style={{ height: TABLE_HEIGHT }}
+      >
+        <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
+          <JobsSkeleton />
+        </div>
+        <div className="t-skel-content">
+          <TableVirtuoso
+            aria-label="Startup jobs from public ATS pages"
+            className="jobs-table-scroll bg-white"
+            style={{ height: "100%" }}
+            data={jobs}
+            components={virtuosoComponents}
+            computeItemKey={(_index, job) => job.id}
+            fixedHeaderContent={TableHeader}
+            itemContent={(_index, job) => (
+              <JobCells
+                job={job}
+                onFilter={update}
+                isWatched={watchlistSet.has(job.company)}
+                onToggleWatch={toggleWatch}
+                now={now}
+              />
+            )}
+            fixedItemHeight={72}
+            // Without this the virtualizer renders nothing until it has mounted and measured, so the
+            // 100 rows the server already queried and shipped in the payload were invisible until
+            // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the
+            // first screenful during SSR; the virtualizer takes over from there.
+            initialItemCount={Math.min(jobs.length, 12)}
+            increaseViewportBy={{ top: 240, bottom: 480 }}
+            // Automatic paging stops after a failure so a scroll at the bottom cannot spin on a
+            // broken endpoint; the footer's Retry calls loadMore directly.
+            endReached={() => {
+              if (!pagingError) void loadMore();
+            }}
+          />
+        </div>
+      </div>
+    ) : error ? (
       <div role="alert" className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
         <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
@@ -484,39 +533,6 @@ export function JobsExplorer({
           <PillButton onClick={() => setRetryToken((token) => token + 1)}>Try again</PillButton>
         </div>
       </div>
-    ) : jobs.length > 0 ? (
-    <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
-      <TableVirtuoso
-        aria-label="Startup jobs from public ATS pages"
-        className="jobs-table-scroll bg-white"
-        style={{ height: "clamp(420px, 68vh, 760px)" }}
-        data={jobs}
-        components={virtuosoComponents}
-        computeItemKey={(_index, job) => job.id}
-        fixedHeaderContent={TableHeader}
-        itemContent={(_index, job) => (
-          <JobCells
-            job={job}
-            onFilter={update}
-            isWatched={watchlistSet.has(job.company)}
-            onToggleWatch={toggleWatch}
-            now={now}
-          />
-        )}
-        fixedItemHeight={72}
-        // Without this the virtualizer renders nothing until it has mounted and measured, so the
-        // 100 rows the server already queried and shipped in the payload were invisible until
-        // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the first
-        // screenful during SSR; the virtualizer takes over from there.
-        initialItemCount={Math.min(jobs.length, 12)}
-        increaseViewportBy={{ top: 240, bottom: 480 }}
-        // Automatic paging stops after a failure so a scroll at the bottom cannot spin on a broken
-        // endpoint; the footer's Retry calls loadMore directly.
-        endReached={() => {
-          if (!pagingError) void loadMore();
-        }}
-      />
-    </div>
   ) : (
     <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
       <p className="text-base font-semibold">No matching jobs</p>
@@ -731,7 +747,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
     // An empty query fetches the most common titles, so the dropdown opens on a starting list.
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}&limit=25`, { signal: controller.signal });
+        const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}&limit=${TITLE_SUGGESTION_LIMIT}`, { signal: controller.signal });
         if (!response.ok) return;
         const payload = (await response.json()) as { titles: { title: string; jobCount: number }[] };
         setSuggestions(payload.titles ?? []);
@@ -754,7 +770,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
   return (
     <div>
       <SearchBox full value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
-      <div className="mt-1 max-h-64 overflow-auto">
+      <div className="mt-1 max-h-80 overflow-auto">
         {rows.map((row) => {
           const checked = row.title === value;
           return (
@@ -815,13 +831,17 @@ function SidebarPills({
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
             }`}
           >
-            {glyph === "globe" && <span className="[&>svg]:text-current"><IconGlobe /></span>}
+            {/* The glyphs draw in currentColor, which on an unselected pill is the near-black label
+                colour and reads heavier than the text beside it. Muting them to the same grey as
+                the category icons in the filter row keeps the label the emphasis. Selected pills
+                pass through, so the icon inverts to white with the text. */}
+            {glyph === "globe" && <span className={checked ? "" : "text-[#868990]"}><IconGlobe /></span>}
             {glyph === "ats" && (
               <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
                 <AtsMark source={option.value} size={4} />
               </span>
             )}
-            {JobTypeIcon && <JobTypeIcon />}
+            {JobTypeIcon && <span className={checked ? "" : "text-[#868990]"}><JobTypeIcon /></span>}
             {option.label}
           </button>
         );
@@ -1049,12 +1069,16 @@ function FilterDropdown({
   label,
   count,
   width = "w-64",
+  align = "start",
   children,
 }: {
   Icon: () => React.ReactElement;
   label: string;
   count: number;
   width?: string;
+  // "end" hangs the panel off the trigger's right edge instead of its left, for pills near the end
+  // of the row whose panel is wider than they are and would otherwise run off the viewport.
+  align?: "start" | "end";
   // A render function receives `close`, for single-select dropdowns that should dismiss on a pick.
   children: React.ReactNode | ((close: () => void) => React.ReactNode);
 }) {
@@ -1113,7 +1137,7 @@ function FilterDropdown({
           role="group"
           aria-label={`${label} filter`}
           onAnimationEnd={() => setPhase((current) => (current === "closing" ? "closed" : current))}
-          className={`${phase === "closing" ? "dropdown-out" : "dropdown-in"} absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}
+          className={`${phase === "closing" ? "dropdown-out" : "dropdown-in"} ${align === "end" ? "dropdown-end right-0" : "left-0"} absolute top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}
         >
           {typeof children === "function" ? children(close) : children}
         </div>
@@ -1218,7 +1242,7 @@ function FilterDropdownBar({
 function DateDropdown({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const current = postedWithinOptions.find((option) => option.value === value) ?? postedWithinOptions[0];
   return (
-    <FilterDropdown Icon={IconDateF} label={current.label} count={0} width="w-44">
+    <FilterDropdown Icon={IconDateF} label={current.label} count={0} width="w-44" align="end">
       {(close) => (
         <div className="flex flex-col">
           {postedWithinOptions.map((option) => (
@@ -1342,13 +1366,13 @@ function TableHeader() {
   );
 }
 
-// Shown while the first page is in flight. It reuses the real table's chrome, header and 72px row
-// height so the layout does not shift when rows arrive -- the placeholder blocks sit exactly where
-// the logo, title, company and each column will be. The alternative was a blank white box, which is
-// what the page did before and read as "no results" rather than "loading".
+// Shown while the first page is in flight, stacked under the real table and cross-faded out when
+// rows arrive. It reuses the real table's header and 72px row height so the placeholder blocks sit
+// exactly where the logo, title, company and each column will be, and nothing shifts on the swap.
+// The container chrome lives on the .t-skel wrapper, which both layers share.
 function JobsSkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-table)]" aria-hidden="true">
+    <div className="h-full overflow-hidden bg-white">
       <table className="jobs-table w-full min-w-[1050px] border-separate border-spacing-0 text-start">
         <thead>
           <TableHeader />

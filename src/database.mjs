@@ -302,7 +302,7 @@ export async function getBoardSyncStates(databasePath = "data/jobs.db") {
 // demand, so it queries `jobs` directly rather than maintaining a separate aggregate.
 export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {
   const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
-  const cap = clampInteger(limit, 8, 1, 30);
+  const cap = clampInteger(limit, 8, 1, 300);
 
   // No (or too-short) query: the most common titles, so the dropdown opens on a list to pick from
   // rather than an empty box. Mirrors the D1 path's job_titles lookup.

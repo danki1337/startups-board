@@ -66,6 +66,10 @@ const SEARCH_OVERFETCH = 3;
 // Broad searches can match hundreds of thousands of rows; counting them exactly cost multiple
 // seconds, so the count is bounded and anything at/above this renders as "N+".
 const COUNT_CAP = 5000;
+// Upper bound on rows the title typeahead may return. job_titles is a small aggregate (one row per
+// distinct title), so a longer list costs little and lets the dropdown show a real, scrollable set
+// rather than a top-30 teaser.
+const TITLE_SUGGESTION_MAX = 300;
 // D1 rejects any statement with more than 100 bound parameters.
 const D1_MAX_BIND = 100;
 // Held back for the binds appended after the filters: the three exactness patterns, posted-within,
@@ -386,7 +390,7 @@ function nextCursor(
 // "Senior Software Engineer".
 export async function queryTitleSuggestions(query: string, limit = 8) {
   const term = query.trim().toLowerCase().slice(0, 60);
-  const cap = Math.min(30, Math.max(1, limit));
+  const cap = Math.min(TITLE_SUGGESTION_MAX, Math.max(1, limit));
 
   // No (or too-short) query: seed the field with the most common titles so the dropdown shows a
   // starting list to pick from rather than an empty box.

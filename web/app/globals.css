@@ -177,25 +177,83 @@ button:disabled,
   opacity: 1;
 }
 
-/* Loading placeholder. A looping keyframe is the right tool here (unlike hover states, which are
-   instant): the sweep says "still working" rather than "frozen". Kept low-contrast so eight rows of
-   it read as one quiet surface instead of a strobing block. */
-@keyframes skeleton-sweep {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+/* ---- Skeleton loader and reveal (transitions.dev) ----
+   Two layers on the same coordinates: the skeleton owns the pulse and the fade-out half of the
+   reveal, the content owns the fade-in half. Both share a duration and easing so the swap reads as
+   one motion rather than two. Because they occupy the same grid slot, the swap costs no layout. */
+:root {
+  --pulse-dur: 1000ms;
+  --pulse-count: 1;
+  --pulse-min: 0.5;
+  --reveal-dur: 400ms;
+  --reveal-blur: 2px;
+  --reveal-ease: ease-in-out;
 }
+
+.t-skel { position: relative; }
+.t-skel-skeleton,
+.t-skel-content {
+  position: absolute;
+  inset: 0;
+}
+
+.t-skel-skeleton {
+  z-index: 1;
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel-content {
+  z-index: 2;
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel.is-revealed .t-skel-skeleton {
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+}
+.t-skel.is-revealed .t-skel-content {
+  opacity: 1;
+  filter: blur(0);
+}
+/* The revealed layer is the only interactive one, so the faded skeleton must not eat clicks or
+   trap focus once the swap has run. */
+.t-skel.is-revealed .t-skel-skeleton {
+  pointer-events: none;
+}
+
+/* Pulse lives on the skeleton's children, not the skeleton itself, so the layer's own opacity and
+   filter stay free for the cross-fade above. */
+.t-skel-skeleton.is-pulsing > * {
+  animation: t-skel-pulse var(--pulse-dur) ease-in-out var(--pulse-count);
+}
+@keyframes t-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: var(--pulse-min); }
+}
+
+/* The results table is the one place a load can genuinely run for several seconds (a broad search
+   over a million rows), and a single pulse would leave a frozen block for the rest of it. Only this
+   instance loops; the token default stays at one pulse. */
+.jobs-skeleton {
+  --pulse-count: infinite;
+}
+
 .skeleton {
   background-color: #f1f1f5;
-  background-image: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.75) 50%, transparent 80%);
-  background-size: 200% 100%;
-  animation: skeleton-sweep 1.4s linear infinite;
 }
+
 @media (prefers-reduced-motion: reduce) {
-  /* The global reduced-motion rule collapses every animation to 0.01ms, which would leave the sweep
-     frozen mid-gradient. Drop the gradient entirely so it degrades to a plain grey block. */
-  .skeleton {
-    background-image: none;
+  .t-skel-skeleton,
+  .t-skel-content {
+    transition: none !important;
   }
+  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
 }
 
 /* Dropdown/popover appear: a one-shot enter that fades, lifts, and settles from the trigger corner.
@@ -237,6 +295,11 @@ button:disabled,
      out of the pill it belongs to. Every popover here is left-aligned under its trigger. */
   transform-origin: top left;
   will-change: transform, opacity;
+}
+/* Right-hung panels grow from the trigger's right corner instead. Declared here rather than with a
+   Tailwind origin- utility, because these rules are unlayered and would win over one. */
+.dropdown-end {
+  transform-origin: top right;
 }
 .dropdown-in {
   animation: dropdown-in 150ms var(--ease-out);
