@@ -1,12 +1,25 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
-import { nextSyncAt } from "./config.mjs";
+import { INVALID_CLOSE_STRIKES, nextSyncAt } from "./config.mjs";
 
 // Providers that re-list other boards' jobs rather than hosting their own, so their snapshots are
 // deduplicated against the native postings at ingestion.
 const AGGREGATOR_PROVIDERS = new Set(["getro"]);
 // D1 rejects a query with more than 100 bound parameters, so IN(...) probes chunk below this.
 const D1_MAX_BIND = 100;
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+// Every timestamp in this schema is stored as an ISO-8601 string ("2026-07-24T10:00:00.000Z"), but
+// SQLite's datetime() renders "2026-07-24 10:00:00" -- space separator, no fractional seconds, no
+// trailing Z. Comparing the two is a plain string comparison that diverges at index 10, where "T"
+// (0x54) sorts after " " (0x20), so a stored timestamp from the same calendar day always compared
+// GREATER than a datetime() threshold. Every "older than N" window was silently rounded up to the
+// next UTC midnight, and the two-hour stuck-queue reclaim below could not fire within a day at all
+// -- a board whose queue message was lost stayed unreachable until midnight. Shifting the threshold
+// in JS keeps both sides in the same ISO format.
+function isoShift(iso, deltaMs) {
+  return new Date(Date.parse(iso) + deltaMs).toISOString();
+}
 
 export async function enqueueDueBoards(env, options = {}) {
   const now = options.now ?? new Date().toISOString();
@@ -14,8 +27,8 @@ export async function enqueueDueBoards(env, options = {}) {
 
   await env.DB.prepare(`
     UPDATE boards SET queue_state = 'idle', updated_at = ?
-    WHERE queue_state = 'queued' AND updated_at < datetime(?, '-2 hours')
-  `).bind(now, now).run();
+    WHERE queue_state = 'queued' AND updated_at < ?
+  `).bind(now, isoShift(now, -2 * 60 * 60 * 1_000)).run();
 
   const result = await env.DB.prepare(`
     SELECT key, provider, identifier, region, board_url AS boardUrl, api_url AS apiUrl
@@ -64,6 +77,24 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   if (board.status === "error") {
     await recordBoardFailure(db, board, runId);
     return { runId, changedJobs, closedJobs, retry: true };
+  }
+
+  // An "invalid" board answered, but with something that is not a job list: a 4xx, a bot challenge,
+  // an HTML interstitial, a body truncated by a proxy. That is a FAILED refresh, and it used to
+  // fall through to the success path below carrying `jobs: []` -- which read as "this board now has
+  // zero jobs" and closed every posting on it, reset failure_count to 0, and backed the board off
+  // for 30 days, by which point the archive sweep had deleted the rows. One transient 403 in front
+  // of a big Greenhouse board silently destroyed its entire listing.
+  //
+  // So invalid now records a failure and leaves the previous snapshot alone. A board that is really
+  // dead still gets cleaned up, just on evidence rather than on a single response: only once it has
+  // come back invalid INVALID_CLOSE_STRIKES times in a row do we accept the empty snapshot and let
+  // the close pass run.
+  if (board.status === "invalid") {
+    const strikes = await recordBoardFailure(db, board, runId, { status: "invalid" });
+    if (strikes < INVALID_CLOSE_STRIKES) {
+      return { runId, changedJobs, closedJobs, retry: false };
+    }
   }
 
   const currentResult = await db.prepare(`
@@ -265,16 +296,21 @@ export async function suppressDuplicatedAggregatorJobs(db, incoming) {
   });
 }
 
-async function recordBoardFailure(db, board, runId) {
+// Records a failed refresh and returns the board's new consecutive-failure count. `status` is
+// "error" for a transient failure (retried on the short exponential ladder) or "invalid" for a
+// response that was not a job list (backed off 30 days). Either way the board's jobs are left
+// exactly as they were -- this function never closes anything.
+async function recordBoardFailure(db, board, runId, options = {}) {
+  const status = options.status === "invalid" ? "invalid" : "error";
   const current = await db.prepare("SELECT failure_count AS failureCount FROM boards WHERE key = ?")
     .bind(board.key).first();
   const failureCount = Number(current?.failureCount ?? 0) + 1;
   const now = board.syncedAt;
   await db.batch([
     db.prepare(`
-      UPDATE boards SET status = 'error', queue_state = 'idle', failure_count = ?,
+      UPDATE boards SET status = ?, queue_state = 'idle', failure_count = ?,
         last_synced_at = ?, next_sync_at = ?, last_error = ?, updated_at = ? WHERE key = ?
-    `).bind(failureCount, now, nextSyncAt("error", failureCount, Date.parse(now)), board.error, now, board.key),
+    `).bind(status, failureCount, now, nextSyncAt(status, failureCount, Date.parse(now)), board.error, now, board.key),
     db.prepare(`
       UPDATE sync_runs SET status = 'error', error = ?, completed_at = ? WHERE id = ?
     `).bind(board.error, now, runId),
@@ -286,6 +322,7 @@ async function recordBoardFailure(db, board, runId) {
         updated_at = excluded.updated_at
     `).bind(board.provider, now, board.error, now),
   ]);
+  return failureCount;
 }
 
 export async function upsertDiscoveredBoards(db, boards, now = new Date().toISOString()) {
@@ -311,19 +348,19 @@ export async function cleanupClosedJobs(db, now = new Date().toISOString()) {
   return db.prepare(`
     DELETE FROM jobs WHERE key IN (
       SELECT key FROM jobs
-      WHERE is_active = 0 AND closed_at < datetime(?, '-30 days')
+      WHERE is_active = 0 AND closed_at < ?
       LIMIT 5000
     )
-  `).bind(now).run();
+  `).bind(isoShift(now, -30 * DAY_MS)).run();
 }
 
 export async function archiveAndCleanupClosedJobs(env, now = new Date().toISOString()) {
   const rows = await env.DB.prepare(`
     SELECT * FROM jobs
-    WHERE is_active = 0 AND closed_at < datetime(?, '-30 days')
+    WHERE is_active = 0 AND closed_at < ?
     ORDER BY closed_at
     LIMIT 5000
-  `).bind(now).all();
+  `).bind(isoShift(now, -30 * DAY_MS)).all();
   if (!rows.results?.length) return { archived: 0 };
 
   const body = `${rows.results.map((row) => JSON.stringify(row)).join("\n")}\n`;
@@ -373,9 +410,9 @@ export async function pruneSyncRuns(db, now = new Date().toISOString(), retentio
   for (let pass = 0; pass < 20; pass += 1) {
     const result = await db.prepare(`
       DELETE FROM sync_runs WHERE id IN (
-        SELECT id FROM sync_runs WHERE started_at < datetime(?, ?) LIMIT 5000
+        SELECT id FROM sync_runs WHERE started_at < ? LIMIT 5000
       )
-    `).bind(now, `-${retentionDays} days`).run();
+    `).bind(isoShift(now, -retentionDays * DAY_MS)).run();
     const changes = Number(result.meta?.changes ?? 0);
     deleted += changes;
     if (changes < 5_000) break;
@@ -408,10 +445,10 @@ export async function pruneFailedTasks(db, now = new Date().toISOString(), reten
     const result = await db.prepare(`
       DELETE FROM failed_tasks WHERE id IN (
         SELECT id FROM failed_tasks
-        WHERE resolved_at IS NOT NULL AND resolved_at < datetime(?, ?)
+        WHERE resolved_at IS NOT NULL AND resolved_at < ?
         LIMIT 5000
       )
-    `).bind(now, `-${retentionDays} days`).run();
+    `).bind(isoShift(now, -retentionDays * DAY_MS)).run();
     const changes = Number(result.meta?.changes ?? 0);
     deleted += changes;
     if (changes < 5_000) break;

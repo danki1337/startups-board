@@ -12,7 +12,6 @@ import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
 import { INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
-const referenceDate = new Date(Date.UTC(2026, 6, 20));
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
 const apiUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
@@ -231,11 +230,6 @@ export function JobsExplorer({
   // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
   // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
   const [now, setNow] = useState(0);
-  // False on the server and through the first client render, so both produce identical markup.
-  // The results table is virtualized, which means it draws no rows until it has mounted and measured
-  // a viewport -- so the server HTML contained a header over an empty white box, and that box stayed
-  // empty until hydration. This flag lets the skeleton stand in for exactly that window.
-  const [mounted, setMounted] = useState(false);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -250,6 +244,9 @@ export function JobsExplorer({
   // already viewed this session paints instantly instead of flashing an empty/loading table while a
   // fresh request is in flight. It still revalidates in the background, so nothing goes stale.
   const resultCache = useRef(new Map<string, { jobs: Job[]; total: number; totalCapped: boolean; cursor: string | null }>());
+  // The filter query a response must still match to be applied, so an in-flight page that a filter
+  // change has superseded is discarded rather than merged into the new result set.
+  const queryRef = useRef("");
 
   const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
 
@@ -304,7 +301,6 @@ export function JobsExplorer({
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
     setNow(Date.now());
-    setMounted(true);
     storageHydrated.current = true;
   }, []);
 
@@ -320,6 +316,11 @@ export function JobsExplorer({
   useEffect(() => {
     const nextUrl = `${window.location.pathname}${urlQuery ? `?${urlQuery}` : ""}`;
     window.history.replaceState(null, "", nextUrl);
+    queryRef.current = queryString;
+    // A paging failure belongs to the result set it happened in. Left uncleared it was sticky for
+    // the rest of the session: the footer kept reading "Couldn't load more jobs" over a perfectly
+    // healthy new search, and automatic paging never resumed.
+    setPagingError(false);
 
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
@@ -381,10 +382,18 @@ export function JobsExplorer({
   // Infinite scroll used to treat a failed page as the end of the list -- it cleared the cursor, so
   // the results simply stopped with no indication anything had gone wrong. Now the cursor is kept
   // and the footer offers a retry.
+  //
+  // `pagingError` is deliberately NOT in the guard below: it gates the automatic endReached call
+  // instead. Guarding here would have made the Retry button a no-op, since the loadMore it calls is
+  // the closure from the render where pagingError was still true.
   const loadMore = useCallback(async () => {
-    if (!cursor || isPaging || pagingError) return;
+    if (!cursor || isPaging) return;
     setIsPaging(true);
     setPagingError(false);
+    // A page belongs to the filters that were live when it was requested. Without this check, typing
+    // in the search box while a page-2 request is in flight appends the old filter's rows under the
+    // new results and installs a cursor into the wrong result set.
+    const requestedFor = queryString;
     try {
       const params = new URLSearchParams(queryString);
       params.set("limit", String(pageSize));
@@ -392,6 +401,7 @@ export function JobsExplorer({
       const response = await fetch(`${apiUrl}?${params}`);
       if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
       const payload = (await response.json()) as { jobs: Job[]; nextCursor: string | null };
+      if (requestedFor !== queryRef.current) return;
       setJobs((current) => {
         const seen = new Set(current.map((job) => job.id));
         return [...current, ...payload.jobs.filter((job) => !seen.has(job.id))];
@@ -399,11 +409,11 @@ export function JobsExplorer({
       setCursor(payload.nextCursor);
     } catch (caught) {
       console.error("Loading more jobs failed", caught);
-      setPagingError(true);
+      if (requestedFor === queryRef.current) setPagingError(true);
     } finally {
       setIsPaging(false);
     }
-  }, [cursor, isPaging, pagingError, queryString]);
+  }, [cursor, isPaging, queryString]);
 
   const activeChips = useMemo(() => {
     const chips: ActiveChip[] = [];
@@ -460,10 +470,10 @@ export function JobsExplorer({
         </button>
       </div>
     )}
-    {(jobs.length > 0 && !mounted) || (jobs.length === 0 && isLoading) ? (
+    {jobs.length === 0 && isLoading ? (
       <JobsSkeleton />
     ) : jobs.length === 0 && error ? (
-      <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+      <div role="alert" className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
         <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
           The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
@@ -492,8 +502,17 @@ export function JobsExplorer({
           />
         )}
         fixedItemHeight={72}
+        // Without this the virtualizer renders nothing until it has mounted and measured, so the
+        // 100 rows the server already queried and shipped in the payload were invisible until
+        // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the first
+        // screenful during SSR; the virtualizer takes over from there.
+        initialItemCount={Math.min(jobs.length, 12)}
         increaseViewportBy={{ top: 240, bottom: 480 }}
-        endReached={() => void loadMore()}
+        // Automatic paging stops after a failure so a scroll at the bottom cannot spin on a broken
+        // endpoint; the footer's Retry calls loadMore directly.
+        endReached={() => {
+          if (!pagingError) void loadMore();
+        }}
       />
     </div>
   ) : (
@@ -646,10 +665,12 @@ function SearchCheckList({
   options,
   selected,
   onToggle,
+  searchLabel = "Search options",
 }: {
   options: readonly { label: string; value: string; code?: string }[];
   selected: string[];
   onToggle: (value: string) => void;
+  searchLabel?: string;
 }) {
   const [query, setQuery] = useState("");
   const term = query.trim().toLowerCase();
@@ -665,7 +686,7 @@ function SearchCheckList({
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} />
+      <SearchBox full value={query} onChange={setQuery} label={searchLabel} />
       <div className="mt-1 max-h-64 overflow-auto">
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
@@ -730,7 +751,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} placeholder="Search titles" />
+      <SearchBox full value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
       <div className="mt-1 max-h-64 overflow-auto">
         {rows.map((row) => {
           const checked = row.title === value;
@@ -834,7 +855,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-[scale] duration-150 hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {Icon && <Icon />}
       <span className="text-[var(--muted)]">is</span>
@@ -956,8 +977,11 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 
 // The shared pill: 36px tall, 8px padding, 14px radius, a hairline shadow in place of a border,
 // white fill. Every control in the filter row wears it.
+// The press-scale is a transition, not a hover one: hover stays instant, but a control the user is
+// actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
+// value -- below 0.95 it reads as the button flinching.
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] hover:bg-[#F5F5FA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[#F5F5FA] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // A plain action in that same pill, so a standalone button (Clear all, Clear filters) matches the
 // controls beside it instead of importing a second button look.
@@ -977,11 +1001,16 @@ function SearchBox({
   value,
   onChange,
   placeholder = "Search",
+  // Every one of these fields used to be announced as just "Search" -- the page search and the one
+  // inside each filter dropdown -- so a screen-reader user tabbing the row heard the same name up
+  // to seven times. `label` names the field and its clear button for what they actually filter.
+  label = placeholder,
   full = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  label?: string;
   full?: boolean;
 }) {
   const shell = full
@@ -991,7 +1020,7 @@ function SearchBox({
     <label className={`flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
       <IconSearchGlyph />
       <input
-        aria-label={placeholder}
+        aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -1000,7 +1029,7 @@ function SearchBox({
       {value && (
         <button
           type="button"
-          aria-label="Clear search"
+          aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => onChange("")}
           className="flex shrink-0 items-center justify-center rounded-full hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
         >
@@ -1027,21 +1056,47 @@ function FilterDropdown({
   // A render function receives `close`, for single-select dropdowns that should dismiss on a pick.
   children: React.ReactNode | ((close: () => void) => React.ReactNode);
 }) {
-  const [open, setOpen] = useState(false);
+  // Three phases rather than a boolean, so the popover survives long enough to play its exit. It
+  // stays mounted through "closing" and unmounts when the animation ends; a reduced-motion user gets
+  // the same path with a 120ms fade, so the unmount never depends on motion the browser skipped.
+  const [phase, setPhase] = useState<"closed" | "open" | "closing">("closed");
+  const open = phase !== "closed";
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const close = useCallback(() => setPhase((current) => (current === "open" ? "closing" : current)), []);
 
   useEffect(() => {
-    if (!open) return;
+    if (phase !== "open") return;
     const onPointerDown = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(event.target as Node)) close();
+    };
+    // Escape closes and hands focus back to the pill, so the row stays keyboard-navigable. Without
+    // this the only way out of an open dropdown was a mouse click somewhere else.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      close();
+      triggerRef.current?.focus();
     };
     document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [phase, close]);
 
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} className={V4_PILL}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setPhase((current) => (current === "open" ? "closing" : "open"))}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className={V4_PILL}
+      >
         <Icon />
         <span>{label}</span>
         {count > 0 && (
@@ -1052,8 +1107,13 @@ function FilterDropdown({
         <IconUpDown />
       </button>
       {open && (
-        <div className={`dropdown-in absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}>
-          {typeof children === "function" ? children(() => setOpen(false)) : children}
+        <div
+          role="group"
+          aria-label={`${label} filter`}
+          onAnimationEnd={() => setPhase((current) => (current === "closing" ? "closed" : current))}
+          className={`${phase === "closing" ? "dropdown-out" : "dropdown-in"} absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}
+        >
+          {typeof children === "function" ? children(close) : children}
         </div>
       )}
     </div>
@@ -1080,7 +1140,7 @@ function SearchSelectList({
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} />
+      <SearchBox full value={query} onChange={setQuery} label="Search countries" />
       <div className="mt-1 max-h-64 overflow-auto">
         {shown.map((option) => {
           const checked = option.value === value;
@@ -1136,7 +1196,7 @@ function FilterDropdownBar({
         <SearchSelectList options={countryOptions} value={filters.country} onChange={(value) => update({ country: value })} />
       </FilterDropdown>
       <FilterDropdown Icon={IconIndustryF} label="Industry" count={filters.industry.length}>
-        <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} />
+        <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} searchLabel="Search industries" />
       </FilterDropdown>
       <FilterDropdown Icon={IconAtsF} label="ATS" count={filters.source.length} width="w-72">
         <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
@@ -1163,6 +1223,7 @@ function DateDropdown({ value, onChange }: { value: string; onChange: (value: st
             <button
               key={option.value || "any"}
               type="button"
+              aria-pressed={option.value === current.value}
               onClick={() => {
                 onChange(option.value);
                 close();
@@ -1328,13 +1389,17 @@ function JobCells({
   onToggleWatch: (company: string) => void;
   now: number;
 }) {
-  const postedDate = job.publishedAt ? new Date(job.publishedAt) : new Date(referenceDate);
-  if (!job.publishedAt) {
-    postedDate.setUTCDate(referenceDate.getUTCDate() - Math.max(0, (job.postedDaysAgo ?? 1) - 1));
-  }
-  // Relative label only for real timestamps, and only once `now` is set on the client (0 during SSR
-  // -> null -> the absolute date renders, matching the server markup).
-  const relative = job.publishedAt && now ? relativePosted(postedDate, now) : null;
+  // Roughly 7% of postings arrive with no publish date. They used to be back-dated from a module
+  // constant, which meant every one of them rendered the same frozen "Jul 20, 2026" -- a date that
+  // looked exactly like a real one and drifted further into the past every day. An unknown date is
+  // now shown as unknown. The NaN check also matters: `publishedAt` is passed through from a dozen
+  // ATS ingesters, and one unparseable value used to throw a RangeError out of toISOString() during
+  // row render, which unmounts the whole React root.
+  const parsed = job.publishedAt ? new Date(job.publishedAt) : null;
+  const postedDate = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+  // Relative label only once `now` is set on the client (0 during SSR -> null -> the absolute date
+  // renders, matching the server markup).
+  const relative = postedDate && now ? relativePosted(postedDate, now) : null;
 
   return (
     <>
@@ -1350,6 +1415,7 @@ function JobCells({
                 type="button"
                 onClick={() => onToggleWatch(job.company)}
                 aria-pressed={isWatched}
+                aria-label={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
                 title={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
                 className={`shrink-0 rounded text-[13px] leading-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
                   isWatched ? "text-[var(--accent-strong)]" : "text-[var(--border)] hover:text-[var(--muted-strong)]"
@@ -1399,13 +1465,17 @@ function JobCells({
       <td className="whitespace-nowrap px-5 py-3.5 text-sm tabular-nums text-[var(--muted-strong)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
             client can legitimately render a slightly different string. title keeps the exact date. */}
-        <time
-          dateTime={postedDate.toISOString().slice(0, 10)}
-          title={dateFormatter.format(postedDate)}
-          suppressHydrationWarning
-        >
-          {relative ?? dateFormatter.format(postedDate)}
-        </time>
+        {postedDate ? (
+          <time
+            dateTime={postedDate.toISOString().slice(0, 10)}
+            title={dateFormatter.format(postedDate)}
+            suppressHydrationWarning
+          >
+            {relative ?? dateFormatter.format(postedDate)}
+          </time>
+        ) : (
+          <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
+        )}
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--ink)]">
         {job.employmentType ?? <span className="text-[var(--muted)]">—</span>}

@@ -17,6 +17,10 @@ export const ACTIVE_REFRESH_HOURS = 12;
 export const EMPTY_REFRESH_HOURS = 96;
 export const INVALID_REFRESH_HOURS = 24 * 30;
 export const ERROR_BASE_DELAY_MINUTES = 15;
+// Consecutive "not a job list" responses required before a board's postings are closed. A single
+// invalid response is far more often a bot challenge or a truncated body than a dead board, and
+// acting on one used to wipe the board's entire listing -- so closure needs corroboration.
+export const INVALID_CLOSE_STRIKES = 3;
 
 export function queueForProvider(env, provider) {
   const binding = PROVIDER_QUEUE_BINDINGS[provider];

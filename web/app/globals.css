@@ -21,7 +21,9 @@
   --accent-wash: #ffecf9;
   --chip: #ffb8ee;
   --success: #2f9b65;
-  --focus: #ff73e5;
+  /* The brand pink is only ~2.4:1 on white, and a focus indicator needs 3:1 (WCAG 1.4.11) or a
+     keyboard user cannot see where they are. The ring uses the deeper shade, which clears it. */
+  --focus: #c2189e;
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);
@@ -38,6 +40,11 @@
     0 1px 2px -1px #0000000f,
     0 2px 4px #0000000a;
   --shadow-lift: 0 4px 16px oklch(0 0 0 / 0.06);
+  /* Motion curves. The built-in CSS easings are too weak to read as intentional; these are the
+     standard strong curves. Entering and exiting both use --ease-out, never ease-in: an ease-in
+     start delays the exact moment the user is looking at. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
 @theme inline {
@@ -207,10 +214,35 @@ button:disabled,
     filter: blur(0);
   }
 }
-.dropdown-in {
-  animation: dropdown-in 150ms cubic-bezier(0.2, 0, 0, 1);
+
+/* The exit is deliberately shorter and smaller than the enter: attention is already moving to
+   whatever the click did, so the popover should get out of the way rather than perform. `forwards`
+   holds the final frame until React unmounts it on animationend. */
+@keyframes dropdown-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+    filter: blur(2px);
+  }
+}
+
+.dropdown-in,
+.dropdown-out {
+  /* Scaling from the trigger's corner rather than the popover's centre — it should read as growing
+     out of the pill it belongs to. Every popover here is left-aligned under its trigger. */
   transform-origin: top left;
   will-change: transform, opacity;
+}
+.dropdown-in {
+  animation: dropdown-in 150ms var(--ease-out);
+}
+.dropdown-out {
+  animation: dropdown-out 110ms var(--ease-out) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -222,4 +254,29 @@ button:disabled,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  /* Reduced motion means gentler motion, not none: what people are sensitive to is movement, so the
+     popovers keep a plain opacity fade — which still shows where the new surface came from — and
+     lose the travel, scale and blur. Declared after the blanket rule above so these win. */
+  .dropdown-in,
+  .dropdown-out {
+    animation-duration: 120ms !important;
+    transform-origin: center;
+    will-change: opacity;
+  }
+  .dropdown-in {
+    animation-name: reduced-fade-in;
+  }
+  .dropdown-out {
+    animation-name: reduced-fade-out;
+  }
+}
+
+@keyframes reduced-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes reduced-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }

@@ -21,7 +21,6 @@ export type Job = {
     | "Operations"
     | "Other";
   source: "Ashby" | "BambooHR" | "Gem" | "Getro" | "Greenhouse" | "iCIMS" | "Lever" | "Paylocity" | "Rippling" | "SmartRecruiters" | "Spark Hire" | "Workday";
-  postedDaysAgo?: number;
   publishedAt?: string | null;
   skills: string[];
   description: string;

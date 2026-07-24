@@ -77,10 +77,12 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   // City has no dropdown of its own, and sort is not a control at all.
   assert.doesNotMatch(html, />City</);
   assert.doesNotMatch(html, />Sort</);
-  // The results table is virtualized and draws no rows until it mounts and measures, so the server
-  // render ships the loading skeleton in that slot rather than an empty white box.
-  assert.match(html, /class="[^"]*\bskeleton\b/);
+  // The results table is virtualized, which renders nothing until it mounts and measures unless it
+  // is given initialItemCount. Without that the server shipped a header over an empty box and the
+  // rows it had already queried were invisible until hydration (and invisible to crawlers full
+  // stop). Assert real cells in the markup, not just data in the RSC payload.
   assert.match(html, /<td/);
+  assert.match(html, /<tbody/);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
   // back to a bundled fixture.
   assert.match(html, /Staff Platform Engineer/);
