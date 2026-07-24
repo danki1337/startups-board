@@ -170,6 +170,27 @@ button:disabled,
   opacity: 1;
 }
 
+/* Loading placeholder. A looping keyframe is the right tool here (unlike hover states, which are
+   instant): the sweep says "still working" rather than "frozen". Kept low-contrast so eight rows of
+   it read as one quiet surface instead of a strobing block. */
+@keyframes skeleton-sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.skeleton {
+  background-color: #f1f1f5;
+  background-image: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.75) 50%, transparent 80%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The global reduced-motion rule collapses every animation to 0.01ms, which would leave the sweep
+     frozen mid-gradient. Drop the gradient entirely so it degrades to a plain grey block. */
+  .skeleton {
+    background-image: none;
+  }
+}
+
 /* Dropdown/popover appear: a one-shot enter that fades, lifts, and settles from the trigger corner.
    A keyframe (not a transition) because the element mounts on open and simply unmounts on close, so
    there is no exit state to interpolate back toward. Kept short and subtle per the interface-feel

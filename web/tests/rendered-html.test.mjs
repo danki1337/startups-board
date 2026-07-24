@@ -77,6 +77,10 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   // City has no dropdown of its own, and sort is not a control at all.
   assert.doesNotMatch(html, />City</);
   assert.doesNotMatch(html, />Sort</);
+  // The results table is virtualized and draws no rows until it mounts and measures, so the server
+  // render ships the loading skeleton in that slot rather than an empty white box.
+  assert.match(html, /class="[^"]*\bskeleton\b/);
+  assert.match(html, /<td/);
   // Rows come from the stub D1, proving the server render actually queries rather than falling
   // back to a bundled fixture.
   assert.match(html, /Staff Platform Engineer/);
@@ -109,6 +113,12 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /<DateDropdown/);
   assert.doesNotMatch(explorer, /<Select\.Trigger/);
   assert.match(explorer, /watchlistOnly/);
+  // A failed fetch is a visible, retryable state rather than a console message: the first page gets
+  // an error panel, a stale-results banner, and infinite scroll keeps its cursor so it can retry.
+  assert.match(explorer, /Couldn&rsquo;t load jobs/);
+  assert.match(explorer, /setRetryToken/);
+  assert.match(explorer, /setPagingError/);
+  assert.match(explorer, /<JobsSkeleton/);
   // One page, one layout: the earlier /v2-/v4 experiments and their `variant` switch are gone.
   assert.doesNotMatch(explorer, /variant/);
   // Hover feedback is instant everywhere; only press-scale and the dropdown enter keep a transition.

@@ -222,9 +222,20 @@ export function JobsExplorer({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
+  // A failed fetch used to only reach the console: the table kept whatever it had and the user was
+  // given no reason and no way to retry. `error` drives a visible state, and bumping `retryToken`
+  // re-runs the fetch effect without touching the filters.
+  const [error, setError] = useState<string | null>(null);
+  const [pagingError, setPagingError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
   // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
   const [now, setNow] = useState(0);
+  // False on the server and through the first client render, so both produce identical markup.
+  // The results table is virtualized, which means it draws no rows until it has mounted and measured
+  // a viewport -- so the server HTML contained a header over an empty white box, and that box stayed
+  // empty until hydration. This flag lets the skeleton stand in for exactly that window.
+  const [mounted, setMounted] = useState(false);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -293,6 +304,7 @@ export function JobsExplorer({
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
     setNow(Date.now());
+    setMounted(true);
     storageHydrated.current = true;
   }, []);
 
@@ -346,8 +358,13 @@ export function JobsExplorer({
         setTotalCapped(payload.totalCapped ?? false);
         setCorrectedTo(payload.correctedTo ?? null);
         setCursor(payload.nextCursor);
-      } catch (error) {
-        if ((error as Error).name !== "AbortError") console.error("Jobs fetch failed", error);
+        setError(null);
+      } catch (caught) {
+        // An abort is this effect superseding itself, not a failure -- leave the state alone so the
+        // newer request owns it.
+        if ((caught as Error).name === "AbortError") return;
+        console.error("Jobs fetch failed", caught);
+        setError((caught as Error).message || "Could not load jobs");
       } finally {
         if (!controller.signal.aborted) setIsLoading(false);
       }
@@ -358,11 +375,16 @@ export function JobsExplorer({
       controller.abort();
     };
     // initial* are the server-rendered first page, used only to seed the cache once; they are stable.
-  }, [queryString, urlQuery, initialJobs, initialTotal, initialTotalCapped, initialCursor]);
+    // retryToken is not read in the body: it exists purely so "Try again" can re-run this effect.
+  }, [queryString, urlQuery, retryToken, initialJobs, initialTotal, initialTotalCapped, initialCursor]);
 
+  // Infinite scroll used to treat a failed page as the end of the list -- it cleared the cursor, so
+  // the results simply stopped with no indication anything had gone wrong. Now the cursor is kept
+  // and the footer offers a retry.
   const loadMore = useCallback(async () => {
-    if (!cursor || isPaging) return;
+    if (!cursor || isPaging || pagingError) return;
     setIsPaging(true);
+    setPagingError(false);
     try {
       const params = new URLSearchParams(queryString);
       params.set("limit", String(pageSize));
@@ -375,12 +397,13 @@ export function JobsExplorer({
         return [...current, ...payload.jobs.filter((job) => !seen.has(job.id))];
       });
       setCursor(payload.nextCursor);
-    } catch {
-      setCursor(null);
+    } catch (caught) {
+      console.error("Loading more jobs failed", caught);
+      setPagingError(true);
     } finally {
       setIsPaging(false);
     }
-  }, [cursor, isPaging, queryString]);
+  }, [cursor, isPaging, pagingError, queryString]);
 
   const activeChips = useMemo(() => {
     const chips: ActiveChip[] = [];
@@ -418,10 +441,38 @@ export function JobsExplorer({
     </p>
   ) : null;
 
+  // Three states share the table's slot, in precedence order: rows if we have any (even stale ones
+  // during a refetch), then the skeleton while the first page is in flight, then the failure or
+  // empty panel. Showing rows over a pending refetch is deliberate -- swapping to a skeleton on
+  // every keystroke would make a working search flicker.
   const jobsTable = (
     <>
     {correctionNote}
-    {jobs.length > 0 ? (
+    {error && jobs.length > 0 && (
+      <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[#FFF4F4] px-3 py-2 text-[13px] text-[#8A1F1F]">
+        <span>These results may be out of date &mdash; the last refresh failed.</span>
+        <button
+          type="button"
+          onClick={() => setRetryToken((token) => token + 1)}
+          className="rounded font-semibold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        >
+          Try again
+        </button>
+      </div>
+    )}
+    {(jobs.length > 0 && !mounted) || (jobs.length === 0 && isLoading) ? (
+      <JobsSkeleton />
+    ) : jobs.length === 0 && error ? (
+      <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+        <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
+        <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
+          The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
+        </p>
+        <div className="mt-5 flex justify-center">
+          <PillButton onClick={() => setRetryToken((token) => token + 1)}>Try again</PillButton>
+        </div>
+      </div>
+    ) : jobs.length > 0 ? (
     <div className="overflow-hidden rounded-2xl shadow-[var(--shadow-table)]">
       <TableVirtuoso
         aria-label="Startup jobs from public ATS pages"
@@ -457,7 +508,21 @@ export function JobsExplorer({
     </>
   );
 
-  const resultsFooter = (
+  const resultsFooter = pagingError ? (
+    <p className="mt-4 flex flex-wrap items-center justify-center gap-2 text-center text-[13px] text-[var(--muted)]">
+      <span>Couldn&rsquo;t load more jobs.</span>
+      <button
+        type="button"
+        onClick={() => {
+          setPagingError(false);
+          void loadMore();
+        }}
+        className="rounded font-semibold text-[var(--accent-strong)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      >
+        Retry
+      </button>
+    </p>
+  ) : (
     <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
       Showing {jobs.length.toLocaleString()} of {formatTotal(total, totalCapped)}
       {/* Gate on the cursor, not jobs.length < total: a capped search shows "N+" but stops paging
@@ -1211,6 +1276,42 @@ function TableHeader() {
       <TableHeading className="w-[11%]">Workplace</TableHeading>
       <TableHeading className="w-[11%] text-end">Source</TableHeading>
     </tr>
+  );
+}
+
+// Shown while the first page is in flight. It reuses the real table's chrome, header and 72px row
+// height so the layout does not shift when rows arrive -- the placeholder blocks sit exactly where
+// the logo, title, company and each column will be. The alternative was a blank white box, which is
+// what the page did before and read as "no results" rather than "loading".
+function JobsSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-2xl bg-white shadow-[var(--shadow-table)]" aria-hidden="true">
+      <table className="jobs-table w-full min-w-[1050px] border-separate border-spacing-0 text-start">
+        <thead>
+          <TableHeader />
+        </thead>
+        <tbody>
+          {Array.from({ length: 8 }, (_, row) => (
+            <tr key={row}>
+              <td className="px-5 py-3.5">
+                <div className="flex items-center gap-3">
+                  <span className="skeleton size-9 shrink-0 rounded-[10px]" />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <span className="skeleton h-3.5 rounded" style={{ width: `${58 + ((row * 7) % 30)}%` }} />
+                    <span className="skeleton h-2.5 w-1/3 rounded" />
+                  </div>
+                </div>
+              </td>
+              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-2/3 rounded" /></td>
+              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-16 rounded" /></td>
+              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-14 rounded" /></td>
+              <td className="px-5 py-3.5"><span className="skeleton block h-3 w-16 rounded" /></td>
+              <td className="px-5 py-3.5"><span className="skeleton ms-auto block h-3 w-16 rounded" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
