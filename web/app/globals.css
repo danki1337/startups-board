@@ -150,10 +150,13 @@ button:disabled,
 }
 
 .jobs-table thead th {
-  /* Filled header bar, matching the design — a light tint rather than the canvas colour. Also the
-     opaque background the sticky header needs so rows don't show through as they scroll under it. */
-  background: var(--control-hover);
+  /* White, and opaque -- the sticky header needs a solid fill or rows show through as they scroll
+     under it. */
+  background: #ffffff;
   border-bottom: 1px solid oklch(0 0 0 / 0.08);
+  height: 48px;
+  padding-bottom: 0;
+  vertical-align: middle;
 }
 
 .jobs-table tbody tr td {
@@ -315,6 +318,21 @@ button:disabled,
   .is-pulsing > * { animation: none !important; }
 }
 
+/* ---- Card resize (transitions.dev) ----
+   Put .t-resize on an element whose width or height changes -- directly or via a state class -- and
+   the two sizes tween instead of snapping. */
+:root {
+  --resize-dur: 300ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.t-resize {
+  transition:
+    width var(--resize-dur) var(--resize-ease),
+    height var(--resize-dur) var(--resize-ease);
+  will-change: width, height;
+}
+
 /* Row collapse. Blocks that appear above the results table -- the applied-filter row, the
    stale-results banner, the spelling-correction note -- used to insert into normal flow and shove
    the whole 68vh table down on the same frame the rows themselves were changing: two unrelated
@@ -422,6 +440,10 @@ button:disabled,
   }
   .dropdown-out {
     animation-name: reduced-fade-out;
+  }
+
+  .t-resize {
+    transition: none !important;
   }
 
   /* Movement is what people are sensitive to, so the collapsing row snaps to its height and keeps
