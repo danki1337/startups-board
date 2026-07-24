@@ -8,7 +8,7 @@ import {
   workplaceOptions,
   type Job,
 } from "./jobs";
-import { countryFlag, countryName } from "./countries";
+import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
 import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
@@ -61,6 +61,10 @@ const postedWithinOptions = [
 const cityOptions = CITY_OPTIONS.map((entry) => ({
   label: `${countryFlag(entry.country) ?? ""} ${entry.name}`.trim(),
   value: entry.name,
+}));
+const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
+  label: `${entry.flag ?? ""} ${entry.name}`.trim(),
+  value: entry.code,
 }));
 
 // Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
@@ -181,10 +185,10 @@ export function JobsExplorer({
   initialQuery?: string;
   // Whether initialTotal is a capped "N+" figure (a broad search) rather than an exact count.
   initialTotalCapped?: boolean;
-  // "bar" is the original compact top filter bar; "sidebar" is the second main-page layout with a
-  // right-hand accordion of filter sections (/v2); "chips" is the third: the bar plus dashed
-  // "[icon] is [value]" chips for selected filters and a single multistate Filter flyout (/v3).
-  variant?: "bar" | "sidebar" | "chips";
+  // "bar" is the original compact top filter bar; "sidebar" is the /v2 right-hand accordion; "chips"
+  // is /v3 (dashed "[icon] is [value]" chips + one multistate Filter flyout); "dropdowns" is /v4: a
+  // row of independent dropdown pills, one per filter.
+  variant?: "bar" | "sidebar" | "chips" | "dropdowns";
 }) {
   // Seeded from the server-supplied query string rather than window.location, so the server and
   // client render identical markup. Reading window here caused a hydration mismatch whenever the
@@ -380,6 +384,9 @@ export function JobsExplorer({
     return chips;
   }, [filters, watchlistActive]);
 
+  // /v3 and /v4 give employment type its own table column; /v1 and /v2 stack it under Workplace.
+  const jobTypeColumn = variant === "chips" || variant === "dropdowns";
+
   // The results table (or empty state) is identical across both page variants, so it lives in one
   // place and is dropped into whichever layout is rendered below.
   const jobsTable = jobs.length > 0 ? (
@@ -391,7 +398,7 @@ export function JobsExplorer({
         data={jobs}
         components={virtuosoComponents}
         computeItemKey={(_index, job) => job.id}
-        fixedHeaderContent={variant === "chips" ? TableHeaderWithJobType : TableHeader}
+        fixedHeaderContent={jobTypeColumn ? TableHeaderWithJobType : TableHeader}
         itemContent={(_index, job) => (
           <JobCells
             job={job}
@@ -399,7 +406,7 @@ export function JobsExplorer({
             isWatched={watchlistSet.has(job.company)}
             onToggleWatch={toggleWatch}
             now={now}
-            jobType={variant === "chips"}
+            jobType={jobTypeColumn}
           />
         )}
         fixedItemHeight={72}
@@ -511,16 +518,21 @@ export function JobsExplorer({
         </div>
 
         <div className="rounded-2xl bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)]">
-          <FilterBar
-            filters={filters}
-            update={update}
-            toggle={toggle}
-            onSaveView={saveView}
-            canSaveView={urlQuery.length > 0}
-            menu={variant === "chips" ? "stack" : "panels"}
-          />
+          {variant === "dropdowns" ? (
+            <FilterDropdownBar filters={filters} update={update} toggle={toggle} />
+          ) : (
+            <FilterBar
+              filters={filters}
+              update={update}
+              toggle={toggle}
+              onSaveView={saveView}
+              canSaveView={urlQuery.length > 0}
+              menu={variant === "chips" ? "stack" : "panels"}
+            />
+          )}
 
-          {activeChips.length > 0 && (
+          {/* v4's dropdown pills carry their own count badges, so it skips the separate chip row. */}
+          {activeChips.length > 0 && variant !== "dropdowns" && (
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/6 pt-3">
               {variant === "chips" ? (
                 <>
@@ -1394,6 +1406,154 @@ function FilterMenu({
             onToggle={(value) => toggle(category.key, value)}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---- v4: a row of independent filter dropdowns ----
+
+// One filter as a pill that toggles a popover of that filter's own controls. Each manages its own
+// outside-click dismissal so several can sit side by side in the row.
+function FilterDropdown({
+  Icon,
+  label,
+  count,
+  width = "w-64",
+  children,
+}: {
+  Icon: () => React.ReactElement;
+  label: string;
+  count: number;
+  width?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} className={FILTER_PILL}>
+        <Icon />
+        <span>{label}</span>
+        {count > 0 && (
+          <span className="min-w-5 rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-center text-[12px] font-semibold tabular-nums text-[var(--accent-strong)]">
+            {count}
+          </span>
+        )}
+        <IconUpDown />
+      </button>
+      {open && (
+        <div className={`absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A searchable single-select list (Country): one value, a checkmark on the chosen row; clicking the
+// chosen row clears it.
+function SearchSelectList({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly { label: string; value: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const matches = term ? options.filter((option) => option.label.toLowerCase().includes(term)) : options;
+  const selected = options.find((option) => option.value === value);
+  const ordered = selected && !matches.some((option) => option.value === value) ? [selected, ...matches] : matches;
+  const shown = ordered.slice(0, 60);
+
+  return (
+    <div>
+      <SidebarSearchInput value={query} onChange={setQuery} />
+      <div className="mt-1 max-h-64 overflow-auto">
+        {shown.map((option) => {
+          const checked = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(checked ? "" : option.value)}
+              aria-pressed={checked}
+              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start transition-colors duration-100 hover:bg-[var(--control-hover)] ${checked ? "bg-[var(--accent-wash)]" : ""}`}
+            >
+              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{option.label}</span>
+              {checked && (
+                <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 shrink-0 text-[var(--accent-strong)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
+              )}
+            </button>
+          );
+        })}
+        {shown.length === 0 && <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>}
+      </div>
+    </div>
+  );
+}
+
+// The v4 filter row: an independent dropdown per filter, then a Search field and the date pill on
+// the right. Every control is wired to the same filter state as the other variants.
+function FilterDropdownBar({
+  filters,
+  update,
+  toggle,
+}: {
+  filters: Filters;
+  update: (patch: Partial<Filters>) => void;
+  toggle: (key: FilterCategoryKey, value: string) => void;
+}) {
+  const options = (key: FilterCategoryKey) => FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <FilterDropdown Icon={IconLocate} label="Title" count={filters.title ? 1 : 0} width="w-72">
+        <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconJobType} label="Job type" count={filters.employmentType.length} width="w-72">
+        <SidebarPills options={options("employmentType")} selected={filters.employmentType} onToggle={(value) => toggle("employmentType", value)} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconWorkplace} label="Workplace" count={filters.workplace.length} width="w-72">
+        <SidebarPills options={options("workplace")} selected={filters.workplace} onToggle={(value) => toggle("workplace", value)} glyph="globe" />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconPin} label="Country" count={filters.country && filters.country !== "anywhere" ? 1 : 0}>
+        <SearchSelectList options={countryOptions} value={filters.country} onChange={(value) => update({ country: value })} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconGlobe} label="City" count={filters.city.length}>
+        <SearchCheckList options={options("city")} selected={filters.city} onToggle={(value) => toggle("city", value)} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconIndustry} label="Industry" count={filters.industry.length}>
+        <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconAts} label="ATS" count={filters.source.length} width="w-72">
+        <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
+      </FilterDropdown>
+
+      <div className="ms-auto flex items-center gap-2">
+        <div className="inline-flex min-h-11 w-52 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--control)] px-3.5">
+          <IconSearch />
+          <input
+            aria-label="Search all job text"
+            value={filters.search}
+            onChange={(event) => update({ search: event.target.value })}
+            placeholder="Search"
+            className="w-full min-w-0 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+          />
+        </div>
+        <DatePostedSelect filters={filters} update={update} />
       </div>
     </div>
   );
