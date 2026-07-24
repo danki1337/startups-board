@@ -773,7 +773,7 @@ function SearchCheckList({
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} label={searchLabel} />
+      <SearchBox full focusOnMount value={query} onChange={setQuery} label={searchLabel} />
       <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
@@ -807,7 +807,11 @@ function SearchCheckList({
 // Title picker: a search box that lists matching real job titles as checkbox rows. Title is a single
 // value, so picking one replaces it and picking the selected one clears it.
 function TitleCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [query, setQuery] = useState(value);
+  // Starts empty, not seeded from the current selection. Seeding it meant reopening the dropdown
+  // after picking "Product Designer" pre-filled the search with "Product Designer" and showed only
+  // that one row, so there was no way to browse to a different title without clearing the box
+  // first. The selection is still visible -- it is pinned as a checked row below.
+  const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<{ title: string; jobCount: number }[]>([]);
   // A down titles endpoint used to render exactly the same "No matching titles" as a genuine
   // zero-result query, so a broken lookup was indistinguishable from an empty one.
@@ -836,15 +840,17 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
     };
   }, [query]);
 
-  // Always surface the current selection as a checked row, even before typing.
-  const rows = [
-    ...(value && !suggestions.some((s) => s.title === value) ? [{ title: value, jobCount: 0 }] : []),
-    ...suggestions,
-  ];
+  // The current selection is always the first row, so what is filtered is visible the moment the
+  // panel opens rather than buried a hundred rows down the list. It keeps its real count when the
+  // suggestions include it, which they usually do.
+  const selected = value ? suggestions.find((row) => row.title === value) ?? { title: value, jobCount: 0 } : null;
+  const rows = selected
+    ? [selected, ...suggestions.filter((row) => row.title !== value)]
+    : suggestions;
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
+      <SearchBox full focusOnMount value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
       <ScrollShadow className="mt-1 max-h-80">
         {rows.map((row) => {
           const checked = row.title === value;
@@ -1068,7 +1074,6 @@ const WORKPLACE_ICONS: Record<string, () => React.ReactElement> = {
   remote: IconRemoteF,
 };
 
-// Job-type glyphs keyed by value; currentColor lets them invert to white on the selected pill.
 // Category icon per chip kind. These are the same filled glyphs the filter row uses, so a chip and
 // the dropdown it came from are drawn identically; only search/company/location have no pill of
 // their own and keep a line icon.
@@ -1164,13 +1169,25 @@ function SearchBox({
   // to seven times. `label` names the field and its clear button for what they actually filter.
   label = placeholder,
   full = false,
+  focusOnMount = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   label?: string;
   full?: boolean;
+  // Set for the fields inside a dropdown: the popover mounts on open, so focusing on mount puts the
+  // caret in the search box the moment the panel appears and you can type straight away.
+  focusOnMount?: boolean;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!focusOnMount) return;
+    // preventScroll because the popover is mid enter-animation (it translates and scales), and the
+    // browser's default focus scroll would jerk the page toward it.
+    inputRef.current?.focus({ preventScroll: true });
+  }, [focusOnMount]);
   const shell = full
     ? "w-full bg-[#F5F5FA] hover:bg-[#ECECF4] focus-within:bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]"
     : "w-[231px] bg-white shadow-[var(--shadow-control)] hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]";
@@ -1178,6 +1195,7 @@ function SearchBox({
     <label className={`flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
       <IconSearchGlyph />
       <input
+        ref={inputRef}
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -1297,7 +1315,7 @@ function SearchSelectList({
 
   return (
     <div>
-      <SearchBox full value={query} onChange={setQuery} label="Search countries" />
+      <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search countries" />
       <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
           const checked = option.value === value;
