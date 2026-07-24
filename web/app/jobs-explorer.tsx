@@ -58,14 +58,41 @@ const postedWithinOptions = [
   { label: "Last 30 days", value: "30" },
   { label: "Last 90 days", value: "90" },
 ];
+// `code` carries the ISO country so the checklists can render an SVG flag; the emoji is gone from
+// the label (it lives in the <Flag> glyph now).
 const cityOptions = CITY_OPTIONS.map((entry) => ({
-  label: `${countryFlag(entry.country) ?? ""} ${entry.name}`.trim(),
+  label: entry.name,
   value: entry.name,
+  code: entry.country,
 }));
 const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
-  label: `${entry.flag ?? ""} ${entry.name}`.trim(),
+  label: entry.name,
   value: entry.code,
+  code: entry.code,
 }));
+
+// A crisp SVG national flag from flagcdn (a free, public-domain flag CDN) keyed by ISO alpha-2 code,
+// replacing the emoji flags that don't render on every platform. A subtle 1px outline gives the same
+// edge definition as the company logos; if the image can't load it falls back to the emoji flag.
+function Flag({ code }: { code?: string | null }) {
+  const cc = (code ?? "").trim().toLowerCase();
+  const [failed, setFailed] = useState(false);
+  if (cc.length !== 2) return null;
+  if (failed) {
+    return <span aria-hidden="true" className="text-[13px] leading-none">{countryFlag(cc) ?? ""}</span>;
+  }
+  return (
+    // Remote flag asset, like the ATS company logos, so it can't use a fixed Next image host.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`https://flagcdn.com/${cc}.svg`}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="inline-block h-[13px] w-[18px] shrink-0 rounded-[2px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10"
+    />
+  );
+}
 
 // Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
 // single source rather than five parallel useStates that could drift apart.
@@ -1061,7 +1088,7 @@ function SearchCheckList({
   selected,
   onToggle,
 }: {
-  options: readonly { label: string; value: string }[];
+  options: readonly { label: string; value: string; code?: string }[];
   selected: string[];
   onToggle: (value: string) => void;
 }) {
@@ -1091,7 +1118,10 @@ function SearchCheckList({
               aria-pressed={checked}
               className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start transition-colors duration-100 hover:bg-[var(--control-hover)]"
             >
-              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{option.label}</span>
+              <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
+                <Flag code={option.code} />
+                <span className="min-w-0 truncate">{option.label}</span>
+              </span>
               <FilterCheckbox checked={checked} />
             </button>
           );
@@ -1597,7 +1627,7 @@ function FilterDropdown({
         <IconUpDown />
       </button>
       {open && (
-        <div className={`absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}>
+        <div className={`dropdown-in absolute left-0 top-[calc(100%+8px)] z-30 ${width} rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}>
           {children}
         </div>
       )}
@@ -1612,7 +1642,7 @@ function SearchSelectList({
   value,
   onChange,
 }: {
-  options: readonly { label: string; value: string }[];
+  options: readonly { label: string; value: string; code?: string }[];
   value: string;
   onChange: (value: string) => void;
 }) {
@@ -1637,7 +1667,10 @@ function SearchSelectList({
               aria-pressed={checked}
               className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start transition-colors duration-100 hover:bg-[var(--control-hover)] ${checked ? "bg-[var(--accent-wash)]" : ""}`}
             >
-              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{option.label}</span>
+              <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
+                <Flag code={option.code} />
+                <span className="min-w-0 truncate">{option.label}</span>
+              </span>
               {checked && (
                 <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 shrink-0 text-[var(--accent-strong)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
               )}
@@ -2173,9 +2206,13 @@ function JobCells({
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
-            {job.countryFlag ?? (job.workplace === "Remote" ? "🌍" : "")}
-          </span>
+          {job.country ? (
+            <Flag code={job.country} />
+          ) : (
+            <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
+              {job.workplace === "Remote" ? "🌍" : ""}
+            </span>
+          )}
           {job.location === "Location not specified" ? (
             <span className="truncate">{job.location}</span>
           ) : (
