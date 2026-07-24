@@ -1696,7 +1696,7 @@ function CompanyLogo({ job }: { job: Job }) {
   const [failed, setFailed] = useState(false);
   if (job.companyLogoUrl && !failed) {
     return (
-      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[32px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
+      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -1704,7 +1704,7 @@ function CompanyLogo({ job }: { job: Job }) {
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="size-full object-contain p-1.5"
+          className="size-full object-contain p-0.5"
           onError={() => setFailed(true)}
           // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
           // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
@@ -1722,7 +1722,7 @@ function CompanyLogo({ job }: { job: Job }) {
   // design's app-icon style logos.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[32px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
       style={{ background: "linear-gradient(150deg, #ff8ee4 0%, #d426b0 100%)" }}
       aria-hidden="true"
     >
