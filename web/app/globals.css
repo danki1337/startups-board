@@ -331,6 +331,10 @@ button:disabled,
     width var(--resize-dur) var(--resize-ease),
     height var(--resize-dur) var(--resize-ease);
   will-change: width, height;
+  /* A height transition does nothing between two `auto` values, and the dropdowns are sized by
+     their content. This opts those keywords into interpolation so filtering a list tweens the panel
+     instead of snapping it. Browsers without it simply resize instantly, which is today's behaviour. */
+  interpolate-size: allow-keywords;
 }
 
 /* Row collapse. Blocks that appear above the results table -- the applied-filter row, the

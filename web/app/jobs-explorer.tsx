@@ -781,7 +781,7 @@ function SearchCheckList({
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} label={searchLabel} />
-      <ScrollShadow className="mt-1 max-h-64">
+      <ScrollShadow className="mt-1 max-h-64 t-resize">
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
           return (
@@ -1313,7 +1313,7 @@ function FilterDropdown({
           role="group"
           aria-label={`${label} filter`}
           onAnimationEnd={() => setPhase((current) => (current === "closing" ? "closed" : current))}
-          className={`${phase === "closing" ? "dropdown-out" : "dropdown-in"} ${align === "end" ? "dropdown-end right-0" : "left-0"} absolute top-[calc(100%+8px)] z-30 ${width} rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}
+          className={`t-resize ${phase === "closing" ? "dropdown-out" : "dropdown-in"} ${align === "end" ? "dropdown-end right-0" : "left-0"} absolute top-[calc(100%+8px)] z-30 ${width} rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lift)]`}
         >
           {typeof children === "function" ? children(close) : children}
         </div>
@@ -1343,7 +1343,7 @@ function SearchSelectList({
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search countries" />
-      <ScrollShadow className="mt-1 max-h-64">
+      <ScrollShadow className="mt-1 max-h-64 t-resize">
         {shown.map((option) => {
           const checked = option.value === value;
           return (
@@ -1623,12 +1623,13 @@ function JobCells({
                 type="button"
                 onClick={() => onFilter({ company: job.company })}
                 title={`Show only jobs at ${job.company}`}
-                className="-mx-1 max-w-[52%] truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                // The 52% cap existed to leave room for the category beside it; with that gone the
+                // company gets the whole line, so names stop truncating for no reason.
+                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">{job.category}</span>
+
             </span>
           </div>
         </div>
@@ -1642,9 +1643,7 @@ function JobCells({
               {job.workplace === "Remote" ? "🌍" : ""}
             </span>
           )}
-          {job.location === "Location not specified" ? (
-            <span className="truncate">{job.location}</span>
-          ) : (
+          {job.location === "Location not specified" ? null : (
             <button
               type="button"
               // Filtering by the resolved city is far more useful than the raw string, which is
@@ -1673,9 +1672,7 @@ function JobCells({
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
       </td>
-      <td className="px-5 py-3.5 text-sm text-[var(--ink)]">
-        {job.employmentType ?? <span className="text-[var(--muted)]">—</span>}
-      </td>
+      <td className="px-5 py-3.5 text-sm text-[var(--ink)]">{job.employmentType}</td>
       <td className="px-5 py-3.5 text-sm text-[var(--ink)]">{job.workplace}</td>
       <td className="whitespace-nowrap px-5 py-3.5 text-end">
         <a
@@ -1707,7 +1704,7 @@ function CompanyLogo({ job }: { job: Job }) {
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"
-          className="size-full object-contain p-0.5"
+          className="size-full object-contain p-1.5"
           onError={() => setFailed(true)}
           // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
           // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
