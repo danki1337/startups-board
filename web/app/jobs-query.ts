@@ -13,9 +13,26 @@ export type PublicJob = Job;
 export type JobsPage = {
   jobs: PublicJob[];
   total: number;
+  // True when `total` was capped (a broad text search) rather than an exact count, so the UI can
+  // render it as "5,000+" instead of an exact figure it would be expensive to compute.
+  totalCapped: boolean;
   limit: number;
   nextCursor: string | null;
 };
+
+// Relevance tuning for text search. bm25 column weights follow the jobs_fts column order
+// (title, company_identifier, company_name, location): a title hit far outweighs a location hit.
+const SEARCH_WEIGHTS = "10.0, 4.0, 4.0, 1.0";
+// Freshness nudge blended into the relevance score: days since posting (undated treated as ~180d,
+// capped at a year) times this coefficient, so among comparably relevant hits the newer wins
+// without letting recency override a clearly better title match.
+const SEARCH_RECENCY = "min(max(julianday('now') - julianday(coalesce(j.published_at, date('now', '-180 days'))), 0), 365) * 0.004";
+// Text searches are relevance-ranked, so they page by offset rather than the date keyset; this caps
+// how deep that paging goes (each page re-ranks the whole match set, and the long tail is noise).
+const SEARCH_RESULT_CAP = 300;
+// Broad searches can match hundreds of thousands of rows; counting them exactly cost multiple
+// seconds, so the count is bounded and anything at/above this renders as "N+".
+const COUNT_CAP = 5000;
 
 export const SORT_OPTIONS = ["newest", "oldest", "company"] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
@@ -74,6 +91,7 @@ const PROVIDER_BY_LABEL = new Map(
 
 export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const search = ftsQuery(params.get("search"));
+  const isSearch = search !== null;
   const conditions = ["j.is_active = 1"];
   const bindings: unknown[] = [];
   const from = search ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid" : "jobs j";
@@ -140,55 +158,90 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     ? (params.get("sort") as SortOption)
     : "newest";
 
+  // All bindings so far belong to filters (shared by the row query and the count). The cursor
+  // clause, added only for the keyset-paged browse path, must not leak into the count.
   const filterBindingCount = bindings.length;
   const cursor = decodeCursor(params.get("cursor"));
-  if (cursor) pushCursorCondition(conditions, bindings, sort, cursor);
+
+  // Text search is relevance-ranked and paged by offset; browse is date-keyset-paged. The two never
+  // mix: a search request ignores any keyset cursor and vice versa.
+  const offset = isSearch && cursor && "offset" in cursor
+    ? Math.max(0, Math.min(cursor.offset, SEARCH_RESULT_CAP))
+    : 0;
+  if (!isSearch && cursor && "key" in cursor) pushCursorCondition(conditions, bindings, sort, cursor);
 
   const limit = clampInteger(params.get("limit"), 100, 1, 100);
   const where = conditions.join(" AND ");
+  const searchScore = `bm25(jobs_fts, ${SEARCH_WEIGHTS}) + ${SEARCH_RECENCY}`;
+  const innerOrder = isSearch ? `${searchScore}, j.key` : orderBy(sort);
   const db = getD1();
+  // Rank-and-limit first, THEN resolve the company-logo fallback. When relevance is the sort order
+  // the planner cannot satisfy it from an index, so it materializes every match -- and joining
+  // boards+companies across the whole match set (720k rows for a broad term) rather than the final
+  // page (100 rows) tripled the work. The logo join now runs only over the page the inner query
+  // returns; browse queries are unaffected since the index already limits the inner scan early. The
+  // inner carries its sort key (relScore for search, the sorted columns for browse) so the outer
+  // join can restore the exact order the ranking produced.
   const select = db.prepare(`
     SELECT
-      j.key,
-      j.title,
-      j.company_identifier AS companyIdentifier,
-      j.company_name AS companyName,
-      coalesce(j.company_logo_url, c.logo_url) AS companyLogoUrl,
-      j.location,
-      j.country,
-      j.city,
-      j.role_family AS roleFamily,
-      j.company_industry AS companyIndustry,
-      j.workplace,
-      j.employment_type AS employmentType,
-      j.category,
-      j.provider,
-      j.published_at AS publishedAt,
-      j.url
-    FROM ${from}
-    LEFT JOIN boards b ON b.key = j.board_key
+      base.key,
+      base.title,
+      base.companyIdentifier,
+      base.companyName,
+      coalesce(base.logoRaw, c.logo_url) AS companyLogoUrl,
+      base.location,
+      base.country,
+      base.city,
+      base.roleFamily,
+      base.companyIndustry,
+      base.workplace,
+      base.employmentType,
+      base.category,
+      base.provider,
+      base.publishedAt,
+      base.url
+    FROM (
+      SELECT
+        j.key, j.title, j.company_identifier AS companyIdentifier, j.company_name AS companyName,
+        j.company_logo_url AS logoRaw, j.board_key AS boardKey, j.location, j.country, j.city,
+        j.role_family AS roleFamily, j.company_industry AS companyIndustry, j.workplace,
+        j.employment_type AS employmentType, j.category, j.provider, j.published_at AS publishedAt, j.url
+        ${isSearch ? `, ${searchScore} AS relScore` : ""}
+      FROM ${from}
+      WHERE ${where}
+      ORDER BY ${innerOrder}
+      LIMIT ?${isSearch ? " OFFSET ?" : ""}
+    ) base
+    LEFT JOIN boards b ON b.key = base.boardKey
     LEFT JOIN companies c ON c.key = b.company_key
-    WHERE ${where}
-    ORDER BY ${orderBy(sort)}
-    LIMIT ?
-  `).bind(...bindings, limit);
+    ORDER BY ${isSearch ? "base.relScore, base.key" : baseOrderBy(sort)}
+  `).bind(...bindings, limit, ...(isSearch ? [offset] : []));
 
-  // The count must ignore the cursor clause, otherwise the total shrinks as the user pages.
-  const countConditions = conditions.slice(0, cursor ? -1 : undefined);
-  const count = db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countConditions.join(" AND ")}`)
-    .bind(...bindings.slice(0, filterBindingCount));
+  // The count ignores the cursor clause, otherwise the total would shrink as the user pages. A
+  // broad search can match hundreds of thousands of rows, so its count is bounded (LIMIT in a
+  // subquery) and reported as "N+"; browse counts stay exact and index-backed.
+  const countConditions = conditions.slice(0, !isSearch && cursor ? -1 : undefined);
+  const countWhere = countConditions.join(" AND ");
+  const countBindings = bindings.slice(0, filterBindingCount);
+  const count = isSearch
+    ? db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings)
+    : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
 
   const [rowsResult, countResult] = await db.batch([select, count]);
   const rows = rowsResult.results as unknown as JobRow[];
-  const total = Number((countResult.results[0] as { total?: number } | undefined)?.total ?? 0);
-  const last = rows.at(-1);
+  const rawTotal = Number((countResult.results[0] as { total?: number } | undefined)?.total ?? 0);
+  const totalCapped = isSearch && rawTotal > COUNT_CAP;
+  const total = totalCapped ? COUNT_CAP : rawTotal;
 
-  return {
-    jobs: rows.map(toPublicJob),
-    total,
-    limit,
-    nextCursor: nextCursor(rows, last, limit, sort, cursor),
-  };
+  let next: string | null;
+  if (isSearch) {
+    const nextOffset = offset + limit;
+    next = rows.length === limit && nextOffset < SEARCH_RESULT_CAP ? encodeCursor({ offset: nextOffset }) : null;
+  } else {
+    next = nextCursor(rows, rows.at(-1), limit, sort, cursor && "key" in cursor ? cursor : null);
+  }
+
+  return { jobs: rows.map(toPublicJob), total, totalCapped, limit, nextCursor: next };
 }
 
 // A full page continues from its last row. A short page in the newest sort's dated phase means the
@@ -239,6 +292,14 @@ function orderBy(sort: SortOption) {
   // with a covering scan instead of reading and sorting the whole table. SQLite orders NULLs last in
   // DESC, which matches the old coalesce('')-to-last behaviour for undated rows.
   return "j.published_at DESC, j.key";
+}
+
+// orderBy re-expressed over the outer query's aliased columns, so the join-for-logo wrapper restores
+// the exact browse order the inner subquery produced.
+function baseOrderBy(sort: SortOption) {
+  if (sort === "oldest") return "coalesce(base.publishedAt, '') ASC, base.key";
+  if (sort === "company") return "lower(coalesce(base.companyName, base.companyIdentifier)) ASC, base.key";
+  return "base.publishedAt DESC, base.key";
 }
 
 // Keyset pagination. For the default newest sort this is null-aware so the ~7% of rows with no
@@ -300,20 +361,32 @@ function addSetFilter(
   bindings.push(...values);
 }
 
-function ftsQuery(value: string | null) {
-  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._+#-]*/gu)?.slice(0, 8) ?? [];
+// Build the FTS5 MATCH expression: each meaningful token becomes a quoted prefix term, AND-ed so
+// every word must appear. Single-character tokens are dropped -- a bare "a" prefix-matches almost
+// every posting, which is both useless and pathologically slow -- so a query that is only a lone
+// letter yields null (no text filter) rather than a scan of the whole table.
+export function ftsQuery(value: string | null) {
+  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}._+#-]*/gu)
+    ?.filter((token) => token.length >= 2)
+    .slice(0, 8) ?? [];
   if (!tokens.length) return null;
   return tokens.map((token) => `"${token.replaceAll('"', '""')}"*`).join(" AND ");
 }
 
-function encodeCursor(value: { value: string | null; key: string }) {
+// A cursor is either a keyset position for browse ({value, key}) or an offset for relevance search
+// ({offset}); the two paths never share one, so the opaque token just round-trips whichever applies.
+type KeysetCursor = { value: string | null; key: string };
+type OffsetCursor = { offset: number };
+
+function encodeCursor(value: KeysetCursor | OffsetCursor) {
   return btoa(unescape(encodeURIComponent(JSON.stringify(value))));
 }
 
-function decodeCursor(value: string | null): { value: string | null; key: string } | null {
+function decodeCursor(value: string | null): KeysetCursor | OffsetCursor | null {
   if (!value) return null;
   try {
     const cursor = JSON.parse(decodeURIComponent(escape(atob(value))));
+    if (typeof cursor.offset === "number" && Number.isFinite(cursor.offset)) return { offset: cursor.offset };
     const validValue = typeof cursor.value === "string" || cursor.value === null;
     return validValue && typeof cursor.key === "string" ? cursor : null;
   } catch {

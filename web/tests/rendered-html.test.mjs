@@ -114,3 +114,16 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(packageJson, /"@heroui\/react"/);
   assert.match(packageJson, /"react-virtuoso"/);
 });
+
+testWithBuild("ranks text search by relevance with a bounded count", async () => {
+  const query = await readFile(new URL("../app/jobs-query.ts", import.meta.url), "utf8");
+  // Search is ordered by bm25 relevance (title-weighted) blended with recency, not raw date.
+  assert.match(query, /bm25\(jobs_fts/);
+  assert.match(query, /SEARCH_WEIGHTS/);
+  assert.match(query, /SEARCH_RECENCY/);
+  // A broad search's total is capped ("N+") instead of an exact multi-second count.
+  assert.match(query, /COUNT_CAP/);
+  assert.match(query, /totalCapped/);
+  // A lone single-character token is dropped so "a" cannot prefix-match the whole table.
+  assert.match(query, /token\.length >= 2/);
+});

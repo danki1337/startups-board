@@ -45,6 +45,11 @@ function relativePosted(date: Date, now: number): string | null {
   return null;
 }
 
+// A capped count (a broad text search) reads as "5,000+"; an exact count reads plainly.
+function formatTotal(total: number, capped: boolean): string {
+  return capped ? `${total.toLocaleString()}+` : total.toLocaleString();
+}
+
 const employmentOptions = ["Full time", "Part time", "Contract", "Internship", "Temporary"];
 const postedWithinOptions = [
   { label: "Any time", value: "" },
@@ -166,6 +171,7 @@ export function JobsExplorer({
   initialCursor = null,
   hasServerData = false,
   initialQuery = "",
+  initialTotalCapped = false,
   variant = "bar",
 }: {
   initialJobs?: Job[];
@@ -173,6 +179,8 @@ export function JobsExplorer({
   initialCursor?: string | null;
   hasServerData?: boolean;
   initialQuery?: string;
+  // Whether initialTotal is a capped "N+" figure (a broad search) rather than an exact count.
+  initialTotalCapped?: boolean;
   // "bar" is the original compact top filter bar; "sidebar" is the second main-page layout with a
   // right-hand accordion of filter sections (/v2); "chips" is the third: the bar plus dashed
   // "[icon] is [value]" chips for selected filters and a single multistate Filter flyout (/v3).
@@ -184,6 +192,7 @@ export function JobsExplorer({
   const [filters, setFilters] = useState<Filters>(() => filtersFromSearchParams(initialQuery));
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [total, setTotal] = useState(initialTotal);
+  const [totalCapped, setTotalCapped] = useState(initialTotalCapped);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
@@ -205,7 +214,7 @@ export function JobsExplorer({
   // In-memory cache of the first page keyed by the fetch query, so returning to a filter combination
   // already viewed this session paints instantly instead of flashing an empty/loading table while a
   // fresh request is in flight. It still revalidates in the background, so nothing goes stale.
-  const resultCache = useRef(new Map<string, { jobs: Job[]; total: number; cursor: string | null }>());
+  const resultCache = useRef(new Map<string, { jobs: Job[]; total: number; totalCapped: boolean; cursor: string | null }>());
 
   const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
 
@@ -279,7 +288,7 @@ export function JobsExplorer({
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
       // Seed the cache with the server-rendered first page so returning to the initial view is instant.
-      resultCache.current.set(queryString, { jobs: initialJobs, total: initialTotal, cursor: initialCursor });
+      resultCache.current.set(queryString, { jobs: initialJobs, total: initialTotal, totalCapped: initialTotalCapped, cursor: initialCursor });
       return;
     }
 
@@ -289,6 +298,7 @@ export function JobsExplorer({
     if (cached) {
       setJobs(cached.jobs);
       setTotal(cached.total);
+      setTotalCapped(cached.totalCapped);
       setCursor(cached.cursor);
     }
 
@@ -300,14 +310,15 @@ export function JobsExplorer({
         params.set("limit", String(pageSize));
         const response = await fetch(`${apiUrl}?${params}`, { signal: controller.signal });
         if (!response.ok) throw new Error(`Jobs API returned ${response.status}`);
-        const payload = (await response.json()) as { jobs: Job[]; total: number; nextCursor: string | null };
+        const payload = (await response.json()) as { jobs: Job[]; total: number; totalCapped?: boolean; nextCursor: string | null };
         // Bounded LRU: re-inserting moves the key to the newest slot; the oldest is dropped past the cap.
         const cache = resultCache.current;
         cache.delete(queryString);
-        cache.set(queryString, { jobs: payload.jobs, total: payload.total, cursor: payload.nextCursor });
+        cache.set(queryString, { jobs: payload.jobs, total: payload.total, totalCapped: payload.totalCapped ?? false, cursor: payload.nextCursor });
         if (cache.size > 40) cache.delete(cache.keys().next().value as string);
         setJobs(payload.jobs);
         setTotal(payload.total);
+        setTotalCapped(payload.totalCapped ?? false);
         setCursor(payload.nextCursor);
       } catch (error) {
         if ((error as Error).name !== "AbortError") console.error("Jobs fetch failed", error);
@@ -321,7 +332,7 @@ export function JobsExplorer({
       controller.abort();
     };
     // initial* are the server-rendered first page, used only to seed the cache once; they are stable.
-  }, [queryString, urlQuery, initialJobs, initialTotal, initialCursor]);
+  }, [queryString, urlQuery, initialJobs, initialTotal, initialTotalCapped, initialCursor]);
 
   const loadMore = useCallback(async () => {
     if (!cursor || isPaging) return;
@@ -427,8 +438,10 @@ export function JobsExplorer({
 
   const resultsFooter = (
     <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
-      Showing {jobs.length.toLocaleString()} of {total.toLocaleString()}
-      {isPaging ? " · Loading…" : jobs.length < total ? " · Scroll for more" : ""}
+      Showing {jobs.length.toLocaleString()} of {formatTotal(total, totalCapped)}
+      {/* Gate on the cursor, not jobs.length < total: a capped search shows "N+" but stops paging
+          at the relevance cap, so there is nothing more to scroll to even though jobs.length < total. */}
+      {isPaging ? " · Loading…" : cursor ? " · Scroll for more" : ""}
     </p>
   );
 
@@ -436,6 +449,7 @@ export function JobsExplorer({
     return (
       <SidebarLayout
         total={total}
+        totalCapped={totalCapped}
         isLoading={isLoading}
         filters={filters}
         update={update}
@@ -470,7 +484,7 @@ export function JobsExplorer({
             </div>
             <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
               <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
-              <span className="tabular-nums">{total.toLocaleString()}</span> live roles
+              <span className="tabular-nums">{formatTotal(total, totalCapped)}</span> live roles
             </div>
           </div>
         </header>
@@ -491,7 +505,7 @@ export function JobsExplorer({
           </h1>
           <p className="mx-auto mt-[18px] max-w-[620px] text-[16px] leading-relaxed text-[var(--muted)]">
             Find{" "}
-            <span className="font-semibold tabular-nums text-[var(--accent)]">{total.toLocaleString()}</span>{" "}
+            <span className="font-semibold tabular-nums text-[var(--accent)]">{formatTotal(total, totalCapped)}</span>{" "}
             open roles at today&rsquo;s top startups. Updated daily.
           </p>
         </div>
@@ -558,7 +572,7 @@ export function JobsExplorer({
 
         <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
-            <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
+            <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
             {total === 1 ? "job" : "jobs"}
             {isLoading && <span className="ms-2 font-normal">Updating…</span>}
           </p>
@@ -739,6 +753,7 @@ function DatePostedSelect({
 // (result count, date, Hide/Show Filters) above a two-column body of table + FilterSidebar.
 function SidebarLayout({
   total,
+  totalCapped,
   isLoading,
   filters,
   update,
@@ -754,6 +769,7 @@ function SidebarLayout({
   resultsFooter,
 }: {
   total: number;
+  totalCapped: boolean;
   isLoading: boolean;
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
@@ -783,7 +799,7 @@ function SidebarLayout({
           </div>
           <div className="flex items-center gap-2 text-[13px] text-[var(--muted)]">
             <span className="size-2 rounded-full bg-[var(--success)]" aria-hidden="true" />
-            <span className="tabular-nums">{total.toLocaleString()}</span> live roles
+            <span className="tabular-nums">{formatTotal(total, totalCapped)}</span> live roles
           </div>
         </div>
       </header>
@@ -803,7 +819,7 @@ function SidebarLayout({
           </h1>
           <p className="mx-auto mt-4 max-w-[600px] text-[15px] leading-relaxed text-[var(--muted)]">
             Find{" "}
-            <span className="font-semibold tabular-nums text-[var(--accent)]">{total.toLocaleString()}</span>{" "}
+            <span className="font-semibold tabular-nums text-[var(--accent)]">{formatTotal(total, totalCapped)}</span>{" "}
             open roles at today&rsquo;s top startups. Updated daily.
           </p>
         </div>
@@ -811,7 +827,7 @@ function SidebarLayout({
         {/* Toolbar: live count on the left, date + filter toggle on the right. */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
-            <span className="tabular-nums text-[var(--ink)]">{total.toLocaleString()}</span>{" "}
+            <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
             {total === 1 ? "job" : "jobs"}
             {isLoading && <span className="ms-2 font-normal">Updating…</span>}
           </p>

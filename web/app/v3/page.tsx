@@ -50,6 +50,7 @@ export default async function HomeV3({
     <JobsExplorer
       initialJobs={initialPage?.jobs ?? []}
       initialTotal={initialPage?.total ?? 0}
+      initialTotalCapped={initialPage?.totalCapped ?? false}
       initialCursor={initialPage?.nextCursor ?? null}
       hasServerData={initialPage !== null}
       initialQuery={params.toString()}
