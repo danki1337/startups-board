@@ -66,6 +66,11 @@ const SEARCH_OVERFETCH = 3;
 // Broad searches can match hundreds of thousands of rows; counting them exactly cost multiple
 // seconds, so the count is bounded and anything at/above this renders as "N+".
 const COUNT_CAP = 5000;
+// D1 rejects any statement with more than 100 bound parameters.
+const D1_MAX_BIND = 100;
+// Held back for the binds appended after the filters: the three exactness patterns, posted-within,
+// the keyset cursor, and limit/offset.
+const RESERVED_BINDS = 10;
 
 export const SORT_OPTIONS = ["newest", "oldest", "company"] as const;
 export type SortOption = (typeof SORT_OPTIONS)[number];
@@ -187,8 +192,17 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // lenient way as the single-company filter (substring against name-or-identifier) so a starred
   // company and its clickable link return the same jobs -- including Workday boards whose display
   // name is a humanized slice of a piped identifier ("Aaco" from "aaco|wd1|site").
+  // The watchlist is the last and by far the largest group of bindings, so it is what pushes a query
+  // over D1's 100-parameter ceiling -- and a query that exceeds it does not degrade, it throws, so
+  // /api/jobs returned 500 on every request for that user until they cleared filters. 60 starred
+  // companies plus a dozen cities and a dozen countries was enough to do it, all within the caps the
+  // UI itself offers. Taking whatever budget is left rather than a fixed 60 keeps the statement
+  // legal no matter how the other filters are combined; the trailing binds (posted-within, cursor,
+  // limit/offset) are what the headroom is reserved for.
+  const bindBudget = Math.max(0, D1_MAX_BIND - RESERVED_BINDS - bindings.length);
   const companies = (params.get("companies") ?? "")
-    .split("\n").map((entry) => entry.trim().toLowerCase()).filter(Boolean).slice(0, 60);
+    .split("\n").map((entry) => entry.trim().toLowerCase()).filter(Boolean)
+    .slice(0, Math.min(60, bindBudget));
   if (companies.length) {
     const clause = companies
       .map(() => "lower(coalesce(j.company_name, j.company_identifier)) LIKE ?").join(" OR ");

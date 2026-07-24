@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { nextSyncAt, PROVIDER_QUEUE_BINDINGS } from "../cloudflare/src/config.mjs";
-import { suppressDuplicatedAggregatorJobs } from "../cloudflare/src/database.mjs";
+import { INVALID_CLOSE_STRIKES, nextSyncAt, PROVIDER_QUEUE_BINDINGS } from "../cloudflare/src/config.mjs";
+import { applyBoardSnapshot, suppressDuplicatedAggregatorJobs } from "../cloudflare/src/database.mjs";
 import { parseAtsUrl } from "../src/providers.mjs";
 
 // A D1 stand-in that answers the two dedup probes from a fixed set of "active native" rows: the
@@ -102,4 +102,73 @@ test("production migration includes search, health, discovery, and failure state
   assert.match(sql, /CREATE TABLE IF NOT EXISTS provider_health/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS discovery_pages/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS failed_tasks/);
+});
+
+// A D1 stand-in that records every statement it is asked to run, so a test can assert on what the
+// ingestion path *did* rather than on its return value. `first` answers the failure-count probe.
+function recordingDb(failureCount = 0) {
+  const statements = [];
+  const statement = (sql) => ({
+    bind(...args) {
+      statements.push({ sql, args });
+      return this;
+    },
+    async run() {
+      return { meta: { changes: 0 } };
+    },
+    async all() {
+      return { results: [] };
+    },
+    async first() {
+      return { failureCount };
+    },
+  });
+  return {
+    statements,
+    prepare(sql) {
+      statements.push({ sql, args: null });
+      return statement(sql);
+    },
+    async batch(list) {
+      return list.map(() => ({ meta: { changes: 0 } }));
+    },
+  };
+}
+
+const ran = (db, pattern) => db.statements.some((entry) => pattern.test(entry.sql));
+
+test("an invalid board response never closes the board's jobs", async () => {
+  // "invalid" covers a 4xx, a bot challenge and a proxy-truncated body as well as a genuinely dead
+  // board. Acting on one of them used to close every posting on the board.
+  const db = recordingDb(0);
+  const result = await applyBoardSnapshot(db, {
+    board: {
+      key: "greenhouse:global:acme", provider: "greenhouse", identifier: "acme",
+      status: "invalid", jobCount: 0, syncedAt: "2026-07-24T10:00:00.000Z", error: "403",
+    },
+    jobs: [],
+  });
+
+  assert.equal(result.closedJobs, 0);
+  assert.equal(result.retry, false);
+  // It must not even read the board's current jobs, let alone write closures.
+  assert.equal(ran(db, /FROM jobs WHERE board_key/), false);
+  assert.equal(ran(db, /UPDATE jobs SET[\s\S]*is_active = 0/), false);
+  // It is recorded as a failure, so repeated invalids can eventually justify a close.
+  assert.equal(ran(db, /UPDATE boards SET[\s\S]*failure_count/), true);
+});
+
+test("a board that is invalid often enough does accept the empty snapshot", async () => {
+  // At the strike threshold the close pass is allowed to run, so a genuinely dead board is still
+  // cleaned up -- just on corroborated evidence rather than a single bad response.
+  const db = recordingDb(INVALID_CLOSE_STRIKES - 1);
+  await applyBoardSnapshot(db, {
+    board: {
+      key: "greenhouse:global:acme", provider: "greenhouse", identifier: "acme",
+      status: "invalid", jobCount: 0, syncedAt: "2026-07-24T10:00:00.000Z", error: "404",
+    },
+    jobs: [],
+  });
+
+  assert.equal(ran(db, /FROM jobs WHERE board_key/), true);
 });

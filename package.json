@@ -12,7 +12,7 @@
     "sync:remote": "node src/cli.mjs sync --remote true --skip-database true",
     "cloudflare:build": "cd web && npm run build",
     "cloudflare:provision": "node cloudflare/scripts/provision.mjs",
-    "cloudflare:deploy": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
+    "cloudflare:deploy": "npm run cloudflare:build && node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
     "cloudflare:migrate": "node web/node_modules/wrangler/bin/wrangler.js d1 migrations apply startups-board-production --remote --config cloudflare/wrangler.jsonc",
     "cloudflare:import-boards": "node --env-file=.env.production cloudflare/scripts/import-boards.mjs",
     "database": "node src/cli.mjs database",
@@ -21,7 +21,8 @@
     "system": "node src/cli.mjs system",
     "poc": "node src/cli.mjs run",
     "test": "node --test",
-    "seed:boards": "node scripts/seed-boards.mjs"
+    "seed:boards": "node scripts/seed-boards.mjs",
+    "cloudflare:deploy:nobuild": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc"
   },
   "engines": {
     "node": ">=22.13.0"

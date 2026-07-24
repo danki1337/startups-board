@@ -1,0 +1,43 @@
+name: CI
+
+# Nothing ran the test suite, the build, or the typechecker before this: the only workflows were
+# the weekly data pipelines, so a broken build reached production with no automated resistance.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # The root package has no dependencies -- the pipeline runs on stdlib Node -- but the test
+      # suite loads the built worker from web/dist, so the frontend install is required.
+      # --no-optional keeps the darwin-arm64 rolldown binding from failing the Linux runner.
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci --no-optional
+
+      - name: Build web (also produces the worker bundle the tests render)
+        working-directory: web
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Lint web
+        working-directory: web
+        run: npm run lint --if-present

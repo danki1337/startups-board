@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregatorJobIdentity, parseAtsUrl } from "../src/providers.mjs";
+import { aggregatorJobIdentity, getProvider, parseAtsUrl } from "../src/providers.mjs";
 
 test("parses a global Lever job URL without lowercasing the site identifier", () => {
   const result = parseAtsUrl("https://jobs.lever.co/AcmeCo/2b319d7a");
@@ -173,4 +173,48 @@ test("maps aggregator target URLs to the native ATS job identity", () => {
   assert.equal(aggregatorJobIdentity("https://boards.greenhouse.io/star-catcher"), null);
   assert.equal(aggregatorJobIdentity("https://adobe.wd5.myworkdayjobs.com/external_experienced"), null);
   assert.equal(aggregatorJobIdentity("not a URL"), null);
+});
+
+test("SmartRecruiters pagination does not truncate when totalFound is absent", async () => {
+  // Number(undefined ?? 0) is 0, so `jobs.length >= totalFound` used to be true after the very
+  // first page: a 250-job board returned 100 jobs, and the snapshot closed the other 150.
+  const pages = [
+    { content: Array.from({ length: 100 }, (_, i) => ({ id: `a${i}` })) },
+    { content: Array.from({ length: 100 }, (_, i) => ({ id: `b${i}` })) },
+    { content: Array.from({ length: 50 }, (_, i) => ({ id: `c${i}` })) },
+  ];
+  let call = 0;
+  const jobs = await getProvider("smartrecruiters").fetchJobs(
+    { apiUrl: "https://api.smartrecruiters.com/v1/companies/acme/postings" },
+    async () => new Response(JSON.stringify(pages[call++]), { headers: { "content-type": "application/json" } }),
+  );
+  assert.equal(jobs.length, 250);
+});
+
+test("Lever pagination stops when a board repeats a page", async () => {
+  // A board whose API ignores `skip` used to drive the loop to its 1,000-page ceiling, issuing a
+  // thousand requests and accumulating 100,000 duplicates before failing.
+  const page = Array.from({ length: 100 }, (_, i) => ({ id: `job-${i}` }));
+  let calls = 0;
+  const jobs = await getProvider("lever").fetchJobs(
+    { apiUrl: "https://api.lever.co/v0/postings/acme" },
+    async () => {
+      calls += 1;
+      return new Response(JSON.stringify(page), { headers: { "content-type": "application/json" } });
+    },
+  );
+  assert.equal(jobs.length, 100);
+  assert.equal(calls, 2, "should stop after the first repeated page, not run to the page ceiling");
+});
+
+test("Greenhouse regional board hosts parse as boards", () => {
+  // job-boards.eu/.anz are already fetched by the domain-matched discovery target and answer on the
+  // same boards-api endpoint; the parser used to reject them, discarding the whole EU cohort.
+  for (const host of ["boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io", "job-boards.anz.greenhouse.io"]) {
+    const board = parseAtsUrl(`https://${host}/anydesk`);
+    assert.equal(board?.provider, "greenhouse", host);
+    assert.equal(board?.identifier, "anydesk", host);
+  }
+  // Greenhouse's marketing and API hosts are still not boards.
+  assert.equal(parseAtsUrl("https://www.greenhouse.io/pricing")?.provider, undefined);
 });

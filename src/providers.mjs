@@ -52,10 +52,14 @@ const PROVIDERS = {
       },
     ],
     parse(url) {
+      // The regional job-boards hosts (job-boards.eu / .anz) are already being pulled down by the
+      // domain-matched greenhouse.io discovery target and were then thrown away here, even though
+      // their boards answer on the same boards-api.greenhouse.io endpoint this parser builds --
+      // 187 distinct EU tokens in one index, over half of them missing from the registry entirely.
       const host = url.hostname.toLowerCase();
-      if (host !== "boards.greenhouse.io" && host !== "job-boards.greenhouse.io") {
-        return null;
-      }
+      const isGreenhouseBoardHost = host === "boards.greenhouse.io"
+        || /^job-boards(\.[a-z]{2,3})?\.greenhouse\.io$/.test(host);
+      if (!isGreenhouseBoardHost) return null;
 
       // Greenhouse board tokens are case-insensitive, so "/Unframe" and "/unframe" are the same board.
       // Canonicalise to lowercase so Common Crawl finding both spellings does not create two boards
@@ -613,6 +617,11 @@ export function aggregatorJobIdentity(value) {
 
 async function fetchLeverJobs(candidate, request) {
   const jobs = [];
+  // Lever is the only paginated provider that had no repeat-page guard. A board whose API ignores
+  // `skip` -- a cached response, or an org that returns the full list regardless of params -- sent
+  // the loop to its 1,000-page ceiling, issuing 1,000 requests and accumulating 100,000 duplicate
+  // objects before failing. Workday and Getro already track seen ids this way.
+  const seen = new Set();
 
   for (let page = 0; page < LEVER_MAX_PAGES; page += 1) {
     const url = new URL(candidate.apiUrl);
@@ -624,8 +633,17 @@ async function fetchLeverJobs(candidate, request) {
     const payload = await readJson(response);
     if (!Array.isArray(payload)) throw new InvalidPayloadError("Expected a job array");
 
-    jobs.push(...payload);
-    if (payload.length < LEVER_PAGE_SIZE) return jobs;
+    const fresh = payload.filter((job) => {
+      // A posting with no id cannot be deduplicated, so it is kept rather than dropped -- the guard
+      // exists to stop a repeating page, not to filter the payload.
+      if (job?.id == null) return true;
+      const id = String(job.id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    jobs.push(...fresh);
+    if (payload.length < LEVER_PAGE_SIZE || fresh.length === 0) return jobs;
   }
 
   throw new InvalidPayloadError(`Lever board exceeded ${LEVER_MAX_PAGES * LEVER_PAGE_SIZE} jobs`);
@@ -673,7 +691,12 @@ async function fetchSmartRecruitersJobs(candidate, request) {
       throw new InvalidPayloadError("Expected a SmartRecruiters content array");
     }
     jobs.push(...payload.content);
-    if (jobs.length >= Number(payload.totalFound ?? 0) || payload.content.length === 0) return jobs;
+    // A short page is the reliable end-of-list signal. totalFound is only a shortcut, and treating a
+    // missing one as 0 used to end the loop after the very first page -- so a 1,500-job board
+    // returned 100 jobs and the snapshot closed the other 1,400 as if they had been taken down.
+    if (payload.content.length < SMARTRECRUITERS_PAGE_SIZE) return jobs;
+    const totalFound = Number(payload.totalFound);
+    if (Number.isFinite(totalFound) && totalFound > 0 && jobs.length >= totalFound) return jobs;
   }
   throw new InvalidPayloadError(
     `SmartRecruiters board exceeded ${SMARTRECRUITERS_MAX_PAGES * SMARTRECRUITERS_PAGE_SIZE} jobs`,

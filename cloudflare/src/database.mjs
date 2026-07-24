@@ -379,13 +379,19 @@ export async function archiveAndCleanupClosedJobs(env, now = new Date().toISOStr
 // Rebuilt daily rather than maintained per write: the typeahead only needs approximate counts, and
 // one grouped scan a day is far cheaper than touching an aggregate on every job upsert.
 export async function refreshTitleSuggestions(db, now = new Date().toISOString()) {
-  await db.prepare("DELETE FROM job_titles").run();
-  const result = await db.prepare(`
-    INSERT INTO job_titles (title, job_count, updated_at)
-    SELECT title, count(*) AS job_count, ?
-    FROM jobs WHERE is_active = 1 AND title IS NOT NULL AND title <> ''
-    GROUP BY title
-  `).bind(now).run();
+  // One batch, not two round trips. As separate statements an interruption between them -- an
+  // isolate torn down after a sibling task rejected, a D1 timeout -- left job_titles empty, and the
+  // role-title typeahead returned nothing until the next daily run. db.batch is the only
+  // transactional primitive D1 offers, and it is exactly what this needs.
+  const [, result] = await db.batch([
+    db.prepare("DELETE FROM job_titles"),
+    db.prepare(`
+      INSERT INTO job_titles (title, job_count, updated_at)
+      SELECT title, count(*) AS job_count, ?
+      FROM jobs WHERE is_active = 1 AND title IS NOT NULL AND title <> ''
+      GROUP BY title
+    `).bind(now),
+  ]);
   return { titles: Number(result.meta?.changes ?? 0) };
 }
 

@@ -260,7 +260,9 @@ export function JobsExplorer({
     const params = filtersToSearchParams(filters);
     if (filters.watchlistOnly && watchlist.length > 0) {
       params.delete("watchlist");
-      params.set("companies", watchlist.slice(0, 100).join("\n"));
+      // 60 matches the query's own cap; sending 100 meant the last 40 starred companies were
+      // dropped server-side with nothing telling the user their watchlist was incomplete.
+      params.set("companies", watchlist.slice(0, 60).join("\n"));
     } else {
       params.delete("watchlist");
     }

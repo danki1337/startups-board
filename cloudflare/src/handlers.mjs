@@ -39,7 +39,15 @@ export async function scheduled(controller, env, ctx) {
       refreshTitleSuggestions(env.DB, dailyAt),
     );
   }
-  ctx.waitUntil(Promise.all(work));
+  // allSettled, not all: the daily tasks are independent, and Promise.all rejects on the first
+  // failure, which settles waitUntil and lets the runtime tear the isolate down mid-flight. One R2
+  // hiccup in the archive step could cancel the job_titles rebuild after its DELETE had run,
+  // leaving the title typeahead empty for a day with nothing to retry it.
+  ctx.waitUntil(Promise.allSettled(work).then((results) => {
+    for (const result of results) {
+      if (result.status === "rejected") console.error("Scheduled task failed", result.reason);
+    }
+  }));
 }
 
 export async function queue(batch, env) {
@@ -114,13 +122,19 @@ export async function scheduleDueBoards(env, options = {}) {
     if (!targetQueue) continue;
     const claimedKeys = new Set(await markBoardsQueued(env.DB, providerBoards.map((board) => board.key)));
     const claimedBoards = providerBoards.filter((board) => claimedKeys.has(board.key));
+    // Release only what was never sent. Releasing every claimed board on a mid-way failure left
+    // the already-sent ones both queued and selectable, so the next cron enqueued them a second
+    // time -- two invocations then applied snapshots to the same board concurrently, double-counting
+    // provider_health and letting one run close a job the other had just reopened.
+    const pending = [...claimedBoards];
     try {
       for (const group of chunks(claimedBoards, 100)) {
         await targetQueue.sendBatch(group.map((board) => ({ body: { type: "board", board } })));
+        pending.splice(0, group.length);
         queued += group.length;
       }
     } catch (error) {
-      await releaseBoards(env.DB, claimedBoards.map((board) => board.key));
+      await releaseBoards(env.DB, pending.map((board) => board.key));
       throw error;
     }
   }
@@ -184,10 +198,17 @@ async function resolveLogoIfStale(env, board, result) {
 }
 
 async function healthResponse(env) {
+  // activeJobs comes from provider_health, which is maintained incrementally and reconciled daily
+  // for exactly this purpose. It used to be count(*) over every active job: a full index scan on
+  // each call, on an endpoint that is public, uncached, and typically polled by an uptime monitor --
+  // ~720M rows read per day at a 60s interval, against a 25B/month allowance, for a liveness check.
+  const now = new Date().toISOString();
   const [jobs, boards, due, failures, providers] = await env.DB.batch([
-    env.DB.prepare("SELECT count(*) AS count FROM jobs WHERE is_active = 1"),
+    env.DB.prepare("SELECT coalesce(sum(active_jobs), 0) AS count FROM provider_health"),
     env.DB.prepare("SELECT count(*) AS count FROM boards"),
-    env.DB.prepare("SELECT count(*) AS count FROM boards WHERE next_sync_at <= datetime('now')"),
+    // Bound as ISO, not datetime('now'): the stored values are ISO strings and the two formats do
+    // not compare correctly (see isoShift in database.mjs).
+    env.DB.prepare("SELECT count(*) AS count FROM boards WHERE next_sync_at <= ?").bind(now),
     env.DB.prepare("SELECT count(*) AS count FROM failed_tasks WHERE resolved_at IS NULL"),
     env.DB.prepare("SELECT * FROM provider_health ORDER BY provider"),
   ]);

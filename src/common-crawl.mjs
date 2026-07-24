@@ -45,7 +45,14 @@ export async function discoverTarget(target, options = {}) {
     matchType: target.matchType ?? "prefix",
     output: "json",
     pageSize: String(pageSize),
-    filter: "status:200",
+    // Deliberately NOT filtered to status:200. A CDX page is a fixed-size block, so the filter never
+    // reduced the number of requests -- it just discarded records from blocks we were downloading
+    // anyway, and the records it discarded are disproportionately the ones worth having: a 302 on
+    // boards.greenhouse.io is a company that has pointed its board at its own careers domain, and a
+    // 410 on icims.com is a closed posting on a live tenant. Measured on CC-MAIN-2026-25, dropping
+    // the filter raises distinct parsed boards by 26% for greenhouse.io and 43% for icims.com at
+    // identical crawl cost. 4xx/5xx that are genuinely dead cost nothing either: every provider's
+    // parse() rejects non-board URLs, and validation drops identifiers that do not answer.
     collapse: "urlkey",
   });
 
@@ -60,8 +67,14 @@ export async function discoverTarget(target, options = {}) {
       ? selectEvenlySpacedPages(totalPages, maxPages)
       : selectRotatingPages(totalPages, maxPages, sampleSeed);
   const urls = [];
+  // Only the pages actually read may be recorded as covered. Reporting the whole planned list on an
+  // early return told the resume ledger those pages were done, so they would be skipped forever --
+  // latent while maxUrls sat above the worst case, but live the moment a run is bounded, which
+  // dropping the status filter above makes far more likely.
+  const readPages = [];
 
   for (const page of pages) {
+    readPages.push(page);
     onProgress({ type: "page", provider: target.provider, pattern: target.pattern, page, totalPages });
     const pageParams = new URLSearchParams(baseParams);
     pageParams.set("page", String(page));
@@ -82,11 +95,11 @@ export async function discoverTarget(target, options = {}) {
         // A malformed archive line should not invalidate the rest of the discovery run.
       }
 
-      if (urls.length >= maxUrls) return { urls, totalPages, sampledPages: pages };
+      if (urls.length >= maxUrls) return { urls, totalPages, sampledPages: readPages };
     }
   }
 
-  return { urls, totalPages, sampledPages: pages };
+  return { urls, totalPages, sampledPages: readPages };
 }
 
 export function selectEvenlySpacedPages(totalPages, maximum) {
