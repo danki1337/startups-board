@@ -28,6 +28,12 @@
     0 0 0 1px #0000000f,
     0 1px 2px -1px #0000000f,
     0 2px 4px #0000000a;
+  /* Same hairline-ring-plus-lift for the v4 filter pills and search field, where it replaces a
+     border stroke. */
+  --shadow-control:
+    0 0 0 1px #0000000f,
+    0 1px 2px -1px #0000000f,
+    0 2px 4px #0000000a;
   --shadow-lift: 0 4px 16px oklch(0 0 0 / 0.06);
 }
 

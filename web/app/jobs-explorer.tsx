@@ -1448,16 +1448,17 @@ const IconClearGlyph = () => (
   </svg>
 );
 
-// v4 pill: 36px tall, 8px padding, 14px radius, transparent until hover (the container has no fill).
+// v4 pill: 36px tall, 8px padding, 14px radius, a hairline shadow in place of a border, transparent
+// fill until hover (the container itself has no fill).
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] border border-[var(--border)] bg-transparent px-2 text-sm font-medium text-[var(--ink)] transition-colors duration-150 hover:bg-[#F5F5FA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-transparent px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-colors duration-150 hover:bg-[#F5F5FA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // The v4 search field: 231x36, 14px radius, fills on hover/focus, a pink inset focus ring, the
 // supplied glyphs, a clear button once there is text, and a clickable surround (the <label> focuses
 // the input from anywhere in the box).
 function SearchBox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <label className="flex h-9 w-[231px] shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 transition-colors duration-150 hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]">
+    <label className="flex h-9 w-[231px] shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 shadow-[var(--shadow-control)] transition-colors duration-150 hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]">
       <IconSearchGlyph />
       <input
         aria-label="Search all job text"
