@@ -77,6 +77,19 @@ button {
   user-select: none;
 }
 
+/* Text selection is off across the app by request. Inputs and textareas keep it -- without it you
+   could not select or correct what you had typed into the search field. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 a {
   text-underline-position: from-font;
   text-decoration-thickness: from-font;
@@ -269,6 +282,12 @@ button:disabled,
 .scroll-shadow[data-scroll-top] { --fade-top: var(--fade); }
 .scroll-shadow[data-scroll-bottom] { --fade-bottom: var(--fade); }
 
+/* The results table gets the bottom edge only. Its column header is sticky INSIDE the scroller, and
+   a mask applies to sticky children too -- a top fade would wash the header out as soon as you
+   scrolled. There is nothing above the first row to hint at anyway. */
+.jobs-table-scroll { --fade-top: 0px; }
+.jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 40px; }
+
 @media (prefers-reduced-motion: reduce) {
   .t-skel-skeleton,
   .t-skel-content {
@@ -276,6 +295,34 @@ button:disabled,
   }
   .t-skel-skeleton.is-pulsing > * { animation: none !important; }
 }
+
+/* Row collapse. Blocks that appear above the results table -- the applied-filter row, the
+   stale-results banner, the spelling-correction note -- used to insert into normal flow and shove
+   the whole 68vh table down on the same frame the rows themselves were changing: two unrelated
+   things moving at once. A grid row animating 0fr -> 1fr turns that shove into a slide, without
+   needing a measured height. The margin, padding and border live on the inner element; on the outer
+   they would not collapse. */
+.row-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 160ms var(--ease-out);
+}
+.row-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 100ms var(--ease-out);
+}
+.row-collapse.is-open {
+  grid-template-rows: 1fr;
+  /* Enter is the slower half: the exit should get out of the way, not perform. */
+  transition-duration: 200ms;
+}
+.row-collapse.is-open > * {
+  opacity: 1;
+  transition-duration: 140ms;
+}
+
 
 /* Dropdown/popover appear: a one-shot enter that fades, lifts, and settles from the trigger corner.
    A keyframe (not a transition) because the element mounts on open and simply unmounts on close, so
@@ -353,6 +400,17 @@ button:disabled,
   }
   .dropdown-out {
     animation-name: reduced-fade-out;
+  }
+
+  /* Movement is what people are sensitive to, so the collapsing row snaps to its height and keeps
+     only the fade, which still bridges the swap. */
+  .row-collapse,
+  .row-collapse.is-open {
+    transition: none !important;
+  }
+  .row-collapse > *,
+  .row-collapse.is-open > * {
+    transition-duration: 140ms !important;
   }
 }
 

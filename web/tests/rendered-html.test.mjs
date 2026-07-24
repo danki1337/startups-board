@@ -73,7 +73,10 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, />Country</);
   assert.match(html, />Industry</);
   assert.match(html, />ATS</);
-  assert.match(html, />Any time</);
+  // The date pill shows the cropped label ("All", "24h", "7d"); the menu below it spells each one
+  // out, but that only exists once the popover is opened.
+  assert.match(html, />All</);
+  assert.doesNotMatch(html, />Any time</);
   // City has no dropdown of its own, and sort is not a control at all.
   assert.doesNotMatch(html, />City</);
   assert.doesNotMatch(html, />Sort</);

@@ -56,12 +56,15 @@ function formatTotal(total: number, capped: boolean): string {
 }
 
 const employmentOptions = ["Full time", "Part time", "Contract", "Internship", "Temporary"];
+// `short` is what the pill shows: the full phrase made the date control the widest thing in the row
+// for no gain, since the menu right below it spells every option out.
 const postedWithinOptions = [
-  { label: "Any time", value: "" },
-  { label: "Last 24 hours", value: "1" },
-  { label: "Last 7 days", value: "7" },
-  { label: "Last 30 days", value: "30" },
-  { label: "Last 90 days", value: "90" },
+  { label: "Any time", short: "All", value: "" },
+  { label: "Last 24 hours", short: "24h", value: "1" },
+  { label: "Last 7 days", short: "7d", value: "7" },
+  { label: "Last 30 days", short: "30d", value: "30" },
+  { label: "Last 60 days", short: "60d", value: "60" },
+  { label: "Last 90 days", short: "90d", value: "90" },
 ];
 // `code` carries the ISO country so the checklists can render an SVG flag; the emoji is gone from
 // the label (it lives in the <Flag> glyph now).
@@ -479,11 +482,15 @@ export function JobsExplorer({
   }, [filters, watchlistActive]);
 
   // A small "Showing results for X" note when a typo'd search was auto-corrected.
-  const correctionNote = correctedTo ? (
-    <p className="mb-2 px-1 text-[13px] text-[var(--muted-strong)]">
-      Showing results for <span className="font-semibold text-[var(--ink)]">{correctedTo}</span>
-    </p>
-  ) : null;
+  const correctionNote = (
+    <div className={`row-collapse ${correctedTo ? "is-open" : ""}`}>
+      <div>
+        <p className="mb-2 px-1 text-[13px] text-[var(--muted-strong)]">
+          Showing results for <span className="font-semibold text-[var(--ink)]">{correctedTo}</span>
+        </p>
+      </div>
+    </div>
+  );
 
   // Three states share the table's slot, in precedence order: rows if we have any (even stale ones
   // during a refetch), then the skeleton while the first page is in flight, then the failure or
@@ -492,18 +499,20 @@ export function JobsExplorer({
   const jobsTable = (
     <>
     {correctionNote}
-    {error && jobs.length > 0 && (
-      <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[#FFF4F4] px-3 py-2 text-[13px] text-[#8A1F1F]">
-        <span>These results may be out of date &mdash; the last refresh failed.</span>
-        <button
-          type="button"
-          onClick={() => setRetryToken((token) => token + 1)}
-          className="rounded font-semibold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-        >
-          Try again
-        </button>
+    <div className={`row-collapse ${error && jobs.length > 0 ? "is-open" : ""}`}>
+      <div inert={error && jobs.length > 0 ? undefined : true}>
+        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[#FFF4F4] px-3 py-2 text-[13px] text-[#8A1F1F]">
+          <span>These results may be out of date &mdash; the last refresh failed.</span>
+          <button
+            type="button"
+            onClick={() => setRetryToken((token) => token + 1)}
+            className="rounded font-semibold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          >
+            Try again
+          </button>
+        </div>
       </div>
-    )}
+    </div>
     {jobs.length > 0 || isLoading ? (
       // Skeleton and table are stacked in one slot and cross-faded, so the swap costs no layout and
       // reads as one motion. `is-revealed` flips the moment there are rows: when the server already
@@ -520,7 +529,21 @@ export function JobsExplorer({
           <TableVirtuoso
             ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
-            className="jobs-table-scroll bg-white"
+            // The scroller fades its bottom edge while there is more below. Bottom only: the column
+            // header is sticky inside this same scroller and a mask applies to sticky children too,
+            // so a top fade would wash the header out the moment you scrolled.
+            scrollerRef={(node) => {
+              const el = node as HTMLElement | null;
+              if (!el || el.dataset.fadeBound) return;
+              el.dataset.fadeBound = "1";
+              const sync = () => {
+                const atEnd = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
+                el.toggleAttribute("data-scroll-bottom", !atEnd);
+              };
+              el.addEventListener("scroll", sync, { passive: true });
+              sync();
+            }}
+            className="jobs-table-scroll scroll-shadow bg-white"
             style={{ height: "100%" }}
             data={jobs}
             components={virtuosoComponents}
@@ -623,15 +646,20 @@ export function JobsExplorer({
 
           {/* Selected filters as dashed "[icon] is [value]" chips, with Save view and Clear all
               pushed to the end of the same row. */}
-          {activeChips.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
-              {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
-              <span className="ms-auto flex items-center gap-2">
-                <SaveViewPill onSaveView={saveView} canSaveView />
-                <PillButton onClick={() => setFilters(emptyFilters)}>Clear all</PillButton>
-              </span>
+          {/* Always mounted, collapsed to zero height when empty, so applying the first filter (or
+              clearing the last) slides the table rather than shoving it 49px on the same frame the
+              rows are changing. `inert` keeps the clipped controls out of the tab order. */}
+          <div className={`row-collapse ${activeChips.length > 0 ? "is-open" : ""}`}>
+            <div inert={activeChips.length === 0 ? true : undefined}>
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+                {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
+                <span className="ms-auto flex items-center gap-2">
+                  <SaveViewPill onSaveView={saveView} canSaveView />
+                  <PillButton onClick={() => setFilters(emptyFilters)}>Clear all</PillButton>
+                </span>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
         <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
@@ -887,20 +915,6 @@ function SidebarPills({
 
 // ---- v3: dashed "is" chips + the single multistate Filter flyout ----
 
-// Category icon per chip kind, for the "[icon] is [value]" chips.
-const CHIP_ICONS: Partial<Record<ChipKind, () => React.ReactElement>> = {
-  search: IconSearch,
-  location: IconPin,
-  title: IconLocate,
-  company: IconUser,
-  country: IconPin,
-  city: IconPin,
-  roleFamily: IconLocate,
-  industry: IconIndustry,
-  workplace: IconWorkplace,
-  source: IconAts,
-  employmentType: IconJobType,
-};
 
 // One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
 // value (with its glyph — flag, globe, or ATS mark), and an ×. Clicking anywhere removes it.
@@ -914,7 +928,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       aria-label={`Remove filter ${value}`}
       className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
-      {Icon && <Icon />}
+      {Icon && <span className="inline-flex [&>svg]:size-4">{<Icon />}</span>}
       <span className="text-[var(--muted)]">is</span>
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
@@ -926,7 +940,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
         )}
         {value}
       </span>
-      <span aria-hidden="true" className="ms-0.5 text-[var(--muted)]">×</span>
+      <IconCloseGlyph />
     </button>
   );
 }
@@ -1025,6 +1039,30 @@ const IconInternship = () => (
 );
 
 // Job-type glyphs keyed by value; currentColor lets them invert to white on the selected pill.
+// Category icon per chip kind. These are the same filled glyphs the filter row uses, so a chip and
+// the dropdown it came from are drawn identically; only search/company/location have no pill of
+// their own and keep a line icon.
+const CHIP_ICONS: Partial<Record<ChipKind, () => React.ReactElement>> = {
+  search: IconSearch,
+  location: IconCountryF,
+  title: IconTitleF,
+  company: IconUser,
+  country: IconCountryF,
+  city: IconCountryF,
+  roleFamily: IconTitleF,
+  industry: IconIndustryF,
+  workplace: IconWorkplaceF,
+  source: IconAtsF,
+  employmentType: IconJobTypeF,
+};
+
+// The supplied 20px close glyph, drawn at the chip's scale.
+const IconCloseGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-3.5 shrink-0">
+    <path d="M15 5L10 10M10 10L5 15M10 10L15 15M10 10L5 5" stroke="#868990" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
   "full time": IconFullTime,
   "part time": IconPartTime,
@@ -1104,7 +1142,7 @@ function SearchBox({
   full?: boolean;
 }) {
   const shell = full
-    ? "w-full bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]"
+    ? "w-full bg-[#F5F5FA] hover:bg-[#ECECF4] focus-within:bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]"
     : "w-[231px] bg-white shadow-[var(--shadow-control)] hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]";
   return (
     <label className={`flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
@@ -1312,7 +1350,7 @@ function FilterDropdownBar({
 function DateDropdown({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const current = postedWithinOptions.find((option) => option.value === value) ?? postedWithinOptions[0];
   return (
-    <FilterDropdown Icon={IconDateF} label={current.label} count={0} width="w-44" align="end">
+    <FilterDropdown Icon={IconDateF} label={current.short} count={0} width="w-44" align="end">
       {(close) => (
         <div className="flex flex-col">
           {postedWithinOptions.map((option) => (

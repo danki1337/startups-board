@@ -388,17 +388,68 @@ function nextCursor(
 // distinct title) rather than the 511k-row jobs table, so a keystroke costs a fraction of a search.
 // Prefix matches rank above mid-word ones so typing "eng" offers "Engineering Manager" before
 // "Senior Software Engineer".
+// Job titles arrive from a dozen ATSs with every possible qualifier bolted on, so a search for
+// "product designer" returned ten near-identical rows -- "Product Designer (UI/UX)", "Product
+// Designer | Senior", "Product Designer II", "Product Designer, App Store" -- pushing genuinely
+// different roles off the list. This reduces a title to the role itself so those fold into one.
+//
+// It is only ever applied to the suggestion LIST. The title filter itself is a substring match
+// (`lower(title) LIKE '%value%'`), so picking the folded "Product Designer" still matches every
+// variant it stood for -- the collapse loses nothing, it just stops showing the same role ten times.
+export function canonicalTitle(title: string) {
+  // Anything parenthesised or bracketed is a qualifier, never the role: "(UI/UX)", "(Contract)",
+  // "(m/w/d)". Safe to drop unconditionally.
+  let result = title.replace(/[([{][^)\]}]*[)\]}]?/g, " ").replace(/\s+/g, " ").trim();
+
+  // A pipe, dash or comma usually starts a suffix -- but only when a whole role stands in front of
+  // it. "Product Designer, App Store" is a Product Designer; "Engineer, Machine Learning" is not
+  // simply an Engineer, and folding it away would merge genuinely different roles. Requiring two
+  // words in the head is what separates the two cases.
+  const head = result.split(/\s+[|–—]\s*|\s+-\s+|,\s*/)[0].trim();
+  if (head && head.split(/\s+/).length >= 2) result = head;
+
+  return result
+    // Trailing level markers: "II", "IV", "3", "L4".
+    .replace(/\s+(?:l|level\s*)?\d+$/i, "")
+    .replace(/\s+(?:i{1,3}|iv|v|vi{1,3}|ix|x)$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Folds rows onto their canonical title, summing counts, keeping the most common spelling as the
+// label and the original order (which is already relevance- then popularity-sorted).
+function collapseTitles(rows: { title: string; jobCount: number }[], limit: number) {
+  const byCanonical = new Map<string, { title: string; jobCount: number; best: number }>();
+  for (const row of rows) {
+    const key = canonicalTitle(row.title).toLowerCase();
+    if (!key) continue;
+    const existing = byCanonical.get(key);
+    if (!existing) {
+      byCanonical.set(key, { title: canonicalTitle(row.title), jobCount: row.jobCount, best: row.jobCount });
+      continue;
+    }
+    existing.jobCount += row.jobCount;
+    // If a variant is more common than the folded form, its wording is the better label.
+    if (row.jobCount > existing.best) existing.best = row.jobCount;
+  }
+  return [...byCanonical.values()]
+    .map(({ title, jobCount }) => ({ title, jobCount }))
+    .slice(0, limit);
+}
+
 export async function queryTitleSuggestions(query: string, limit = 8) {
   const term = query.trim().toLowerCase().slice(0, 60);
   const cap = Math.min(TITLE_SUGGESTION_MAX, Math.max(1, limit));
+  // Over-read so the fold still has `cap` distinct roles to return once the variants have merged.
+  const readCap = Math.min(TITLE_SUGGESTION_MAX * 4, cap * 4);
 
   // No (or too-short) query: seed the field with the most common titles so the dropdown shows a
   // starting list to pick from rather than an empty box.
   if (term.length < 2) {
     const rows = await getD1().prepare(`
       SELECT title, job_count AS jobCount FROM job_titles ORDER BY job_count DESC LIMIT ?
-    `).bind(cap).all();
-    return (rows.results ?? []) as { title: string; jobCount: number }[];
+    `).bind(readCap).all();
+    return collapseTitles((rows.results ?? []) as { title: string; jobCount: number }[], cap);
   }
 
   const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
@@ -408,9 +459,9 @@ export async function queryTitleSuggestions(query: string, limit = 8) {
     WHERE lower(title) LIKE ? ESCAPE '\\'
     ORDER BY CASE WHEN lower(title) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
     LIMIT ?
-  `).bind(`%${escaped}%`, `${escaped}%`, cap).all();
+  `).bind(`%${escaped}%`, `${escaped}%`, readCap).all();
 
-  return (rows.results ?? []) as { title: string; jobCount: number }[];
+  return collapseTitles((rows.results ?? []) as { title: string; jobCount: number }[], cap);
 }
 
 function orderBy(sort: SortOption) {

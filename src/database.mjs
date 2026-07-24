@@ -300,14 +300,47 @@ export async function getBoardSyncStates(databasePath = "data/jobs.db") {
 
 // Local counterpart of the D1 job_titles lookup. The local snapshot is small enough to group on
 // demand, so it queries `jobs` directly rather than maintaining a separate aggregate.
+// Mirrors canonicalTitle/collapseTitles in web/app/jobs-query.ts -- keep the two in sync. Job
+// titles arrive from a dozen ATSs with every qualifier bolted on, so a search for "product designer"
+// returned ten near-identical rows and pushed genuinely different roles off the list. Only the
+// suggestion list is folded; the title filter is a substring match, so picking the folded title
+// still matches every variant it stood for.
+export function canonicalTitle(title) {
+  let result = String(title).replace(/[([{][^)\]}]*[)\]}]?/g, " ").replace(/\s+/g, " ").trim();
+  // A pipe, dash or comma starts a suffix only when a whole role stands in front of it: "Product
+  // Designer, App Store" is a Product Designer, but "Engineer, Machine Learning" is not simply an
+  // Engineer. Requiring two words in the head separates the two.
+  const head = result.split(/\s+[|\u2013\u2014]\s*|\s+-\s+|,\s*/)[0].trim();
+  if (head && head.split(/\s+/).length >= 2) result = head;
+  return result
+    .replace(/\s+(?:l|level\s*)?\d+$/i, "")
+    .replace(/\s+(?:i{1,3}|iv|v|vi{1,3}|ix|x)$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collapseTitles(rows, limit) {
+  const byCanonical = new Map();
+  for (const row of rows) {
+    const label = canonicalTitle(row.title);
+    const key = label.toLowerCase();
+    if (!key) continue;
+    const existing = byCanonical.get(key);
+    if (existing) existing.jobCount += Number(row.jobCount);
+    else byCanonical.set(key, { title: label, jobCount: Number(row.jobCount) });
+  }
+  return [...byCanonical.values()].slice(0, limit);
+}
+
 export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {
   const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
   const cap = clampInteger(limit, 8, 1, 300);
+  const readCap = Math.min(1200, cap * 4);
 
   // No (or too-short) query: the most common titles, so the dropdown opens on a list to pick from
   // rather than an empty box. Mirrors the D1 path's job_titles lookup.
   if (term.length < 2) {
-    return querySqlite(
+    return collapseTitles(await querySqlite(
       resolve(databasePath),
       `
         SELECT title, count(*) AS jobCount
@@ -315,14 +348,14 @@ export async function queryTitleSuggestions(query, databasePath = "data/jobs.db"
         WHERE is_active = 1
         GROUP BY title
         ORDER BY jobCount DESC
-        LIMIT ${cap};
+        LIMIT ${readCap};
       `,
-    );
+    ), cap);
   }
 
   const like = sqlLike(term);
   const prefix = sqlString(`${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`);
-  return querySqlite(
+  return collapseTitles(await querySqlite(
     resolve(databasePath),
     `
       SELECT title, count(*) AS jobCount
@@ -330,9 +363,9 @@ export async function queryTitleSuggestions(query, databasePath = "data/jobs.db"
       WHERE is_active = 1 AND lower(title) LIKE ${like} ESCAPE '\\'
       GROUP BY title
       ORDER BY CASE WHEN lower(title) LIKE ${prefix} ESCAPE '\\' THEN 0 ELSE 1 END, jobCount DESC
-      LIMIT ${cap};
+      LIMIT ${readCap};
     `,
-  );
+  ), cap);
 }
 
 export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db") {
