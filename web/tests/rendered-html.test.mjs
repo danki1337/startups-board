@@ -139,4 +139,17 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   // Punctuation tech terms (c++, c#) ride alongside the FTS match as a substring filter.
   assert.match(query, /SPECIAL_TERMS/);
   assert.match(query, /specialSearchTerms/);
+  // An exact title match outranks bm25's preference for titles that repeat the term.
+  assert.match(query, /SEARCH_EXACTNESS/);
+  assert.match(query, /exactnessPatterns/);
+  // The recency nudge stays smaller than the exactness tiers, or it decides the order itself.
+  assert.match(query, /\* 0\.0012/);
+  // Repeat postings of one title at one company collapse to a single result row.
+  assert.match(query, /collapseDuplicates/);
+  assert.match(query, /SEARCH_OVERFETCH/);
+  // Jobs-side predicates carry SQLite's unary + on the search path so the FTS index drives the plan.
+  // Without it, a search combined with a column filter took 33s and returned a 500.
+  assert.match(query, /const filtered = \(expression: string\) => \(isSearch \? `\+\$\{expression\}` : expression\)/);
+  assert.match(query, /filtered\("j\.published_at"\)/);
+  assert.match(query, /filtered\("j\.country"\)/);
 });

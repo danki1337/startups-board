@@ -34,12 +34,35 @@ const CORRECTION_THRESHOLD = 60;
 // (title, company_identifier, company_name, location): a title hit far outweighs a location hit.
 const SEARCH_WEIGHTS = "10.0, 4.0, 4.0, 1.0";
 // Freshness nudge blended into the relevance score: days since posting (undated treated as ~180d,
-// capped at a year) times this coefficient, so among comparably relevant hits the newer wins
-// without letting recency override a clearly better title match.
-const SEARCH_RECENCY = "min(max(julianday('now') - julianday(coalesce(j.published_at, date('now', '-180 days'))), 0), 365) * 0.004";
+// capped at a year) times this coefficient. The coefficient has to be read against bm25's actual
+// spread, which is far narrower than it looks: across the top matches for "software engineer" the
+// scores run -11.78 to -11.66, a range of ~0.12. At the old 0.004 the nudge spanned 1.46 over a
+// year and so decided the order outright; at 0.0012 it spans 0.44, which still separates a fresh
+// posting from a year-old one but no longer outranks a better title match.
+const SEARCH_RECENCY = "min(max(julianday('now') - julianday(coalesce(j.published_at, date('now', '-180 days'))), 0), 365) * 0.0012";
+// Exact-title bonus, and the reason searches feel right rather than merely relevant. bm25 rewards
+// term frequency, so "Associate Software Engineer Software Engineer" (each term twice) outscored a
+// plain "Software Engineer" by 0.12 -- a hairline in score terms but plainly wrong to a reader. The
+// tiers are far larger than that spread, so an exact title wins, a title that starts with the query
+// comes next, and one that merely contains it comes after; everything else falls back to bm25.
+// Hyphens and slashes are spaces on both sides, so "front-end engineer" and "front end engineer"
+// each match the title "Front-End Engineer".
+const SEARCH_TITLE_NORM = "lower(replace(replace(j.title, '-', ' '), '/', ' '))";
+const SEARCH_EXACTNESS =
+  `CASE WHEN ${SEARCH_TITLE_NORM} = ? THEN -4.0` +
+  ` WHEN ${SEARCH_TITLE_NORM} LIKE ? ESCAPE '\\' THEN -2.0` +
+  ` WHEN ${SEARCH_TITLE_NORM} LIKE ? ESCAPE '\\' THEN -1.0` +
+  " ELSE 0.0 END";
 // Text searches are relevance-ranked, so they page by offset rather than the date keyset; this caps
 // how deep that paging goes (each page re-ranks the whole match set, and the long tail is noise).
-const SEARCH_RESULT_CAP = 300;
+// Counted in ranked rows, not returned ones: collapseDuplicates walks roughly 1.5 rows per result
+// it keeps, so 500 here is what leaves ~300 distinct results reachable, which is what the cap was
+// worth before collapsing existed.
+const SEARCH_RESULT_CAP = 500;
+// How many ranked rows a search reads per page relative to the page size, giving collapseDuplicates
+// room to drop repeats and still fill the page. The extra rows cost only their share of the
+// page-sized logo join, not the ranking, which scans the whole match set either way.
+const SEARCH_OVERFETCH = 3;
 // Broad searches can match hundreds of thousands of rows; counting them exactly cost multiple
 // seconds, so the count is bounded and anything at/above this renders as "N+".
 const COUNT_CAP = 5000;
@@ -102,7 +125,17 @@ const PROVIDER_BY_LABEL = new Map(
 export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const search = ftsQuery(params.get("search"));
   const isSearch = search !== null;
-  const conditions = ["j.is_active = 1"];
+  // On the search path every jobs-side predicate is marked with SQLite's unary `+`, which keeps a
+  // term but makes it unusable by an index, leaving the FTS table as the only possible driver.
+  //
+  // This is the difference between a search that answers and one that times out. Given both a text
+  // term and a column filter, SQLite would drive from the column index and ask FTS "does this one
+  // row match?" per candidate -- and FTS5 answers that by intersecting doclists, not by a point
+  // lookup. `product manager` plus postedWithin=7 took over 33s that way and returned a 500;
+  // driving from FTS it takes 0.5s and reads 27k rows. Browse keeps its indexes, where they are
+  // exactly what makes the keyset page fast.
+  const filtered = (expression: string) => (isSearch ? `+${expression}` : expression);
+  const conditions = [`${filtered("j.is_active")} = 1`];
   const bindings: unknown[] = [];
   const from = search ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid" : "jobs j";
 
@@ -126,25 +159,25 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // "anywhere" is remote-with-no-country, which is a distinct answer from "country unknown".
   const country = params.get("country");
   if (country === "anywhere") {
-    conditions.push("j.country IS NULL AND j.workplace = 'Remote'");
+    conditions.push(`${filtered("j.country")} IS NULL AND ${filtered("j.workplace")} = 'Remote'`);
   } else if (country) {
-    addSetFilter(conditions, bindings, "j.country", country, (value) => value.toLowerCase());
+    addSetFilter(conditions, bindings, filtered("j.country"), country, (value) => value.toLowerCase());
   }
 
   // Filters accept comma-separated values so the UI can offer multi-select without extra requests.
-  addSetFilter(conditions, bindings, "j.provider", params.get("provider"), (value) =>
+  addSetFilter(conditions, bindings, filtered("j.provider"), params.get("provider"), (value) =>
     PROVIDER_BY_LABEL.get(value.toLowerCase()) ?? value.toLowerCase());
-  addSetFilter(conditions, bindings, "j.city", params.get("city"));
-  addSetFilter(conditions, bindings, "j.role_family", params.get("roleFamily"));
-  addSetFilter(conditions, bindings, "j.company_industry", params.get("industry"));
-  addSetFilter(conditions, bindings, "j.workplace", params.get("workplace"));
-  addSetFilter(conditions, bindings, "j.category", params.get("category"));
+  addSetFilter(conditions, bindings, filtered("j.city"), params.get("city"));
+  addSetFilter(conditions, bindings, filtered("j.role_family"), params.get("roleFamily"));
+  addSetFilter(conditions, bindings, filtered("j.company_industry"), params.get("industry"));
+  addSetFilter(conditions, bindings, filtered("j.workplace"), params.get("workplace"));
+  addSetFilter(conditions, bindings, filtered("j.category"), params.get("category"));
   // Employment types are stored as each provider sent them ("Full-Time", "full time", "Full Time",
   // ...), so the filter matches case- and hyphen-insensitively; an exact IN matched almost nothing.
   addSetFilter(
     conditions,
     bindings,
-    "lower(replace(j.employment_type, '-', ' '))",
+    filtered("lower(replace(j.employment_type, '-', ' '))"),
     params.get("employmentType"),
     (value) => value.toLowerCase().replaceAll("-", " "),
   );
@@ -167,7 +200,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // threshold ghost-job research treats as the first warning sign.
   const postedWithin = Number.parseInt(params.get("postedWithin") ?? "", 10);
   if (Number.isFinite(postedWithin) && postedWithin > 0) {
-    conditions.push(`j.published_at >= datetime('now', ?)`);
+    conditions.push(`${filtered("j.published_at")} >= datetime('now', ?)`);
     bindings.push(`-${Math.min(3650, postedWithin)} days`);
   }
 
@@ -189,8 +222,17 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
 
   const limit = clampInteger(params.get("limit"), 100, 1, 100);
   const where = conditions.join(" AND ");
-  const searchScore = `bm25(jobs_fts, ${SEARCH_WEIGHTS}) + ${SEARCH_RECENCY}`;
-  const innerOrder = isSearch ? `${searchScore}, j.key` : orderBy(sort);
+  // The exactness bonus binds three patterns into the SELECT list, ahead of every filter binding,
+  // because SQLite numbers placeholders by their position in the SQL text. Ordering by the relScore
+  // alias rather than repeating the expression keeps it to one set of bindings (and one evaluation).
+  const exactness = isSearch ? exactnessPatterns(params.get("search")) : null;
+  const searchScore = `bm25(jobs_fts, ${SEARCH_WEIGHTS}) + ${SEARCH_RECENCY}`
+    + (exactness ? ` + (${SEARCH_EXACTNESS})` : "");
+  const innerOrder = isSearch ? "relScore, j.key" : orderBy(sort);
+  // A search over-fetches so identical postings can be collapsed below without leaving a short page:
+  // employers routinely run several requisitions with one title, and three "Data Scientist" rows
+  // from the same company are three wasted slots on the first page.
+  const fetchLimit = isSearch ? Math.min(limit * SEARCH_OVERFETCH, 300) : limit;
   const db = getD1();
   // Rank-and-limit first, THEN resolve the company-logo fallback. When relevance is the sort order
   // the planner cannot satisfy it from an index, so it materializes every match -- and joining
@@ -232,11 +274,13 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     LEFT JOIN boards b ON b.key = base.boardKey
     LEFT JOIN companies c ON c.key = b.company_key
     ORDER BY ${isSearch ? "base.relScore, base.key" : baseOrderBy(sort)}
-  `).bind(...bindings, limit, ...(isSearch ? [offset] : []));
+  `).bind(...(exactness ?? []), ...bindings, fetchLimit, ...(isSearch ? [offset] : []));
 
   // The count ignores the cursor clause, otherwise the total would shrink as the user pages. A
   // broad search can match hundreds of thousands of rows, so its count is bounded (LIMIT in a
-  // subquery) and reported as "N+"; browse counts stay exact and index-backed.
+  // subquery) and reported as "N+"; browse counts stay exact and index-backed. The count inherits
+  // the `filtered()` markers from `conditions`, which is what keeps a filtered search's count on the
+  // FTS-driven plan rather than the pathological per-row-probe one.
   const countConditions = conditions.slice(0, !isSearch && cursor ? -1 : undefined);
   const countWhere = countConditions.join(" AND ");
   const countBindings = bindings.slice(0, filterBindingCount);
@@ -245,15 +289,20 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
 
   const [rowsResult, countResult] = await db.batch([select, count]);
-  const rows = rowsResult.results as unknown as JobRow[];
+  const fetched = rowsResult.results as unknown as JobRow[];
   const rawTotal = Number((countResult.results[0] as { total?: number } | undefined)?.total ?? 0);
   const totalCapped = isSearch && rawTotal > COUNT_CAP;
   const total = totalCapped ? COUNT_CAP : rawTotal;
 
+  const { rows, consumed } = isSearch ? collapseDuplicates(fetched, limit) : { rows: fetched, consumed: fetched.length };
+
   let next: string | null;
   if (isSearch) {
-    const nextOffset = offset + limit;
-    next = rows.length === limit && nextOffset < SEARCH_RESULT_CAP ? encodeCursor({ offset: nextOffset }) : null;
+    // Paging advances by the rows actually walked, not by the page size, so a collapsed twin sits
+    // behind the next offset and cannot resurface at the top of the following page. A short fetch
+    // means the ranked window is exhausted.
+    const nextOffset = offset + consumed;
+    next = fetched.length === fetchLimit && nextOffset < SEARCH_RESULT_CAP ? encodeCursor({ offset: nextOffset }) : null;
   } else {
     next = nextCursor(rows, rows.at(-1), limit, sort, cursor && "key" in cursor ? cursor : null);
   }
@@ -274,6 +323,26 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   }
 
   return { jobs: rows.map(toPublicJob), total, totalCapped, limit, nextCursor: next };
+}
+
+// Keep one row per company-and-title, best-ranked first. The duplicates are real, distinct postings
+// -- Kong has two "SRE 2, Konnect SREs" requisitions in Bangalore, Peraton three "Data Scientist" --
+// so nothing upstream can merge them, but to a reader they are the same row repeated and they were
+// taking three of the top ten slots. Returns how many ranked rows were walked so the caller can
+// advance its offset past the ones it dropped.
+function collapseDuplicates(fetched: JobRow[], limit: number) {
+  const seen = new Set<string>();
+  const rows: JobRow[] = [];
+  let consumed = 0;
+  for (const row of fetched) {
+    if (rows.length >= limit) break;
+    consumed += 1;
+    const identity = `${row.title ?? ""} ${row.companyName ?? row.companyIdentifier ?? ""}`.toLowerCase();
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    rows.push(row);
+  }
+  return { rows, consumed };
 }
 
 // A full page continues from its last row. A short page in the newest sort's dated phase means the
@@ -409,6 +478,21 @@ function addSetFilter(
 // posting that starts with c; "front-end" likewise becomes front AND end, both of which exist.
 // Single-character tokens are dropped: a bare "a" prefix-matches almost everything, which is useless
 // and pathologically slow, so a query of only a lone letter yields null (no text filter, plain browse).
+// The three bindings SEARCH_EXACTNESS compares against: the query normalized the same way the SQL
+// normalizes the title, then its prefix and contains patterns. Returns null when there is nothing
+// worth comparing, so the caller can leave the bonus out of the score entirely.
+export function exactnessPatterns(value: string | null) {
+  const phrase = (value ?? "")
+    .toLowerCase()
+    .replace(/[-/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  if (phrase.length < 2) return null;
+  const escaped = phrase.replace(/[\\%_]/g, (character) => `\\${character}`);
+  return [phrase, `${escaped}%`, `%${escaped}%`];
+}
+
 export function ftsQuery(value: string | null) {
   const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
     ?.filter((token) => token.length >= 2)
