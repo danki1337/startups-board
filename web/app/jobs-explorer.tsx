@@ -495,8 +495,8 @@ export function JobsExplorer({
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      {/* v3 drops the site header entirely — the hero already carries the brand and live count. */}
-      {variant !== "chips" && (
+      {/* v3 and v4 drop the site header entirely — the hero already carries the brand and count. */}
+      {variant === "bar" && (
         <header className="border-b border-[var(--border)] bg-[var(--surface)]">
           <div className="mx-auto flex min-h-[60px] w-full max-w-[1240px] items-center justify-between gap-4 px-5 sm:px-8">
             <div className="flex items-center gap-3">
@@ -536,7 +536,8 @@ export function JobsExplorer({
           </p>
         </div>
 
-        <div className="rounded-2xl bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)]">
+        {/* v4 has no panel chrome behind the filter row; the others keep the rounded surface card. */}
+        <div className={variant === "dropdowns" ? "" : "rounded-2xl bg-[var(--surface)] p-3 shadow-[var(--shadow-panel)]"}>
           {variant === "dropdowns" ? (
             <FilterDropdownBar filters={filters} update={update} toggle={toggle} />
           ) : (
@@ -596,7 +597,8 @@ export function JobsExplorer({
             </div>
           )}
 
-          {showViewsToolbar && (
+          {/* Watchlist / saved-views toolbar is hidden on v4 for now. */}
+          {showViewsToolbar && variant !== "dropdowns" && (
             <div className="mt-3 border-t border-black/6 pt-3">{viewsToolbar}</div>
           )}
         </div>
@@ -746,9 +748,11 @@ function AddFilterMenu({
 function DatePostedSelect({
   filters,
   update,
+  triggerClass = FILTER_PILL,
 }: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
+  triggerClass?: string;
 }) {
   return (
     <Select
@@ -756,7 +760,7 @@ function DatePostedSelect({
       selectedKey={filters.postedWithin === "" ? SELECT_EMPTY_KEY : filters.postedWithin}
       onSelectionChange={(key) => update({ postedWithin: key === SELECT_EMPTY_KEY ? "" : String(key ?? "") })}
     >
-      <Select.Trigger className={FILTER_PILL}>
+      <Select.Trigger className={triggerClass}>
         <IconCalendar />
         <Select.Value className="whitespace-nowrap" />
         <IconChevronDown />
@@ -1432,6 +1436,50 @@ function FilterMenu({
 
 // ---- v4: a row of independent filter dropdowns ----
 
+// Filled 20px glyphs supplied for the v4 search field (not the stroke-based LineIcon set).
+const IconSearchGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
+    <path d="M8.85303 1.6733C10.6017 1.59876 12.3212 2.13956 13.7124 3.20163C15.2962 4.40783 16.3347 6.19479 16.5987 8.168C16.8791 10.2669 16.3032 12.1756 15.028 13.8469C15.2887 14.1198 15.5791 14.3995 15.8478 14.6677L17.2696 16.0903L17.797 16.6145C18.0685 16.8848 18.3138 17.0653 18.3288 17.4754C18.353 18.1442 17.5911 18.5757 17.0414 18.1921C16.8914 18.0875 16.7594 17.9414 16.6299 17.8119L16.0956 17.2762L14.1405 15.3209C14.1121 15.293 13.8651 15.0308 13.8362 15.0504C13.5513 15.2429 13.2819 15.446 12.9856 15.6235C10.2313 17.2737 6.65483 16.9431 4.23835 14.8209C2.7398 13.5047 1.79233 11.6492 1.68079 9.62841C1.55627 7.62613 2.23945 5.65748 3.57753 4.16276C4.96376 2.61833 6.7886 1.78479 8.85303 1.6733ZM9.27735 14.9968C12.4944 14.9349 15.0534 12.2789 14.9956 9.06177C14.9377 5.8446 12.285 3.28227 9.06777 3.33602C5.84476 3.38986 3.27683 6.04841 3.33475 9.27134C3.39268 12.4943 6.05449 15.0589 9.27735 14.9968Z" fill="#868990" />
+  </svg>
+);
+const IconClearGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
+    <path d="M9.99969 0.791504C15.0662 0.791504 19.2085 4.93308 19.2087 9.99951C19.2087 15.0661 15.0663 19.2085 9.99969 19.2085C4.93326 19.2083 0.791687 15.066 0.791687 9.99951C0.791864 4.93319 4.93337 0.791681 9.99969 0.791504ZM7.58173 5.86084C7.10669 5.38588 6.33605 5.38587 5.86102 5.86084C5.386 6.33587 5.38605 7.10648 5.86102 7.58154L8.27899 9.99951L5.86102 12.4185C5.38629 12.8934 5.3864 13.6632 5.86102 14.1382C6.33608 14.6132 7.10667 14.6132 7.58173 14.1382L9.99969 11.7192L12.4186 14.1382C12.8937 14.6132 13.6633 14.6132 14.1384 14.1382C14.6134 13.6631 14.6134 12.8935 14.1384 12.4185L11.7194 9.99951L14.1384 7.58154C14.6134 7.10649 14.6134 6.33587 14.1384 5.86084C13.6634 5.38624 12.8936 5.38616 12.4186 5.86084L9.99969 8.27881L7.58173 5.86084Z" fill="#868990" />
+  </svg>
+);
+
+// v4 pill: 36px tall, 8px padding, 14px radius, transparent until hover (the container has no fill).
+const V4_PILL =
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] border border-[var(--border)] bg-transparent px-2 text-sm font-medium text-[var(--ink)] transition-colors duration-150 hover:bg-[#F5F5FA] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+
+// The v4 search field: 231x36, 14px radius, fills on hover/focus, a pink inset focus ring, the
+// supplied glyphs, a clear button once there is text, and a clickable surround (the <label> focuses
+// the input from anywhere in the box).
+function SearchBox({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="flex h-9 w-[231px] shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 transition-colors duration-150 hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]">
+      <IconSearchGlyph />
+      <input
+        aria-label="Search all job text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search"
+        className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+          className="flex shrink-0 items-center justify-center rounded-full transition-opacity duration-150 hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+        >
+          <IconClearGlyph />
+        </button>
+      )}
+    </label>
+  );
+}
+
 // One filter as a pill that toggles a popover of that filter's own controls. Each manages its own
 // outside-click dismissal so several can sit side by side in the row.
 function FilterDropdown({
@@ -1461,7 +1509,7 @@ function FilterDropdown({
 
   return (
     <div ref={ref} className="relative">
-      <button type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} className={FILTER_PILL}>
+      <button type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} className={V4_PILL}>
         <Icon />
         <span>{label}</span>
         {count > 0 && (
@@ -1562,17 +1610,8 @@ function FilterDropdownBar({
       </FilterDropdown>
 
       <div className="ms-auto flex items-center gap-2">
-        <div className="inline-flex min-h-11 w-52 items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--control)] px-3.5">
-          <IconSearch />
-          <input
-            aria-label="Search all job text"
-            value={filters.search}
-            onChange={(event) => update({ search: event.target.value })}
-            placeholder="Search"
-            className="w-full min-w-0 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
-          />
-        </div>
-        <DatePostedSelect filters={filters} update={update} />
+        <SearchBox value={filters.search} onChange={(value) => update({ search: value })} />
+        <DatePostedSelect filters={filters} update={update} triggerClass={V4_PILL} />
       </div>
     </div>
   );
