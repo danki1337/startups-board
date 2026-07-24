@@ -166,7 +166,7 @@ button:disabled,
   /* Uniform row height is what lets Virtuoso predict the scroll extent exactly. A wrapped date or
      a two-line location used to make rows twice the estimated height, which is what produced the
      jumping while scrolling. */
-  height: 72px;
+  height: 60px;
   overflow: hidden;
 }
 
@@ -271,7 +271,7 @@ button:disabled,
    would sit above the rows and eat pointer events. The data attributes are set from scroll
    position, so neither edge fades when everything already fits. */
 .scroll-shadow {
-  --fade: 28px;
+  --fade: 40px;
   --fade-top: 0px;
   --fade-bottom: 0px;
   overflow: auto;
@@ -291,7 +291,7 @@ button:disabled,
    you scrolled. The bottom edge is safe, and the top is drawn instead as a gradient overlay parked
    just under the header -- see .jobs-table-top-fade below. */
 .jobs-table-scroll { --fade-top: 0px; }
-.jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 40px; }
+.jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 64px; }
 
 /* Sits inside the scroller and sticks to the top, so it rides under the sticky header rather than
    over it. Zero height with a taller child, so it occupies no row space. */
@@ -300,7 +300,7 @@ button:disabled,
   top: var(--jobs-header-height, 41px);
   left: 0;
   right: 0;
-  height: 28px;
+  height: 48px;
   pointer-events: none;
   opacity: 0;
   background: linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
@@ -349,9 +349,12 @@ button:disabled,
   min-height: 0;
   opacity: 0;
   transition: opacity 100ms var(--ease-out);
-  /* The pills inside cast a shadow 6px below themselves, and overflow:hidden cropped it flat -- the
-     buttons looked sliced off along the bottom. This is the room that shadow needs to land in. */
-  padding-bottom: 6px;
+  /* The pills inside cast a shadow ~6px past their own edges, and overflow:hidden cropped it flat
+     -- buttons looked sliced along the bottom, and the last one in the row along its right side.
+     The padding is the room that shadow lands in; the negative margin keeps the content aligned
+     where it was. */
+  padding: 0 8px 8px;
+  margin: 0 -8px;
 }
 .row-collapse.is-open {
   grid-template-rows: 1fr;

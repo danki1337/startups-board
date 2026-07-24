@@ -366,22 +366,31 @@ export function canonicalTitle(title) {
 }
 
 function collapseTitles(rows, limit) {
-  const byCanonical = new Map();
+  const labels = [];
+  const seen = new Set();
   for (const row of rows) {
     const label = canonicalTitle(row.title);
     const key = label.toLowerCase();
-    if (!key) continue;
-    const existing = byCanonical.get(key);
-    if (existing) existing.jobCount += Number(row.jobCount);
-    else byCanonical.set(key, { title: label, jobCount: Number(row.jobCount) });
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
   }
-  return [...byCanonical.values()].slice(0, limit);
+  // Counted by containment, because that is what the title filter does -- see the note in
+  // web/app/jobs-query.ts.
+  return labels.slice(0, limit).map((label) => {
+    const needle = label.toLowerCase();
+    let jobCount = 0;
+    for (const row of rows) {
+      if (String(row.title).toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
+    }
+    return { title: label, jobCount };
+  });
 }
 
 export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {
   const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
   const cap = clampInteger(limit, 8, 1, 300);
-  const readCap = Math.min(1200, cap * 4);
+  const readCap = Math.min(2_000, Math.max(cap * 8, 400));
 
   // No (or too-short) query: the most common titles, so the dropdown opens on a list to pick from
   // rather than an empty box. Mirrors the D1 path's job_titles lookup.

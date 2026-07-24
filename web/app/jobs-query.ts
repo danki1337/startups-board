@@ -471,29 +471,39 @@ export function canonicalTitle(title: string) {
 // Folds rows onto their canonical title, summing counts, keeping the most common spelling as the
 // label and the original order (which is already relevance- then popularity-sorted).
 function collapseTitles(rows: { title: string; jobCount: number }[], limit: number) {
-  const byCanonical = new Map<string, { title: string; jobCount: number; best: number }>();
+  // Fold to the set of distinct roles, keeping first-seen order (already relevance- then
+  // popularity-sorted).
+  const labels: string[] = [];
+  const seen = new Set<string>();
   for (const row of rows) {
-    const key = canonicalTitle(row.title).toLowerCase();
-    if (!key) continue;
-    const existing = byCanonical.get(key);
-    if (!existing) {
-      byCanonical.set(key, { title: canonicalTitle(row.title), jobCount: row.jobCount, best: row.jobCount });
-      continue;
-    }
-    existing.jobCount += row.jobCount;
-    // If a variant is more common than the folded form, its wording is the better label.
-    if (row.jobCount > existing.best) existing.best = row.jobCount;
+    const label = canonicalTitle(row.title);
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
   }
-  return [...byCanonical.values()]
-    .map(({ title, jobCount }) => ({ title, jobCount }))
-    .slice(0, limit);
+
+  // The count has to be what clicking the row actually returns, and clicking applies a SUBSTRING
+  // filter -- so "Product Designer" also matches "Senior Product Designer" and "Product Designer,
+  // App Store". Summing only the rows that fold onto the label understated it badly: the dropdown
+  // read 392 where the filter returned 1,704. Counting by containment makes the number a promise.
+  return labels.slice(0, limit).map((label) => {
+    const needle = label.toLowerCase();
+    let jobCount = 0;
+    for (const row of rows) {
+      if (row.title.toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
+    }
+    return { title: label, jobCount };
+  });
 }
 
 export async function queryTitleSuggestions(query: string, limit = 8) {
   const term = query.trim().toLowerCase().slice(0, 60);
   const cap = Math.min(TITLE_SUGGESTION_MAX, Math.max(1, limit));
   // Over-read so the fold still has `cap` distinct roles to return once the variants have merged.
-  const readCap = Math.min(TITLE_SUGGESTION_MAX * 4, cap * 4);
+  // Read well past what is shown: the containment sum below can only count variants it has actually
+  // fetched, so a narrow window would undercount a popular role.
+  const readCap = Math.min(2_000, Math.max(cap * 8, 400));
 
   // No (or too-short) query: seed the field with the most common titles so the dropdown shows a
   // starting list to pick from rather than an empty box.

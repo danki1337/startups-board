@@ -9,7 +9,7 @@ import {
   type Job,
 } from "./jobs";
 import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
-import { INDUSTRY_OPTIONS } from "./taxonomies";
+import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
@@ -68,6 +68,13 @@ const postedWithinOptions = [
 ];
 // `code` carries the ISO country so the checklists can render an SVG flag; the emoji is gone from
 // the label (it lives in the <Flag> glyph now).
+// Roughly 7% of postings resolve a city but not a country, so their location cell showed no flag
+// at all next to a perfectly recognisable city. The city taxonomy already carries the country.
+const CITY_COUNTRY = new Map(CITY_OPTIONS.map((entry) => [entry.name.toLowerCase(), entry.country]));
+function cityCountry(city: string | null | undefined) {
+  return city ? CITY_COUNTRY.get(city.trim().toLowerCase()) ?? null : null;
+}
+
 const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
   label: entry.name,
   value: entry.code,
@@ -519,7 +526,7 @@ export function JobsExplorer({
       // sent them it is true on the first paint (nothing was ever loading, so nothing animates), and
       // when a search starts from empty it transitions, which is exactly when the reveal is wanted.
       <div
-        className={`t-skel overflow-hidden rounded-2xl shadow-[var(--shadow-table)] ${jobs.length > 0 ? "is-revealed" : ""}`}
+        className={`t-skel overflow-hidden rounded-[24px] shadow-[var(--shadow-table)] ${jobs.length > 0 ? "is-revealed" : ""}`}
         style={{ height: TABLE_HEIGHT }}
       >
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
@@ -569,7 +576,7 @@ export function JobsExplorer({
                 now={now}
               />
             )}
-            fixedItemHeight={72}
+            fixedItemHeight={60}
             // Without this the virtualizer renders nothing until it has mounted and measured, so the
             // 100 rows the server already queried and shipped in the payload were invisible until
             // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the
@@ -588,7 +595,7 @@ export function JobsExplorer({
         </div>
       </div>
     ) : error ? (
-      <div role="alert" className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+      <div role="alert" className="rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
         <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
           The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
@@ -598,7 +605,7 @@ export function JobsExplorer({
         </div>
       </div>
   ) : (
-    <div className="rounded-2xl bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+    <div className="rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
       <p className="text-base font-semibold">No matching jobs</p>
       <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
       <div className="mt-5 flex justify-center">
@@ -806,7 +813,7 @@ function SearchCheckList({
 
 // Placeholder rows for a list that is still loading, sized like the real ones so the panel does not
 // resize under the cursor when they arrive.
-function ListSkeleton({ rows = 6 }: { rows?: number }) {
+function ListSkeleton({ rows = 9 }: { rows?: number }) {
   return (
     <div className="is-pulsing" aria-hidden="true">
       <div>
@@ -868,7 +875,9 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
-      <ScrollShadow className="mt-1 max-h-80">
+      {/* Fixed height, not max-height: the panel used to open at the skeleton's ~200px and then jump
+          to 320px the moment the suggestions arrived. Both states now occupy the same box. */}
+      <ScrollShadow className="mt-1 h-80">
         {rows.map((row) => {
           const checked = row.title === value;
           return (
@@ -1626,8 +1635,8 @@ function JobCells({
       </td>
       <td className="px-5 py-3.5 text-sm text-[var(--muted-strong)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          {job.country ? (
-            <Flag code={job.country} />
+          {job.country || cityCountry(job.city) ? (
+            <Flag code={job.country || cityCountry(job.city)} />
           ) : (
             <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
               {job.workplace === "Remote" ? "🌍" : ""}
