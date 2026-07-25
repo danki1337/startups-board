@@ -20,7 +20,7 @@ const pixelify = Pixelify_Sans({
   display: "swap",
 });
 
-const TITLE = "Startup jobs — Startups.board";
+const TITLE = "Startup jobs — Aboard";
 const DESCRIPTION =
   "Filter startup roles published on public Ashby, Greenhouse, Lever, and other ATS job boards.";
 
@@ -35,16 +35,16 @@ export const metadata: Metadata = {
   // with no request in hand, so this is the one place the origin has to be written down. Change it
   // here when a custom domain lands.
   metadataBase: new URL("https://startups-board.dilizarov8823.workers.dev"),
-  title: { default: TITLE, template: "%s — Startups.board" },
+  title: { default: TITLE, template: "%s — Aboard" },
   description: DESCRIPTION,
-  applicationName: "Startups.board",
+  applicationName: "Aboard",
   icons: { icon: "/favicon.svg" },
   openGraph: {
     type: "website",
-    siteName: "Startups.board",
+    siteName: "Aboard",
     title: TITLE,
     description: DESCRIPTION,
-    images: [{ url: "/startups-board-og.png", width: 1200, height: 630, alt: "Startups.board" }],
+    images: [{ url: "/startups-board-og.png", width: 1200, height: 630, alt: "Aboard" }],
   },
   twitter: {
     card: "summary_large_image",

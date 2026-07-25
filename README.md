@@ -1,4 +1,4 @@
-# Startups.board
+# Aboard
 
 A near-zero-cost job-board system that discovers public ATS boards, refreshes
 their current vacancies automatically, and serves the filterable HeroUI frontend.
@@ -293,7 +293,7 @@ caching, anomaly monitoring, and compressed static chunks. This project adopts
 the multi-snapshot and adaptive-refresh ideas. Its headline job count is a
 rolling union rather than a strict current-vacancy count: its merge step keeps
 previously seen jobs for up to 30 days when they disappear from a fresh scrape.
-Startups.board instead marks a job closed as soon as a successful board refresh
+Aboard instead marks a job closed as soon as a successful board refresh
 confirms it is absent, while retaining that closed record separately in SQLite.
 
 We deliberately do not import that project's company files: its code is MIT, but

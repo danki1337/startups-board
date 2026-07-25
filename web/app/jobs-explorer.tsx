@@ -281,15 +281,25 @@ type ChipKind =
   | "industry" | "workplace" | "source" | "employmentType" | "watchlist";
 type ActiveChip = { kind: ChipKind; label: string; value?: string; code?: string; logoUrl?: string | null; clear: () => void };
 
-const WATCHLIST_KEY = "startups-board:watchlist";
-const SAVED_VIEWS_KEY = "startups-board:saved-views";
+// The storage keys carry the OLD name on purpose. They are invisible to the reader, and renaming
+// them would orphan every watchlist and saved view already on a device -- a rename is a cosmetic
+// change and must not cost anyone their data. readStored() below reads the new key first and falls
+// back to the old one, so a future rename can migrate rather than discard.
+const WATCHLIST_KEY = "aboard:watchlist";
+const WATCHLIST_KEY_LEGACY = "startups-board:watchlist";
+const SAVED_VIEWS_KEY = "aboard:saved-views";
+const SAVED_VIEWS_KEY_LEGACY = "startups-board:saved-views";
 
 type SavedView = { name: string; query: string };
 
-function readStored<T>(key: string, fallback: T): T {
+// `legacyKey` is what makes a rename free. Storage keys are invisible to the reader, so changing one
+// buys nothing -- but every watchlist and saved view already on a device is written under the old
+// key, and dropping it would cost people their data for a cosmetic change. New key first, old key
+// as a fallback; the next write lands under the new name and the old entry simply stops being read.
+function readStored<T>(key: string, fallback: T, legacyKey?: string): T {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = window.localStorage.getItem(key);
+    const raw = window.localStorage.getItem(key) ?? (legacyKey ? window.localStorage.getItem(legacyKey) : null);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -428,8 +438,8 @@ export function JobsExplorer({
     hydrateLogoOutcomes();
     warmAtsIcons();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
-    setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
+    setWatchlist(readStored<string[]>(WATCHLIST_KEY, [], WATCHLIST_KEY_LEGACY));
+    setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, [], SAVED_VIEWS_KEY_LEGACY));
     setNow(Date.now());
     storageHydrated.current = true;
   }, []);
@@ -2359,7 +2369,8 @@ function JobCells({
 // state cannot remember anything: scrolling back over rows replayed the skeleton and the fade-in on
 // images the browser already had, and re-mounted (and re-measured) banners already known to be
 // unusable. Keyed by URL rather than by job, so the second row from the same company is instant too.
-const LOGO_CACHE_KEY = "startups-board:logo-outcomes";
+const LOGO_CACHE_KEY = "aboard:logo-outcomes";
+const LOGO_CACHE_KEY_LEGACY = "startups-board:logo-outcomes";
 // Bounded so the entry can never grow without limit; oldest are dropped when it overflows.
 const LOGO_CACHE_MAX = 4000;
 
@@ -2378,7 +2389,7 @@ const LOGO_CACHE_MAX = 4000;
 const logoOutcome = new Map<string, "ok" | "bad">();
 
 export function hydrateLogoOutcomes() {
-  for (const [url, outcome] of readStored<[string, "ok" | "bad"][]>(LOGO_CACHE_KEY, [])) {
+  for (const [url, outcome] of readStored<[string, "ok" | "bad"][]>(LOGO_CACHE_KEY, [], LOGO_CACHE_KEY_LEGACY)) {
     if (!logoOutcome.has(url)) logoOutcome.set(url, outcome);
   }
 }

@@ -13,7 +13,26 @@ export const PROVIDER_QUEUE_BINDINGS = Object.freeze({
   workday: "QUEUE_WORKDAY",
 });
 
-export const ACTIVE_REFRESH_HOURS = 12;
+// How soon an active board is looked at again, as a ladder indexed by how many CONSECUTIVE
+// refreshes have found nothing. A board that just changed sits at rung 0; each empty-handed refresh
+// moves it one rung down; any change puts it straight back to the top.
+//
+// This replaced a flat 12 hours for everything, and the reason is measured. Over 24h, 89,109 of
+// 128,690 completed refreshes -- 69.2% -- changed not one row. And that waste is not spread evenly:
+// across 3 days (roughly 6 refreshes per board), 13,326 boards changed on ZERO of them while ~2,000
+// changed on every single one. Quiet is a stable property of a board, not noise, which is exactly
+// the condition under which spending the crawl budget where the churn is actually works.
+//
+// Modelling the observed distribution against this ladder gives ~92,200 refreshes/day, against
+// 92,060 today: the total crawl budget is unchanged. What changes is where it goes. The boards that
+// actually post move from 2 refreshes a day to 8 -- average detection lag 1.5h instead of 6h -- and
+// the dormant third drops to one every other day, which costs nothing because nothing was there.
+//
+// The floor is 3h rather than 1h deliberately: capacity is 96 crons/day x 2,000 boards = 192,000,
+// and a floor low enough to let a large set converge on it would blow through that ceiling and
+// through the politeness budget of the ATSs that already push back (Getro answers 530 at
+// concurrency 2).
+export const ACTIVE_REFRESH_LADDER_HOURS = Object.freeze([3, 6, 12, 24, 48]);
 export const EMPTY_REFRESH_HOURS = 96;
 export const INVALID_REFRESH_HOURS = 24 * 30;
 export const ERROR_BASE_DELAY_MINUTES = 15;
@@ -22,14 +41,28 @@ export const ERROR_BASE_DELAY_MINUTES = 15;
 // acting on one used to wipe the board's entire listing -- so closure needs corroboration.
 export const INVALID_CLOSE_STRIKES = 3;
 
+// Clamped rather than indexed directly, so a quiet_syncs that has run past the end of the ladder
+// (or arrives negative from a bad write) still lands on a real rung instead of undefined, which
+// would make the interval NaN and the board unschedulable forever.
+export function activeRefreshHours(quietSyncs = 0) {
+  const rung = Math.min(ACTIVE_REFRESH_LADDER_HOURS.length - 1, Math.max(0, Math.floor(quietSyncs) || 0));
+  return ACTIVE_REFRESH_LADDER_HOURS[rung];
+}
+
 export function queueForProvider(env, provider) {
   const binding = PROVIDER_QUEUE_BINDINGS[provider];
   return binding ? env[binding] : null;
 }
 
-export function nextSyncAt(status, failureCount = 0, now = Date.now()) {
+/**
+ * @param {string} status
+ * @param {number} failureCount consecutive failures, for the error backoff
+ * @param {number} now
+ * @param {number} quietSyncs consecutive refreshes that changed nothing; picks the active rung
+ */
+export function nextSyncAt(status, failureCount = 0, now = Date.now(), quietSyncs = 0) {
   let milliseconds;
-  if (status === "active") milliseconds = ACTIVE_REFRESH_HOURS * 60 * 60 * 1_000;
+  if (status === "active") milliseconds = activeRefreshHours(quietSyncs) * 60 * 60 * 1_000;
   else if (status === "empty") milliseconds = EMPTY_REFRESH_HOURS * 60 * 60 * 1_000;
   else if (status === "invalid") milliseconds = INVALID_REFRESH_HOURS * 60 * 60 * 1_000;
   else {

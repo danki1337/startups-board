@@ -1,6 +1,6 @@
-# Startups.board web
+# Aboard web
 
-The public HeroUI frontend for Startups.board: a searchable index of startup roles published on company ATS pages.
+The public HeroUI frontend for Aboard: a searchable index of startup roles published on company ATS pages.
 
 ## Run locally
 

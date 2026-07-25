@@ -63,7 +63,7 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Startup jobs — Startups\.board/);
+  assert.match(html, /<title>Startup jobs — Aboard/);
   assert.match(html, /<table/);
   assert.match(html, /Workplace/);
   // The first column and its filter pill call the same field the same name.
@@ -218,7 +218,7 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // The wash is the one pink that must NOT match -- text is drawn on it.
   assert.doesNotMatch(styles, /--accent-wash: #f50fb4/);
   assert.match(styles, /@import "@heroui\/styles"/);
-  assert.match(layout, /Startup jobs — Startups\.board/);
+  assert.match(layout, /Startup jobs — Aboard/);
   assert.match(packageJson, /"@heroui\/react"/);
   assert.match(packageJson, /"react-virtuoso"/);
   // The two greys carry body copy, so they answer to 4.5:1. At 0.6 --muted composited to

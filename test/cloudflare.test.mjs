@@ -41,10 +41,72 @@ function stubNativeDb({ sourceIds = new Set(), keys = new Set() } = {}) {
 
 test("production refresh cadence is adaptive", () => {
   const now = Date.UTC(2026, 6, 21, 0, 0, 0);
-  assert.equal(nextSyncAt("active", 0, now), "2026-07-21T12:00:00.000Z");
+  // An active board rides a ladder keyed on how many consecutive refreshes found nothing, rather
+  // than the flat 12h every board used to share. Measured on production, 69.2% of refreshes changed
+  // no row at all, and the waste was stratified: 13,326 boards changed on none of their 6 refreshes
+  // over 3 days while ~2,000 changed on every one.
+  assert.equal(nextSyncAt("active", 0, now, 0), "2026-07-21T03:00:00.000Z", "just changed: look again soon");
+  assert.equal(nextSyncAt("active", 0, now, 1), "2026-07-21T06:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, 2), "2026-07-21T12:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, 3), "2026-07-22T00:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, 4), "2026-07-23T00:00:00.000Z", "dormant: every other day");
+  // Past the end of the ladder, and below its start, still land on a real rung. An out-of-range
+  // index would make the interval NaN and the board unschedulable for good.
+  assert.equal(nextSyncAt("active", 0, now, 99), "2026-07-23T00:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, -3), "2026-07-21T03:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, Number.NaN), "2026-07-21T03:00:00.000Z");
+  // Omitting the argument keeps the fast rung, so a caller that does not track quietness still
+  // schedules something sane.
+  assert.equal(nextSyncAt("active", 0, now), "2026-07-21T03:00:00.000Z");
+
+  // The other statuses are unchanged -- the ladder is only for boards that are actually serving.
   assert.equal(nextSyncAt("empty", 0, now), "2026-07-25T00:00:00.000Z");
   assert.equal(nextSyncAt("invalid", 0, now), "2026-08-20T00:00:00.000Z");
   assert.equal(nextSyncAt("error", 2, now), "2026-07-21T01:00:00.000Z");
+});
+
+// The board UPDATE binds, in order: status, jobCount, now, nextSyncAt, quietSyncs, companyKey,
+// now, key.
+const boardUpdate = (db) => db.statements.find((entry) => /UPDATE boards SET\s+status/.test(entry.sql) && entry.args);
+
+const snapshot = (jobs) => ({
+  board: {
+    key: "ashby:global:acme", provider: "ashby", identifier: "acme", status: "active",
+    jobCount: jobs.length, syncedAt: "2026-07-21T00:00:00.000Z", error: null,
+  },
+  jobs,
+});
+const sampleJob = (id) => ({
+  key: `ashby:global:acme:${id}`, sourceId: id, boardKey: "ashby:global:acme", provider: "ashby",
+  companyIdentifier: "acme", title: "Engineer", url: `https://jobs.ashbyhq.com/acme/${id}`,
+});
+
+test("a refresh that finds nothing moves the board one rung down the ladder", async () => {
+  // The board has already come back empty twice; a third empty refresh takes it to rung 3 (24h).
+  const db = recordingDb(0, { quietSyncs: 2, changes: 0 });
+  await applyBoardSnapshot(db, snapshot([]));
+  const [, , , nextSyncAtArg, quiet] = boardUpdate(db).args;
+  assert.equal(quiet, 3);
+  assert.equal(nextSyncAtArg, "2026-07-22T00:00:00.000Z", "rung 3 is 24h out");
+});
+
+test("a refresh that writes something puts the board straight back on the fast rung", async () => {
+  // Same board, same history -- but this snapshot writes a job, so the counter resets rather than
+  // decaying one step at a time. That is the whole point: a board that starts posting again is
+  // picked up on the next 3-hour cycle, not after climbing back up the ladder.
+  const db = recordingDb(0, { quietSyncs: 4, changes: 1 });
+  await applyBoardSnapshot(db, snapshot([sampleJob("a")]));
+  const [, , , nextSyncAtArg, quiet] = boardUpdate(db).args;
+  assert.equal(quiet, 0);
+  assert.equal(nextSyncAtArg, "2026-07-21T03:00:00.000Z", "rung 0 is 3h out");
+});
+
+test("the quiet counter cannot climb past the end of the ladder", async () => {
+  const db = recordingDb(0, { quietSyncs: 99, changes: 0 });
+  await applyBoardSnapshot(db, snapshot([]));
+  const [, , , nextSyncAtArg, quiet] = boardUpdate(db).args;
+  assert.equal(quiet, 4, "clamped to the last rung");
+  assert.equal(nextSyncAtArg, "2026-07-23T00:00:00.000Z");
 });
 
 test("every production ATS has an isolated queue binding", () => {
@@ -106,15 +168,19 @@ test("production migration includes search, health, discovery, and failure state
 
 // A D1 stand-in that records every statement it is asked to run, so a test can assert on what the
 // ingestion path *did* rather than on its return value. `first` answers the failure-count probe.
-function recordingDb(failureCount = 0) {
+function recordingDb(failureCount = 0, options = {}) {
   const statements = [];
+  // How many rows each write reports. applyBoardSnapshot sums these into changedJobs/closedJobs,
+  // which is what decides whether the board looked busy or quiet this refresh.
+  const changes = options.changes ?? 0;
   const statement = (sql) => ({
+    sql,
     bind(...args) {
       statements.push({ sql, args });
       return this;
     },
     async run() {
-      return { meta: { changes: 0 } };
+      return { meta: { changes } };
     },
     async all() {
       return { results: [] };
@@ -130,7 +196,12 @@ function recordingDb(failureCount = 0) {
       return statement(sql);
     },
     async batch(list) {
-      return list.map(() => ({ meta: { changes: 0 } }));
+      // The jobs read and the board's quiet_syncs probe share one batch, so the stub has to answer
+      // both shapes. Everything else only cares about meta.changes.
+      return list.map((entry) => ({
+        meta: { changes },
+        results: /quiet_syncs/.test(entry?.sql ?? "") ? [{ quietSyncs: options.quietSyncs ?? 0 }] : [],
+      }));
     },
   };
 }

@@ -1,7 +1,13 @@
-# Startups.board
+# Aboard
 
 A job index built from public ATS boards: a Cloudflare Worker + D1 + Queues backend (`src/`,
 `cloudflare/`) and a vinext/React 19 frontend (`web/`).
+
+The product is **Aboard**. The deployed resources are still named `startups-board` — the worker, the
+D1 database, the R2 bucket, all thirteen queues and the workers.dev subdomain — and that is
+deliberate: renaming a Cloudflare resource creates a NEW one, so it would mean re-provisioning the
+database, re-creating every queue and migrating 1.2M rows to change a string nobody sees. The name
+follows the domain whenever a custom one lands; until then the two differ on purpose.
 
 ## Skills
 

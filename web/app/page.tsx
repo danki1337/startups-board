@@ -70,8 +70,8 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
   return {
     title: heading,
     description,
-    openGraph: { title: `${heading} — Startups.board`, description },
-    twitter: { title: `${heading} — Startups.board`, description },
+    openGraph: { title: `${heading} — Aboard`, description },
+    twitter: { title: `${heading} — Aboard`, description },
   };
 }
 

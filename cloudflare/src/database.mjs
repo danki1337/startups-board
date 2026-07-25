@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
 import { companyDisplayExpression } from "../../src/company-name.mjs";
-import { INVALID_CLOSE_STRIKES, nextSyncAt } from "./config.mjs";
+import { ACTIVE_REFRESH_LADDER_HOURS, INVALID_CLOSE_STRIKES, nextSyncAt } from "./config.mjs";
 
 // Providers that re-list other boards' jobs rather than hosting their own, so their snapshots are
 // deduplicated against the native postings at ingestion.
@@ -98,10 +98,17 @@ export async function applyBoardSnapshot(db, result, options = {}) {
     }
   }
 
-  const currentResult = await db.prepare(`
-    SELECT key, source_id AS sourceId, fingerprint, is_active AS isActive
-    FROM jobs WHERE board_key = ?
-  `).bind(board.key).all();
+  // Batched with the jobs read rather than issued on its own: the refresh interval now depends on
+  // the board's own quiet_syncs, and this runs on every one of ~92,000 refreshes a day, so a second
+  // round trip for one integer is latency nothing needs. Two statements, one trip.
+  const [currentResult, boardResult] = await db.batch([
+    db.prepare(`
+      SELECT key, source_id AS sourceId, fingerprint, is_active AS isActive
+      FROM jobs WHERE board_key = ?
+    `).bind(board.key),
+    db.prepare("SELECT quiet_syncs AS quietSyncs FROM boards WHERE key = ?").bind(board.key),
+  ]);
+  const quietSyncs = Number(boardResult.results?.[0]?.quietSyncs ?? 0);
   const currentBySourceId = new Map(
     (currentResult.results ?? []).map((job) => [String(job.sourceId), job]),
   );
@@ -209,15 +216,28 @@ export async function applyBoardSnapshot(db, result, options = {}) {
     closedJobs += responses.reduce((sum, response) => sum + Number(response.meta?.changes ?? 0), 0);
   }
 
+  // A refresh that wrote nothing moves the board one rung down the ladder; one that wrote anything
+  // puts it straight back on the fast rung. Clamped to the last rung so a board dormant for months
+  // cannot run the counter away.
+  //
+  // `changedJobs` counts rows actually written and `closedJobs` rows actually closed, so this asks
+  // "did anything real happen", not "did we look". Workday's drifting publishedAt is deliberately
+  // outside the fingerprint, which is what stops a quarter of the index from claiming it changed on
+  // every single refresh.
+  const nextQuietSyncs = changedJobs + closedJobs > 0
+    ? 0
+    : Math.min(quietSyncs + 1, ACTIVE_REFRESH_LADDER_HOURS.length - 1);
+
   await db.batch([
     db.prepare(`
       UPDATE boards SET
         status = ?, queue_state = 'idle', job_count = ?, failure_count = 0,
-        last_synced_at = ?, next_sync_at = ?, last_error = NULL,
+        last_synced_at = ?, next_sync_at = ?, last_error = NULL, quiet_syncs = ?,
         company_key = coalesce(?, company_key), updated_at = ?
       WHERE key = ?
     `).bind(
-      board.status, board.jobCount, now, nextSyncAt(board.status, 0, Date.parse(now)),
+      board.status, board.jobCount, now,
+      nextSyncAt(board.status, 0, Date.parse(now), nextQuietSyncs), nextQuietSyncs,
       companyKey, now, board.key,
     ),
     db.prepare(`
