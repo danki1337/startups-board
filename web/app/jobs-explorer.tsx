@@ -219,7 +219,7 @@ function filtersToSearchParams(filters: Filters) {
 type ChipKind =
   | "search" | "location" | "title" | "company" | "country" | "city" | "roleFamily"
   | "industry" | "workplace" | "source" | "employmentType" | "watchlist";
-type ActiveChip = { kind: ChipKind; label: string; value?: string; code?: string; clear: () => void };
+type ActiveChip = { kind: ChipKind; label: string; value?: string; code?: string; logoUrl?: string | null; clear: () => void };
 
 const WATCHLIST_KEY = "startups-board:watchlist";
 const SAVED_VIEWS_KEY = "startups-board:saved-views";
@@ -491,7 +491,12 @@ export function JobsExplorer({
     if (filters.search.trim()) chips.push({ kind: "search", label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
     if (filters.location.trim()) chips.push({ kind: "location", label: `Location: ${filters.location.trim()}`, value: filters.location.trim(), clear: () => update({ location: "" }) });
     if (filters.title.trim()) chips.push({ kind: "title", label: `Role: ${filters.title.trim()}`, value: filters.title.trim(), clear: () => update({ title: "" }) });
-    if (filters.company.trim()) chips.push({ kind: "company", label: `Company: ${filters.company.trim()}`, value: filters.company.trim(), clear: () => update({ company: "" }) });
+    if (filters.company.trim()) {
+      // Taken from the rows already on screen rather than fetched: they are, by definition, this
+      // company's jobs, so one of them carries its logo.
+      const logoUrl = jobs.find((job) => job.company === filters.company.trim())?.companyLogoUrl ?? null;
+      chips.push({ kind: "company", label: `Company: ${filters.company.trim()}`, value: filters.company.trim(), logoUrl, clear: () => update({ company: "" }) });
+    }
     // The flag rides along as an ISO code so the chip renders the same SVG glyph as the dropdown,
     // rather than an emoji that only some platforms draw.
     for (const value of filters.country) {
@@ -586,6 +591,14 @@ export function JobsExplorer({
                 }
               };
               el.addEventListener("scroll", sync, { passive: true });
+              // The edge flags were only ever recomputed on scroll, so they went stale whenever the
+              // CONTENT changed without one -- narrowing a filter from a thousand rows to five left
+              // data-scroll-bottom set, and the table kept a bottom fade over a list that had
+              // nothing left to scroll. Watching the scroller and its content covers both the
+              // container resizing and the rows underneath it changing.
+              const resize = new ResizeObserver(sync);
+              resize.observe(el);
+              if (el.firstElementChild) resize.observe(el.firstElementChild);
               sync();
             }}
             className="jobs-table-scroll scroll-shadow bg-white"
@@ -1391,6 +1404,8 @@ function SidebarPills({
 // One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
 // value (with its glyph — flag, globe, or ATS mark), and an ×. Clicking anywhere removes it.
 function FilterChip({ chip }: { chip: ActiveChip }) {
+  // A company chip shows that company's logo in place of the generic person glyph, so the chip and
+  // the rows it filtered to look like the same company.
   const Icon = CHIP_ICONS[chip.kind];
   const value = chip.value ?? chip.label;
   return (
@@ -1400,7 +1415,9 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       aria-label={`Remove filter ${value}`}
       className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
-      {Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
+      {chip.kind === "company"
+        ? <CompanyMark name={value} logoUrl={chip.logoUrl ?? null} />
+        : Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
       <span className="text-[var(--muted)]">is</span>
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
@@ -1581,6 +1598,14 @@ function ScrollShadow({ className = "", children }: { className?: string; childr
   // scroll -- otherwise a list that shrinks to fit keeps a fade with nothing left to scroll to.
   useEffect(() => {
     measure();
+    const el = ref.current;
+    if (!el) return;
+    // Same reason as the table: a list that shrinks under a search term changes height without ever
+    // firing a scroll event, and a stale bottom flag leaves a fade with nothing behind it.
+    const resize = new ResizeObserver(measure);
+    resize.observe(el);
+    if (el.firstElementChild) resize.observe(el.firstElementChild);
+    return () => resize.disconnect();
   }, [measure, children]);
 
   return (
@@ -1947,12 +1972,13 @@ function TableHeader() {
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
           company sits beneath it as context, rather than the company owning the first column. */}
-      <TableHeading className="w-[34%]">Role</TableHeading>
+      <TableHeading className="w-[32%]">Role</TableHeading>
       <TableHeading className="w-[20%]">Location</TableHeading>
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
       <TableHeading className="w-[12%]">Posted</TableHeading>
-      <TableHeading className="w-[11%]" align="end">Source</TableHeading>
+      {/* 13%, not 11%: "Greenhouse" is the longest provider name and was being cut to "Greenhous". */}
+      <TableHeading className="w-[13%]" align="end">Source</TableHeading>
     </tr>
   );
 }
@@ -2141,19 +2167,14 @@ function JobCells({
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
       </td>
+      {/* Source is a label, not a control. It was an anchor with its own hover colour and a chevron,
+          which read as a second, different destination inside a row that already opens the posting
+          on click -- two affordances for one action. The whole row is the link now. */}
       <td className="whitespace-nowrap px-5 py-3 text-end">
-        <a
-          href={job.url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex min-h-10 items-center justify-end gap-2 rounded-lg px-2 text-sm font-medium text-[var(--muted-strong)] hover:text-[var(--accent-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-          aria-label={`Open ${job.title} at ${job.company} on ${job.source}`}
-        >
+        <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-[var(--muted-strong)]">
           <AtsMark source={job.source} />
           {job.source}
-          {/* Reveals on row hover (rule in globals.css) — the redesign's affordance. */}
-          <span aria-hidden="true" className="src-chevron text-[16px] leading-none text-[var(--muted)]">›</span>
-        </a>
+        </span>
       </td>
     </>
   );

@@ -177,9 +177,20 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
     bindings.push(companyMatch);
   }
-  // The LIKE stays as the exactness check: FTS matches whole tokens, so it alone would also return
-  // "Revolution Foods" for "Revolut". Narrow with the index, then filter for the real substring.
-  addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", companyValue);
+  // Then matched EXACTLY, not as a substring. A substring match on the raw columns meant picking
+  // "Mercury" returned Mercury (56), Mercuryinsurance (43) and even Masco (1) -- the last because
+  // the string appears somewhere in its identifier. Company is always chosen from a fixed set (the
+  // dropdown, a chip, or a click on the table), so there is no partial to support; free-text company
+  // search belongs to the search box, which is a different parameter.
+  //
+  // The comparison is against the same DISPLAY expression the job_companies aggregate groups on --
+  // Workday identifiers are "tenant|wdN|site" and only the tenant is the company -- and both sides
+  // are normalised the same way, because the dropdown titlecases "acme-corp" to "Acme Corp" before
+  // offering it and the value has to find its way back to the stored form.
+  if (companyValue?.trim()) {
+    conditions.push(`${filtered(COMPANY_DISPLAY_SQL)} = ?`);
+    bindings.push(normalizeCompanyValue(companyValue));
+  }
   // Role and company are separate fields: searching "stripe" as a role should not match every
   // posting at Stripe, and vice versa.
   // The title filter is a substring match, which means a leading wildcard and therefore an
@@ -662,6 +673,21 @@ function sortValue(row: JobRow, sort: SortOption): string | null {
 // Column-scoped FTS terms for the title filter. Same tokenizer rules as ftsQuery so the terms match
 // what the index actually holds, but not prefix-matched: the title filter is an exact phrase the
 // user picked from a list, not something they are still typing.
+// The company name as the UI shows it: the provider's name when there is one, otherwise the tenant
+// segment of the identifier. Lower-cased with separators flattened to spaces, so "acme-corp",
+// "acme_corp" and the "Acme Corp" the dropdown displays all compare equal.
+const COMPANY_DISPLAY_SQL = `lower(replace(replace(replace(
+  coalesce(
+    nullif(j.company_name, ''),
+    CASE WHEN instr(j.company_identifier, '|') > 0
+         THEN substr(j.company_identifier, 1, instr(j.company_identifier, '|') - 1)
+         ELSE j.company_identifier END
+  ), '-', ' '), '_', ' '), '.', ' '))`;
+
+function normalizeCompanyValue(value: string) {
+  return value.trim().toLowerCase().replace(/[._-]+/g, " ");
+}
+
 // Company names are matched across BOTH indexed company columns -- the display name when a provider
 // supplied one, the identifier when it did not. The final token is a prefix match so a partial name
 // still narrows correctly (a hand-typed ?company=revolut has to keep reaching Revolut), and the
