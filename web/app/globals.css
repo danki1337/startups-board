@@ -447,6 +447,61 @@ button:disabled,
    native title attribute never does. It is placed by useTruncationTip() into a portal on <body> and
    positioned with fixed coordinates, because the element that truncated the text did so with
    overflow:hidden -- which clipped the previous ::after version out of existence. */
+/* Occupies exactly the clear button's 20px slot, so swapping one for the other moves no text. The
+   ring is the accent at a low alpha with one opaque quarter, which reads as motion without the
+   heavier "something is broken" weight of a full-contrast spinner. */
+.search-spinner {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  border-top-color: var(--accent);
+  animation: search-spin 620ms linear infinite;
+}
+
+@keyframes search-spin {
+  to { rotate: 360deg; }
+}
+
+/* Reduced motion still needs to say "working", so the ring pulses in place instead of turning. */
+@media (prefers-reduced-motion: reduce) {
+  .search-spinner {
+    animation: search-pulse 1200ms ease-in-out infinite;
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  @keyframes search-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+}
+
+/* The result count, floated over the foot of the results card instead of parked in a band above it.
+   Absolute, so it costs the table no height at all -- the band it replaced was ~48px with the
+   spacing, which is most of a row.
+   pointer-events: none because it sits ON the last visible row: a badge that swallowed the click
+   would be a dead patch in the middle of the one thing every row is for. */
+.jobs-count-badge {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 3;
+  pointer-events: none;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  /* Translucent over a blur rather than solid: the rows scrolling under it stay legible as motion,
+     which is what tells you the list continues past the badge. */
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-lift);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-strong);
+  white-space: nowrap;
+}
+
 .tip-bubble {
   position: fixed;
   z-index: 60;

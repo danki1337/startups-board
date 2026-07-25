@@ -16,6 +16,8 @@ import { AtsMark, warmAtsIcons } from "./ats-marks";
 // numbers. They used to be written out here and agree with the server by coincidence; the cost of
 // that coincidence was 324,728 stored Workday URLs the server had no idea this file would reject.
 import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
+// Its own module so a test can import and run it -- see the note there.
+import { placeTip } from "./place-tip.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -323,6 +325,13 @@ export function JobsExplorer({
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [isLoading, setIsLoading] = useState(false);
   const [isPaging, setIsPaging] = useState(false);
+  // The search field's own busy flag, deliberately not `isLoading`. Two reasons they differ: the
+  // 250ms debounce means a request has not even been issued yet for the quarter second after the
+  // last keystroke, and isLoading is suppressed entirely when a cached page paints -- both of which
+  // would leave the field looking idle while the results underneath it were still the old ones.
+  // Raised in the change handler (a user event, so no cascading-render concern) and cleared where
+  // the fetch settles.
+  const [searchBusy, setSearchBusy] = useState(false);
   // A failed fetch used to only reach the console: the table kept whatever it had and the user was
   // given no reason and no way to retry. `error` drives a visible state, and bumping `retryToken`
   // re-runs the fetch effect without touching the filters.
@@ -495,7 +504,12 @@ export function JobsExplorer({
         console.error("Jobs fetch failed", caught);
         setError((caught as Error).message || "Could not load jobs");
       } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        // An abort means a newer request has already taken over and will clear this itself, so the
+        // superseded one must not put the field back to idle underneath it.
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+          setSearchBusy(false);
+        }
       }
     }, 250);
 
@@ -697,6 +711,14 @@ export function JobsExplorer({
               children too, so a top fade there would wash out the column header. */}
           <div className="jobs-table-top-fade" aria-hidden="true" />
           <OverlayScrollbar target={scroller} />
+          {/* The count, floating over the foot of the table. It lands in the same 64px the bottom
+              fade already dims, so it reads over emptying rows rather than over live ones, and
+              pointer-events:none keeps the row underneath clickable through it. */}
+          <p aria-live="polite" className="jobs-count-badge">
+            <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
+            {total === 1 ? "job" : "jobs"}
+            {isLoading && <span className="ms-1.5 font-normal">Updating…</span>}
+          </p>
         </div>
       </div>
     ) : error ? (
@@ -770,7 +792,13 @@ export function JobsExplorer({
 
         {/* No panel chrome behind the filter row — the pills carry their own hairline shadow. */}
         <div>
-          <FilterDropdownBar filters={filters} update={update} toggle={toggle} />
+          <FilterDropdownBar
+            filters={filters}
+            update={update}
+            toggle={toggle}
+            searchBusy={searchBusy}
+            onSearchInput={() => setSearchBusy(true)}
+          />
 
           {/* Selected filters as dashed "[icon] is [value]" chips, with Save view and Clear all
               pushed to the end of the same row. */}
@@ -794,15 +822,12 @@ export function JobsExplorer({
           </div>
         </div>
 
-        <div className="mb-3 mt-5 flex items-center justify-between gap-4 px-1">
-          <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
-            <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
-            {total === 1 ? "job" : "jobs"}
-            {isLoading && <span className="ms-2 font-normal">Updating…</span>}
-          </p>
-        </div>
-
-        {jobsTable}
+        {/* The count that used to sit here, in a band of its own, now floats over the foot of the
+            table itself -- see .jobs-count-badge. It is a caption on the thing it counts, and every
+            pixel it stops occupying above the card becomes another row inside it.
+            The wrapper inherits the column layout the band's siblings used to get directly from the
+            section, so the table still takes whatever height is left rather than its content's. */}
+        <div className="mt-5 flex min-h-0 flex-1 flex-col">{jobsTable}</div>
 
         {resultsFooter}
       </section>
@@ -965,9 +990,7 @@ function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: strin
     const el = bubble.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
-    const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
-    const above = anchor.top - height - 8;
-    setPos({ left, top: above >= 8 ? above : anchor.bottom + 8 });
+    setPos(placeTip(anchor, width, height, window.innerWidth));
   }, [anchor]);
 
   // Any scroll slides the anchor out from under the bubble. The listener is in the capture phase
@@ -1531,7 +1554,7 @@ const IconSearchGlyph = () => (
 );
 const IconClearGlyph = () => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
-    <path d="M9.99969 0.791504C15.0662 0.791504 19.2085 4.93308 19.2087 9.99951C19.2087 15.0661 15.0663 19.2085 9.99969 19.2085C4.93326 19.2083 0.791687 15.066 0.791687 9.99951C0.791864 4.93319 4.93337 0.791681 9.99969 0.791504ZM7.58173 5.86084C7.10669 5.38588 6.33605 5.38587 5.86102 5.86084C5.386 6.33587 5.38605 7.10648 5.86102 7.58154L8.27899 9.99951L5.86102 12.4185C5.38629 12.8934 5.3864 13.6632 5.86102 14.1382C6.33608 14.6132 7.10667 14.6132 7.58173 14.1382L9.99969 11.7192L12.4186 14.1382C12.8937 14.6132 13.6633 14.6132 14.1384 14.1382C14.6134 13.6631 14.6134 12.8935 14.1384 12.4185L11.7194 9.99951L14.1384 7.58154C14.6134 7.10649 14.6134 6.33587 14.1384 5.86084C13.6634 5.38624 12.8936 5.38616 12.4186 5.86084L9.99969 8.27881L7.58173 5.86084Z" fill="#868990" />
+    <path d="M9.99969 0.791504C15.0662 0.791504 19.2085 4.93308 19.2087 9.99951C19.2087 15.0661 15.0663 19.2085 9.99969 19.2085C4.93326 19.2083 0.791687 15.066 0.791687 9.99951C0.791864 4.93319 4.93337 0.791681 9.99969 0.791504ZM7.58173 5.86084C7.10669 5.38588 6.33605 5.38587 5.86102 5.86084C5.386 6.33587 5.38605 7.10648 5.86102 7.58154L8.27899 9.99951L5.86102 12.4185C5.38629 12.8934 5.3864 13.6632 5.86102 14.1382C6.33608 14.6132 7.10667 14.6132 7.58173 14.1382L9.99969 11.7192L12.4186 14.1382C12.8937 14.6132 13.6633 14.6132 14.1384 14.1382C14.6134 13.6631 14.6134 12.8935 14.1384 12.4185L11.7194 9.99951L14.1384 7.58154C14.6134 7.10649 14.6134 6.33587 14.1384 5.86084C13.6634 5.38624 12.8936 5.38616 12.4186 5.86084L9.99969 8.27881L7.58173 5.86084Z" fill="currentColor" />
   </svg>
 );
 
@@ -1716,12 +1739,16 @@ function SearchBox({
   label = placeholder,
   full = false,
   focusOnMount = false,
+  loading = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   label?: string;
   full?: boolean;
+  // Swaps the clear button for a spinner while this field's results are being fetched. Only the
+  // page search passes it: a dropdown's list filters in memory, so there is nothing to wait for.
+  loading?: boolean;
   // Set for the fields inside a dropdown: the popover mounts on open, so focusing on mount puts the
   // caret in the search box the moment the panel appears and you can type straight away.
   focusOnMount?: boolean;
@@ -1748,16 +1775,21 @@ function SearchBox({
         placeholder={placeholder}
         className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
       />
-      {value && (
+      {/* The spinner takes the clear button's place rather than sitting beside it: the slot is 20px
+          wide and adding a second glyph would shift the input's text on every keystroke burst. Both
+          are the same size, so the swap moves nothing. */}
+      {value && loading ? (
+        <span className="search-spinner" role="status" aria-label="Searching" />
+      ) : value ? (
         <button
           type="button"
           aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => onChange("")}
-          className="flex shrink-0 items-center justify-center rounded-full hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+          className="flex shrink-0 items-center justify-center rounded-full text-[var(--glyph)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
         >
           <IconClearGlyph />
         </button>
-      )}
+      ) : null}
     </label>
   );
 }
@@ -1858,10 +1890,17 @@ function FilterDropdownBar({
   filters,
   update,
   toggle,
+  searchBusy,
+  onSearchInput,
 }: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
   toggle: (key: FilterCategoryKey, value: string) => void;
+  // The search field's spinner, and the keystroke that starts it. Raising the flag here rather than
+  // deriving it in the effect keeps it out of a setState-in-effect, and means it goes up on the
+  // keystroke itself instead of 250ms later when the debounce finally fires.
+  searchBusy: boolean;
+  onSearchInput: () => void;
 }) {
   const options = (key: (typeof FILTER_CATEGORIES)[number]["key"]) =>
     FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
@@ -1898,7 +1937,14 @@ function FilterDropdownBar({
 
       </div>
       <div className="flex shrink-0 items-center gap-[10px]">
-        <SearchBox value={filters.search} onChange={(value) => update({ search: value })} />
+        <SearchBox
+          value={filters.search}
+          loading={searchBusy}
+          onChange={(value) => {
+            onSearchInput();
+            update({ search: value });
+          }}
+        />
         <DateDropdown value={filters.postedWithin} onChange={(value) => update({ postedWithin: value })} />
       </div>
     </div>
