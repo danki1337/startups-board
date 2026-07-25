@@ -1617,9 +1617,11 @@ function FilterDropdownBar({
       <FilterDropdown Icon={IconCountryF} label="Country">
         <SearchCheckList options={countryOptions} selected={filters.country} onToggle={(value) => toggle("country", value)} searchLabel="Search countries" />
       </FilterDropdown>
-      <FilterDropdown Icon={IconIndustryF} label="Industry">
-        <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} searchLabel="Search industries" />
-      </FilterDropdown>
+      {/* Industry is hidden for now. The filter itself still works -- the URL parameter, the chip
+          and the query are untouched -- it just has no pill of its own, the same arrangement City
+          has. Worth knowing before bringing it back: 55% of active jobs have no industry at all,
+          because ATSs do not supply one and it is inferred from the company. Selecting every
+          option therefore returns barely half the index, which reads as broken. */}
       <FilterDropdown Icon={IconAtsF} label="ATS" width="w-72">
         <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
       </FilterDropdown>
@@ -1976,7 +1978,10 @@ function CompanyLogo({ job }: { job: Job }) {
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
-          className={`relative size-full object-contain p-0.5 ${loaded ? "opacity-100" : "opacity-0"}`}
+          // No inset: the logo fills the tile edge to edge. object-contain still keeps a
+          // not-quite-square mark whole rather than cropping it -- only genuinely square logos
+          // reach all four edges, which is the most that can be done without cutting a mark.
+          className={`relative size-full object-contain ${loaded ? "opacity-100" : "opacity-0"}`}
           // A cached image can finish before React attaches onLoad, which would leave the row stuck
           // on its placeholder. The ref catches that case on mount.
           ref={(node) => {
