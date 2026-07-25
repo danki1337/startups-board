@@ -697,7 +697,7 @@ export function JobsExplorer({
         </div>
       </div>
     ) : error ? (
-      <div role="alert" className="rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+      <div role="alert" className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
         <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
           The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
@@ -707,7 +707,7 @@ export function JobsExplorer({
         </div>
       </div>
   ) : (
-    <div className="rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+    <div className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
       <p className="text-base font-semibold">No matching jobs</p>
       <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
       <div className="mt-5 flex justify-center">
@@ -752,9 +752,12 @@ export function JobsExplorer({
               Smaller than the slogan it replaced (58px -> 40px cap) because a sentence set in a
               pixel display face at slogan size wraps to three lines and stops being readable; the
               max-width holds it to two. */}
+          {/* One line at every width, which is what whitespace-nowrap plus a purely viewport-based
+              size buys: the clamp has a low floor precisely so a 390px phone can still fit the
+              sentence rather than breaking it. Inter, not the pixel face -- a display face is for
+              three or four words, and this is a sentence with a number in it. */}
           <h1
-            className="mx-auto max-w-[16ch] text-[clamp(26px,3.6vw,40px)] leading-[1.12] tracking-[-0.01em] text-balance sm:max-w-[24ch]"
-            style={{ fontFamily: "var(--font-pixel), var(--font-inter), sans-serif", fontWeight: 500 }}
+            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,42px)] font-semibold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
             <span className="tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
@@ -2138,7 +2141,10 @@ function JobCells({
                 aria-pressed={isWatched}
                 aria-label={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
                 title={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
-                className={`shrink-0 rounded text-[13px] leading-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+                // Press-scale only, keyed on :active rather than on the starred state: rows are
+                // virtualized, so anything keyed on mount would replay every time the row scrolls
+                // back into view.
+                className={`shrink-0 rounded text-[13px] leading-none transition-transform duration-[160ms] ease-[var(--ease-out)] active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
                   isWatched ? "text-[var(--accent-strong)]" : "text-[var(--border)] hover:text-[var(--muted-strong)]"
                 }`}
               >
@@ -2361,7 +2367,13 @@ function CompanyLogo({ job }: { job: Job }) {
     // a pixel off it, and uses the shared border token so it matches every other hairline here.
     return (
       <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
-        {!loaded && <span className="skeleton skeleton-pulse absolute inset-0" aria-hidden="true" />}
+        {/* Kept mounted and faded out rather than unmounted on load: removing it in the same frame
+            the image appears left one blank frame between the two, which is the pop this is here to
+            remove. Both sides run the same 120ms so they cross-fade. */}
+        <span
+          className={`skeleton skeleton-pulse absolute inset-0 transition-opacity duration-[120ms] ease-[var(--ease-out)] ${loaded ? "opacity-0" : "opacity-100"}`}
+          aria-hidden="true"
+        />
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -2379,7 +2391,7 @@ function CompanyLogo({ job }: { job: Job }) {
           // No inset: the logo fills the tile edge to edge. object-contain still keeps a
           // not-quite-square mark whole rather than cropping it -- only genuinely square logos
           // reach all four edges, which is the most that can be done without cutting a mark.
-          className={`relative size-full object-contain ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`relative size-full object-contain transition-opacity duration-[120ms] ease-[var(--ease-out)] ${loaded ? "opacity-100" : "opacity-0"}`}
           // A cached image can finish before React attaches onLoad, which would leave the row stuck
           // on its placeholder. The ref catches that case on mount.
           ref={(node) => {

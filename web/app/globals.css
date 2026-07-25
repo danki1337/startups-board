@@ -440,6 +440,35 @@ button:disabled,
   .tip-bubble { animation: none; }
 }
 
+/* ---- Panel entrance ----
+   The empty and failure panels replace the results card outright, and the skeleton cross-fade only
+   covers rows-to-skeleton, so the swap to one of these was a teleport: the table was there, then it
+   was not. @starting-style gives the entry a from-state with no JS and no mount flag.
+
+   scale(0.97), never scale(0) -- a panel that grows from nothing reads as a popup demanding
+   attention, when this is just the answer to a filter. No exit: it is replaced by content the user
+   asked for, and animating out would delay that. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A one-shot animation, not a transition with @starting-style. The @starting-style version left the
+   panel stuck at its from-state -- opacity 0, permanently invisible -- which is a far worse failure
+   than no animation, and exactly the kind a transition can produce when the settled state never
+   gets applied. An animation has no such failure mode: the both fill mode holds the last frame, so the worst
+   case is that it plays instantly. It also matches how every other entrance here is built
+   (dropdown-in, tip-in), which is a reason in itself. */
+.panel-in {
+  animation: panel-in 200ms var(--ease-out) both;
+}
+
 /* ---- Card resize (transitions.dev) ----
    Put .t-resize on an element whose width or height changes -- directly or via a state class -- and
    the two sizes tween instead of snapping. */
@@ -574,6 +603,11 @@ button:disabled,
   }
   .dropdown-out {
     animation-name: reduced-fade-out;
+  }
+
+  /* Movement is the part people are sensitive to; the fade still bridges the swap. */
+  .panel-in {
+    animation-name: reduced-fade-in;
   }
 
   .t-resize {
