@@ -12,7 +12,10 @@ export type PublicJob = Job;
 
 export type JobsPage = {
   jobs: PublicJob[];
-  total: number;
+  // null on a cursor page: only the first page of a result set counts, since the client keeps the
+  // total it already has and paying for count(*) again on every scroll is the request's most
+  // expensive statement. Distinct from 0, which means "this filter matches nothing".
+  total: number | null;
   // True when `total` was capped (a broad text search) rather than an exact count, so the UI can
   // render it as "5,000+" instead of an exact figure it would be expensive to compute.
   totalCapped: boolean;
@@ -322,11 +325,21 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     ? db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings)
     : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
 
-  const [rowsResult, countResult] = await db.batch([select, count]);
+  // Only the first page of a result set needs the total. The infinite scroll keeps the count it got
+  // from that page and never reads `total` off a cursor response -- but every scroll page was still
+  // running the count, and for an unfiltered browse that is count(*) over the ~1.2M active rows,
+  // easily the most expensive statement in the request and the one part of it thrown away. Skipping
+  // it takes the work off the scroll path and off the D1 rows-read bill.
+  const withCount = !cursor;
+  const [rowsResult, countResult] = withCount
+    ? await db.batch([select, count])
+    : [(await select.all()) as { results: unknown[] }, null];
   const fetched = rowsResult.results as unknown as JobRow[];
-  const rawTotal = Number((countResult.results[0] as { total?: number } | undefined)?.total ?? 0);
-  const totalCapped = isSearch && rawTotal > COUNT_CAP;
-  const total = totalCapped ? COUNT_CAP : rawTotal;
+  const rawTotal = Number((countResult?.results[0] as { total?: number } | undefined)?.total ?? 0);
+  const totalCapped = withCount && isSearch && rawTotal > COUNT_CAP;
+  // null, not 0: a cursor page has no opinion about the total, and 0 would read as "no results" to
+  // anything that trusted it.
+  const total = withCount ? (totalCapped ? COUNT_CAP : rawTotal) : null;
 
   const { rows, consumed } = isSearch ? collapseDuplicates(fetched, limit) : { rows: fetched, consumed: fetched.length };
 
@@ -344,7 +357,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // A near-empty search is likely a typo: try a spelling correction and, if the corrected query
   // actually differs, return its results labelled so the UI can say "Showing results for …". The
   // `_corrected` guard runs this at most once, and only on the first page.
-  if (isSearch && rawTotal < CORRECTION_THRESHOLD && offset === 0 && params.get("_corrected") !== "1") {
+  if (withCount && isSearch && rawTotal < CORRECTION_THRESHOLD && offset === 0 && params.get("_corrected") !== "1") {
     const original = params.get("search") ?? "";
     const fixed = await correctQuery(db, original);
     if (fixed && fixed.toLowerCase() !== original.toLowerCase()) {

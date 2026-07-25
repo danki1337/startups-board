@@ -10,7 +10,8 @@ const DEV_API_URL = process.env.DEV_JOBS_API_URL ?? "http://localhost:3002/api/j
 async function loadFirstPage(params: URLSearchParams): Promise<JobsPage | null> {
   try {
     const page = await queryJobs(params);
-    if (page.total > 0) return page;
+    // Always a real number here -- this is the first page, which is the one that carries the count.
+    if ((page.total ?? 0) > 0) return page;
   } catch {
     // Falls through to the dev API below.
   }

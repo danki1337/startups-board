@@ -590,7 +590,10 @@ export function JobsExplorer({
             // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the
             // first screenful during SSR; the virtualizer takes over from there.
             initialItemCount={Math.min(jobs.length, 12)}
-            increaseViewportBy={{ top: 240, bottom: 480 }}
+            // 1,400px below the fold is ~23 rows of runway, which is what endReached fires on. At
+            // 480px the request for the next page only started about half a second before the reader
+            // reached the bottom, so they sat on an empty edge waiting for it.
+            increaseViewportBy={{ top: 240, bottom: 1400 }}
             // Automatic paging stops after a failure so a scroll at the bottom cannot spin on a
             // broken endpoint; the footer's Retry calls loadMore directly.
             endReached={() => {
@@ -1803,11 +1806,27 @@ function JobCells({
   );
 }
 
+// What each logo URL turned out to be, remembered for the session. The virtualizer unmounts a row
+// the instant it leaves the viewport and mounts a fresh component when it comes back, so per-row
+// state cannot remember anything: scrolling back over rows replayed the skeleton and the fade-in on
+// images the browser already had, and re-mounted (and re-measured) banners already known to be
+// unusable. Keyed by URL rather than by job, so the second row from the same company is instant too.
+const logoOutcome = new Map<string, "ok" | "bad">();
+
 function CompanyLogo({ job }: { job: Job }) {
-  const [failed, setFailed] = useState(false);
-  // Logos are remote and lazy-loaded, so on a slow connection every row showed an empty white box
-  // until its image arrived. A placeholder holds the space, and the image fades in over it.
-  const [loaded, setLoaded] = useState(false);
+  const url = job.companyLogoUrl ?? "";
+  // Seeded from the session map, so a recycled row renders its logo immediately instead of starting
+  // over at the placeholder. Empty on the server and on the first client render, which is what keeps
+  // the hydrated markup identical.
+  const [outcome, setOutcome] = useState<"pending" | "ok" | "bad">(() => logoOutcome.get(url) ?? "pending");
+  const failed = outcome === "bad";
+  const loaded = outcome === "ok";
+
+  const settle = useCallback((result: "ok" | "bad") => {
+    logoOutcome.set(url, result);
+    setOutcome(result);
+  }, [url]);
+
   if (job.companyLogoUrl && !failed) {
     return (
       <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
@@ -1817,18 +1836,29 @@ function CompanyLogo({ job }: { job: Job }) {
         <img
           src={job.companyLogoUrl}
           alt=""
-          loading="lazy"
+          // Eager, not lazy: virtualization already means only the rows near the viewport exist in
+          // the DOM, so lazy loading added a second visibility check -- and its decode latency -- to
+          // images that are about to be on screen either way.
+          loading="eager"
+          decoding="async"
           referrerPolicy="no-referrer"
           className={`relative size-full object-contain p-0.5 ${loaded ? "opacity-100" : "opacity-0"}`}
-          onError={() => setFailed(true)}
+          // A cached image can finish before React attaches onLoad, which would leave the row stuck
+          // on its placeholder. The ref catches that case on mount.
+          ref={(node) => {
+            if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
+              const ratio = node.naturalWidth / (node.naturalHeight || 1);
+              settle(ratio > 1.6 || ratio < 0.625 ? "bad" : "ok");
+            }
+          }}
+          onError={() => settle("bad")}
           // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
           // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
           // failed logo so it falls back to the clean monogram.
           onLoad={(event) => {
             const img = event.currentTarget;
             const ratio = img.naturalWidth / (img.naturalHeight || 1);
-            if (ratio > 1.6 || ratio < 0.625) setFailed(true);
-            else setLoaded(true);
+            settle(ratio > 1.6 || ratio < 0.625 ? "bad" : "ok");
           }}
         />
       </span>

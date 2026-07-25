@@ -145,6 +145,11 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /setRetryToken/);
   assert.match(explorer, /setPagingError/);
   assert.match(explorer, /<JobsSkeleton/);
+  // Logo outcomes outlive the row: the virtualizer unmounts a row as it leaves the viewport, so
+  // per-row state made every scroll-back replay the placeholder and fade on an image already held
+  // in the browser cache.
+  assert.match(explorer, /const logoOutcome = new Map<string, "ok" \| "bad">\(\)/);
+  assert.doesNotMatch(explorer, /loading="lazy"[\s\S]{0,200}object-contain/);
   // One page, one layout: the earlier /v2-/v4 experiments and their `variant` switch are gone.
   assert.doesNotMatch(explorer, /variant/);
   // Hover feedback is instant everywhere; only press-scale and the dropdown enter keep a transition.
@@ -189,4 +194,10 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   assert.match(query, /const filtered = \(expression: string\) => \(isSearch \? `\+\$\{expression\}` : expression\)/);
   assert.match(query, /filtered\("j\.published_at"\)/);
   assert.match(query, /filtered\("j\.country"\)/);
+  // Only the first page counts. Infinite scroll never reads `total` off a cursor response, and for
+  // an unfiltered browse the count is count(*) over ~1.2M rows -- the request's most expensive
+  // statement, paid on every scroll page and thrown away. Skipping it took page 2+ from ~800ms to
+  // ~150ms in production.
+  assert.match(query, /const withCount = !cursor/);
+  assert.match(query, /total: number \| null/);
 });
