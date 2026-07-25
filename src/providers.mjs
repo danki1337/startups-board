@@ -92,8 +92,14 @@ const PROVIDERS = {
     parse(url) {
       if (url.hostname.toLowerCase() !== "jobs.ashbyhq.com") return null;
 
-      const identifier = firstPathSegment(url);
-      if (!isSharedHostIdentifier(identifier) || ASHBY_RESERVED_PATHS.has(identifier.toLowerCase())) return null;
+      // Lower-cased, because Ashby resolves a board case-insensitively -- /Solana%20Foundation,
+      // /solana%20foundation and /SOLANA%20FOUNDATION all return the same 9 jobs. Without this,
+      // Common Crawl finding two casings of one board would register two boards and duplicate every
+      // posting on it, which is exactly the collision already fixed for Greenhouse, SmartRecruiters
+      // and Rippling. Ashby was simply never checked. (Lever, by contrast, IS case-sensitive and is
+      // deliberately left alone -- there is a test pinning that.)
+      const identifier = firstPathSegment(url)?.toLocaleLowerCase("en-US");
+      if (!isSharedHostIdentifier(identifier) || ASHBY_RESERVED_PATHS.has(identifier)) return null;
 
       return board({
         provider: "ashby",
@@ -1055,10 +1061,11 @@ function normalizeWorkdayJob(candidate, job, syncedAt) {
   const boardBase = candidate.boardUrl.replace(/\/$/, "");
   const externalPath = cleanString(job.externalPath) || "";
   const url = `${boardBase}${externalPath.startsWith("/") ? "" : "/"}${externalPath}`;
+  const location = workdayLocation(job.locationsText, externalPath);
   return normalizedJob(candidate, syncedAt, {
     sourceId: lastPathSegment(url) || externalPath,
     title: job.title,
-    location: job.locationsText,
+    location,
     workplace: normalizeWorkplace(`${job.locationsText ?? ""} ${job.title ?? ""}`),
     employmentType: job.timeType,
     department: job.jobFamily,
@@ -1071,6 +1078,42 @@ function normalizeWorkdayJob(candidate, job, syncedAt) {
     companyLogoUrl: `${boardBase}/assets/logo`,
     compensation: null,
   });
+}
+
+// Workday tells you how many locations a posting has, and refuses to name any of them:
+// locationsText is literally "2 Locations" on 28k+ of our rows. That is not a place -- it does not
+// geocode, so those rows carried no country, drew no flag, and could not be filtered by city.
+//
+// But the primary location IS published, in the posting's own path: externalPath is
+// "/job/Beijing/Clinical-Research-Expert_202607-118594-1". Taking the place from there and keeping
+// the count beside it gives the reader a real answer plus an honest "and one more" -- and, because
+// the geocoder reads the leading segment, it recovers the country and city too.
+const WORKDAY_LOCATION_COUNT = /^\s*(?:\d+\s+locations?|multiple\s+locations?)\s*$/i;
+
+export function workdayLocation(locationsText, externalPath) {
+  const text = cleanString(locationsText);
+  if (!text || !WORKDAY_LOCATION_COUNT.test(text)) return text;
+  // "/job/{Place}/{Title-slug}_{req}" -- the place is the segment after "job". Workday writes it
+  // with hyphens for spaces, which is how "New-York" has to come back as "New York".
+  const segments = String(externalPath ?? "").split("/").filter(Boolean);
+  const index = segments.indexOf("job");
+  const raw = index >= 0 ? segments[index + 1] : undefined;
+  const place = cleanString(decodeURIComponentSafe(raw)?.replace(/-/g, " "));
+  // No usable path segment: keep the bare count rather than inventing a place. The UI already knows
+  // how to render that honestly.
+  if (!place || WORKDAY_LOCATION_COUNT.test(place)) return text;
+  // The middot is the separator the multi-location list already uses, so splitLocations parses this
+  // with no new format to learn: a named place, then the count it belongs to.
+  return `${place} · ${text}`;
+}
+
+function decodeURIComponentSafe(value) {
+  if (value == null) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function normalizeRipplingJob(candidate, job, syncedAt) {
@@ -1288,8 +1331,15 @@ function cleanString(value) {
   return string || null;
 }
 
+// A board slug on a shared ATS host. Spaces are allowed INSIDE it, which is not a cosmetic
+// widening: Ashby lets an employer register its display name verbatim, so the Solana Foundation
+// board lives at jobs.ashbyhq.com/Solana%20Foundation and serves 9 open roles. firstPathSegment
+// decodes the %20 before this test ran, the space failed the character class, parse() returned null
+// and the board was discarded at discovery -- so the only Solana Foundation posting in the index was
+// the single copy Getro happened to re-list. A slug is still not allowed to begin or end with a
+// space, and firstPathSegment trims either way.
 function isSharedHostIdentifier(value) {
-  return typeof value === "string" && /^[a-z0-9][a-z0-9._-]{0,99}$/i.test(value);
+  return typeof value === "string" && /^[a-z0-9](?:[a-z0-9._ -]{0,98}[a-z0-9])?$/i.test(value);
 }
 
 function repairUnicode(value) {

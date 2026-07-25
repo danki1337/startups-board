@@ -163,6 +163,19 @@ export function locationCountry(value) {
   while ((match = stateMatch.exec(text)) !== null) {
     if (US_STATES.has(match[1])) return "us";
   }
+
+  // Last resort: the final comma-separated token as a bare ISO 3166-1 alpha-2 code. "City, Region,
+  // CC" is a common Getro and Ashby shape and nothing above catches it -- the needle list carries
+  // country NAMES and a handful of aliases, so "Suzhou, Jiangsu, CN" and "Levallois-Perret, IDF, FR"
+  // resolved to nothing at all while "Berlin, DE" resolved only because "de" happens to be an alias.
+  //
+  // Runs last on purpose, which is also what makes it safe: several ISO codes collide with US state
+  // codes ("CA", "IN", "DE", "ID"), and any string carrying one has already returned "us" above. By
+  // the time execution reaches here, no needle and no state matched, so a trailing two-letter token
+  // has nothing else it could plausibly be.
+  const trailing = text.split(",").pop()?.trim();
+  if (trailing && COUNTRY_NAMES[trailing]) return trailing;
+
   return null;
 }
 

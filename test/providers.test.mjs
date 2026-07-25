@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregatorJobIdentity, getProvider, parseAtsUrl } from "../src/providers.mjs";
+import { aggregatorJobIdentity, getProvider, parseAtsUrl, workdayLocation } from "../src/providers.mjs";
 
 test("parses a global Lever job URL without lowercasing the site identifier", () => {
   const result = parseAtsUrl("https://jobs.lever.co/AcmeCo/2b319d7a");
@@ -217,4 +217,58 @@ test("Greenhouse regional board hosts parse as boards", () => {
   }
   // Greenhouse's marketing and API hosts are still not boards.
   assert.equal(parseAtsUrl("https://www.greenhouse.io/pricing")?.provider, undefined);
+});
+
+test("an Ashby board slug may contain spaces", () => {
+  // Verified live: api.ashbyhq.com/posting-api/job-board/Solana%20Foundation returns 9 jobs, and
+  // no hyphenated or squashed variant of the slug exists -- solana-foundation and solanafoundation
+  // both 404. firstPathSegment decodes the %20 before the identifier is validated, and the space
+  // failed the character class, so parse() returned null and the board was discarded at discovery.
+  // The only Solana Foundation posting in the index was the single copy Getro happened to re-list.
+  const result = parseAtsUrl("https://jobs.ashbyhq.com/Solana%20Foundation");
+  assert.equal(result?.provider, "ashby");
+  assert.equal(result.identifier, "solana foundation");
+  assert.equal(result.apiUrl, "https://api.ashbyhq.com/posting-api/job-board/solana%20foundation");
+});
+
+test("Ashby identifiers are lower-cased, because Ashby resolves them case-insensitively", () => {
+  // /Solana%20Foundation, /solana%20foundation and /SOLANA%20FOUNDATION all return the same board.
+  // Registering two casings would register two boards and duplicate every posting on it -- the
+  // collision already fixed for Greenhouse, SmartRecruiters and Rippling. Lever is NOT included:
+  // it is genuinely case-sensitive, which the first test in this file pins.
+  const upper = parseAtsUrl("https://jobs.ashbyhq.com/Deliveroo/123");
+  const lower = parseAtsUrl("https://jobs.ashbyhq.com/deliveroo/123");
+  assert.equal(upper.key, lower.key);
+  assert.equal(upper.identifier, "deliveroo");
+});
+
+test("a slug carries internal spaces only -- the edges are trimmed off", () => {
+  // firstPathSegment trims the decoded segment, so a stray leading or trailing %20 is dropped
+  // rather than becoming part of the identifier (and then part of the API URL, which would 404).
+  assert.equal(parseAtsUrl("https://jobs.ashbyhq.com/%20acme%20")?.identifier, "acme");
+  assert.equal(parseAtsUrl("https://jobs.ashbyhq.com/two%20word%20co")?.identifier, "two word co");
+  // A segment that is nothing but a space is not an identifier at all.
+  assert.equal(parseAtsUrl("https://jobs.ashbyhq.com/%20"), null);
+});
+
+test("Workday's location count gives up the place hidden in the posting path", () => {
+  // locationsText is literally "2 Locations" on 28,214 active rows -- a number, not a place, so
+  // those rows resolved to no country, drew no flag and could not be filtered by city. The primary
+  // location is published in externalPath all the same.
+  assert.equal(
+    workdayLocation("2 Locations", "/job/Beijing/Clinical-Research-Expert_202607-118594-1"),
+    "Beijing · 2 Locations",
+  );
+  // Workday writes spaces as hyphens in the path.
+  assert.equal(workdayLocation("3 Locations", "/job/New-York/Staff-Engineer_123"), "New York · 3 Locations");
+  assert.equal(workdayLocation("Multiple locations", "/job/Chengdu/Analyst_9"), "Chengdu · Multiple locations");
+});
+
+test("a real location, or a path with no place in it, is left alone", () => {
+  // Only the count case is rewritten; a named location passes straight through.
+  assert.equal(workdayLocation("Guangzhou", "/job/Guangzhou/Manager_1"), "Guangzhou");
+  // No usable path segment: keep the bare count rather than inventing a place.
+  assert.equal(workdayLocation("2 Locations", "/details/Something_1"), "2 Locations");
+  assert.equal(workdayLocation("2 Locations", ""), "2 Locations");
+  assert.equal(workdayLocation(null, "/job/Berlin/Role_1"), null);
 });

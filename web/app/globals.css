@@ -516,16 +516,34 @@ button:disabled,
   line-height: 1.35;
   pointer-events: none;
   box-shadow: var(--shadow-lift);
-  animation: tip-in 120ms var(--ease-out) both;
+  animation: tip-in var(--tip-dur, 120ms) var(--ease-out) both;
+}
+
+/* The exit. The bubble used to vanish on the frame the pointer left, which reads as a flicker
+   against an animated entrance -- two halves of one gesture, only one of them moving. Slightly
+   faster than the entrance and travelling the same 2px, because leaving should feel like getting
+   out of the way rather than like a second event. */
+.tip-bubble[data-closing] {
+  animation: tip-out var(--tip-dur-out, 90ms) var(--ease-out) both;
 }
 
 @keyframes tip-in {
-  from { opacity: 0; transform: translateY(2px); }
+  from { opacity: 0; transform: translateY(2px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
 
+@keyframes tip-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(2px) scale(0.98); }
+}
+
+/* 1ms rather than `none`: unmounting is driven by animationend, and an animation that never runs
+   never ends, which would leave the bubble on screen for good. */
 @media (prefers-reduced-motion: reduce) {
-  .tip-bubble { animation: none; }
+  .tip-bubble {
+    --tip-dur: 1ms;
+    --tip-dur-out: 1ms;
+  }
 }
 
 /* ---- Panel entrance ----

@@ -18,6 +18,8 @@ import { AtsMark, warmAtsIcons } from "./ats-marks";
 import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 // Its own module so a test can import and run it -- see the note there.
 import { placeTip } from "./place-tip.mjs";
+// Display normalisation for the free text a dozen ATSs return -- see the note in that file.
+import { splitLocations, tidyEmploymentType, normalizeEmploymentKey } from "./format.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -981,7 +983,22 @@ function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
 // scroller), and it measures the element first, so a value that already fits gets no tooltip at all.
 const TIP_DELAY = 120;
 
-function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: string; onDismiss: () => void }) {
+function TipBubble({
+  anchor,
+  label,
+  closing,
+  onDismiss,
+  onClosed,
+}: {
+  anchor: DOMRect;
+  label: string;
+  // Kept mounted after hide() so the exit can play. It used to vanish on the frame the pointer left,
+  // which read as a flicker against a 120ms entrance -- the two halves of one gesture, one animated
+  // and one not.
+  closing: boolean;
+  onDismiss: () => void;
+  onClosed: () => void;
+}) {
   const bubble = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
@@ -1011,6 +1028,11 @@ function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: strin
       // reads the value either way and announcing the bubble too would just double it.
       aria-hidden="true"
       className="tip-bubble"
+      data-closing={closing ? "" : undefined}
+      // Unmounting is driven by the animation finishing rather than by a timer that would have to
+      // be kept in step with the CSS. Under prefers-reduced-motion the duration is 1ms rather than
+      // `none`, precisely so this still fires and the bubble cannot get stuck on screen.
+      onAnimationEnd={() => { if (closing) onClosed(); }}
       style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, opacity: 0 }}
     >
       {label}
@@ -1019,60 +1041,39 @@ function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: strin
   );
 }
 
-// A tooltip that does not measure anything: it shows whenever the pointer is on the target. Used
-// where the hidden content is not truncated text but deliberately summarised -- the "+2" locations
-// badge, which stands in for places the cell never rendered at all, so there is no overflow for
-// useTruncationTip to detect.
-function useHoverTip(label: string) {
+// One hook, two behaviours. `measure` is what separates them: a truncation tooltip only earns its
+// place when the text was actually cropped, while the "+2" locations badge stands in for places the
+// cell never drew at all, so there is no overflow to detect and it always shows.
+//
+// These were two near-identical copies until the exit animation had to be added to both.
+function useTip(label: string, measure: boolean) {
   const node = useRef<HTMLElement | null>(null);
   const timer = useRef(0);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const [state, setState] = useState<{ anchor: DOMRect; closing: boolean } | null>(null);
 
+  // Marks the bubble closing rather than dropping it, so the exit can play. TipBubble calls
+  // `drop` when the animation ends.
   const hide = useCallback(() => {
     window.clearTimeout(timer.current);
-    setAnchor(null);
+    setState((current) => (current && !current.closing ? { ...current, closing: true } : current));
   }, []);
 
-  const show = useCallback(() => {
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => {
-      if (node.current) setAnchor(node.current.getBoundingClientRect());
-    }, TIP_DELAY);
-  }, []);
-
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  const ref = useCallback((element: HTMLElement | null) => {
-    node.current = element;
-  }, []);
-
-  return {
-    tipProps: { ref, onPointerEnter: show, onPointerLeave: hide, onFocus: show, onBlur: hide },
-    tip: anchor ? <TipBubble anchor={anchor} label={label} onDismiss={hide} /> : null,
-  };
-}
-
-function useTruncationTip(label: string) {
-  const node = useRef<HTMLElement | null>(null);
-  const timer = useRef(0);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
-
-  const hide = useCallback(() => {
-    window.clearTimeout(timer.current);
-    setAnchor(null);
-  }, []);
+  const drop = useCallback(() => setState(null), []);
 
   const show = useCallback(() => {
     window.clearTimeout(timer.current);
     // The delay keeps tooltips from strobing as the pointer sweeps down a column of rows.
     timer.current = window.setTimeout(() => {
       const el = node.current;
+      if (!el) return;
       // scrollWidth exceeds clientWidth only where the text actually overflowed its box. The 1px
       // slack absorbs sub-pixel layout, which otherwise reports untruncated rows as truncated.
-      if (!el || el.scrollWidth <= el.clientWidth + 1) return;
-      setAnchor(el.getBoundingClientRect());
+      if (measure && el.scrollWidth <= el.clientWidth + 1) return;
+      // A fresh object even when re-showing mid-exit, so the bubble restarts rather than finishing
+      // its way out under a pointer that has come back.
+      setState({ anchor: el.getBoundingClientRect(), closing: false });
     }, TIP_DELAY);
-  }, []);
+  }, [measure]);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -1081,12 +1082,17 @@ function useTruncationTip(label: string) {
   }, []);
 
   return {
-    open: anchor !== null,
+    open: state !== null && !state.closing,
     // Spread onto the element that does the truncating -- the one carrying `truncate`.
     tipProps: { ref, onPointerEnter: show, onPointerLeave: hide, onFocus: show, onBlur: hide },
-    tip: anchor ? <TipBubble anchor={anchor} label={label} onDismiss={hide} /> : null,
+    tip: state
+      ? <TipBubble anchor={state.anchor} label={label} closing={state.closing} onDismiss={hide} onClosed={drop} />
+      : null,
   };
 }
+
+const useHoverTip = (label: string) => useTip(label, false);
+const useTruncationTip = (label: string) => useTip(label, true);
 
 // Both states are always rendered and cross-faded, rather than one replacing the other. Swapping
 // the elements meant the tick appeared fully formed with no acknowledgement that anything happened;
@@ -2288,7 +2294,13 @@ function JobCells({
         {/* Providers spell this every way there is -- "Full-Time", "full time", "Full Time" -- which
             is why the SQL filter matches on lower(replace(employment_type, '-', ' ')). The icon
             lookup has to normalise identically or the glyph appears for some spellings only. */}
-        <ValueWithIcon Icon={JOB_TYPE_ICONS[(job.employmentType ?? "").toLowerCase().replaceAll("-", " ")]} value={job.employmentType} />
+        {/* Icon and label both come off the TIDIED value, so they can never disagree: keyed on the
+            raw text, "Full-time Tier 2" read as an unknown type and lost its clock glyph while the
+            label beside it said "Full time". */}
+        <ValueWithIcon
+          Icon={JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(job.employmentType))]}
+          value={tidyEmploymentType(job.employmentType)}
+        />
       </td>
       <td className="px-5 py-3 text-sm text-[var(--ink)]">
         <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
@@ -2365,36 +2377,6 @@ function persistLogoOutcomes() {
       // still works for this session.
     }
   }, 1_000);
-}
-
-// Two shapes of multi-location arrive from the ATSs, and both used to render as if they were a
-// place name.
-//
-//   "2 Locations", "Multiple locations"  -- Workday. A COUNT, with no place names at all: 28k+ rows
-//                                           that say only that there is more than one. There is
-//                                           nothing to geocode, which is also why these rows carry
-//                                           no country and so never drew a flag.
-//   "Berlin · Munich · Remote"           -- Ashby (middot), and others use a semicolon. A real list
-//                                           where the first entry is a usable answer on its own.
-//
-// The list case is the one worth fixing properly: show the first place, mark how many more there
-// are, and put the full set in the tooltip. The count case cannot be improved by parsing -- it is
-// labelled as a count instead of dressed up as a city.
-const LOCATION_COUNT = /^(?:(\d+)\s+locations?|multiple\s+locations?)$/i;
-
-function splitLocations(location: string): { primary: string; extra: number; all: string; count: number | null } {
-  const value = (location ?? "").trim();
-  const counted = LOCATION_COUNT.exec(value);
-  if (counted) {
-    // "Multiple locations" states no number; treat it as unknown rather than inventing one.
-    return { primary: "", extra: 0, all: value, count: counted[1] ? Number(counted[1]) : 0 };
-  }
-  const parts = value.split(/\s*[;·•]\s*|\s+\u00b7\s+/).map((part) => part.trim()).filter(Boolean);
-  if (parts.length <= 1) return { primary: value, extra: 0, all: value, count: null };
-  // A trailing "Multiple locations" inside a real list adds nothing the +N does not already say.
-  const places = parts.filter((part) => !LOCATION_COUNT.test(part));
-  const head = places[0] ?? parts[0];
-  return { primary: head, extra: Math.max(0, places.length - 1), all: places.join(" · "), count: null };
 }
 
 // A table value carrying the same filled glyph its filter pill uses, so "Full time" reads the same
