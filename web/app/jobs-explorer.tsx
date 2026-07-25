@@ -1252,7 +1252,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
     <span
       aria-hidden="true"
       className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
-      style={{ background: "linear-gradient(150deg, #f96ad4 0%, #b3007f 100%)" }}
+      style={{ background: "var(--accent)" }}
     >
       {initialsOf(name)}
     </span>
@@ -2426,7 +2426,7 @@ function CompanyLogo({ job }: { job: Job }) {
   return (
     <span
       className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
-      style={{ background: "linear-gradient(150deg, #f96ad4 0%, #b3007f 100%)" }}
+      style={{ background: "var(--accent)" }}
       aria-hidden="true"
     >
       {job.companyMark}

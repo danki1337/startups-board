@@ -17,15 +17,24 @@
      --accent-strong is the text-safe shade — it carries ~4.9:1 on --accent-wash, which the brand
      pink itself does not. */
   --accent: #f50fb4;
-  /* 3.74:1 on white -- enough for the focus ring (WCAG 1.4.11 wants 3:1) and for decorative fills,
-     but short of the 4.5:1 body text needs, which is why --accent-strong exists. */
-  --accent-strong: #a30077;
-  /* 7.44:1 on white, 6.42:1 on --accent-wash. Measured, not guessed. */
+  /* Deliberately the same value as --accent now: every pink FOREGROUND on the page is the brand
+     colour, with no darker sibling.
+     Kept as a separate token rather than collapsed, because it marks the places that carry TEXT --
+     and that distinction is the one to reach for if the contrast below ever needs fixing, since it
+     can be re-pointed at a darker shade in one line without touching a single component.
+     Worth knowing what was traded: #f50fb4 has a relative luminance of 0.2305, so reaching 4.5:1
+     would need a background at 1.212 -- brighter than white, at 1.000. No derivation gets there.
+     It is therefore 3.74:1 at best, which passes for LARGE text (the 28px headline count), for
+     icons and for focus rings (all 3:1), and fails for small text: the selected filter pill's
+     13px label sits at 3.23:1 on the wash. */
+  --accent-strong: #f50fb4;
+  /* Stays a pale tint, and is the one pink that cannot become #f50fb4: text is drawn ON it, so
+     matching the two would leave the label invisible against its own fill. */
   --accent-wash: #ffe8f6;
   --success: #2f9b65;
-  /* #ff007a clears 3:1 on its own, but the ring uses the deeper shade anyway: it also has to read
-     against --accent-wash, where the brand hue drops to 3.26:1. */
-  --focus: #a30077;
+  /* The ring is the brand colour: 3.74:1 on white clears the 3:1 that WCAG 1.4.11 asks of a focus
+     indicator. */
+  --focus: #f50fb4;
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);
@@ -97,6 +106,7 @@ a {
   text-decoration-thickness: from-font;
 }
 
+/* Also a background with text on it, so also a tint rather than the brand colour. */
 ::selection {
   background: #ffd0ef;
   color: #3a0d2e;

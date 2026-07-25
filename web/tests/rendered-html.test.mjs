@@ -187,7 +187,11 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // colour is 3.80:1 on white, which clears the 3:1 a focus ring needs but not the 4.5:1 body text
   // does, so the two are deliberately different values and both are asserted.
   assert.match(styles, /--accent: #f50fb4/);
-  assert.match(styles, /--accent-strong: #a30077/);
+  // Deliberately the same value: every pink foreground is the brand colour now. The token stays
+  // separate because it marks the text-bearing uses, which is where a darker shade would go back.
+  assert.match(styles, /--accent-strong: #f50fb4/);
+  // The wash is the one pink that must NOT match -- text is drawn on it.
+  assert.doesNotMatch(styles, /--accent-wash: #f50fb4/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);
