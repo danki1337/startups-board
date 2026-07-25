@@ -1,0 +1,22 @@
+-- 0014 added quiet_syncs with a default of 0, which is the FAST rung (3h). That default is right for
+-- a NEWLY DISCOVERED board -- it should get an eager first look -- and wrong for the 31,332 active
+-- boards that already existed when the column appeared, because it put every one of them on the
+-- 3-hour cycle at once.
+--
+-- The arithmetic: 31,332 active boards x 8 refreshes/day = 250,656, against a capacity of
+-- 96 crons x 2,000 = 192,000/day. A 30% overdraft for the day or two it takes the dormant ones to
+-- climb the ladder. It degrades into a backlog rather than a failure -- enqueueDueBoards just takes
+-- the 2,000 oldest-due each cron and the rest wait -- but a saturated queue is precisely when the
+-- ATSs that already push back start returning 530s, and the whole point of the ladder was to stop
+-- spending crawl budget on boards with nothing to show.
+--
+-- Rung 2 is 12h, which is exactly the flat interval every board had before the ladder existed. So
+-- existing boards carry on at the cadence they were already on and move OFF it on evidence: the
+-- first refresh that writes something drops a board to 3h, the first that finds nothing pushes it
+-- toward 48h. No herd, and no board is slowed down relative to where it started.
+--
+-- The column default stays 0, so newly discovered boards still get their eager first look.
+UPDATE boards SET quiet_syncs = 2 WHERE status = 'active' AND quiet_syncs = 0;
+
+-- Boards mid-flight keep whatever next_sync_at they were given; they re-derive their rung on their
+-- next successful refresh, so nothing needs rescheduling here.
