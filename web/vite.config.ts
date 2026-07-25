@@ -1,10 +1,24 @@
+import { readFileSync } from "node:fs";
 import vinext from "vinext";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
+
+// .openai/hosting.json is a local-only file (it is in .gitignore), so a static import of it made
+// the build impossible anywhere but this machine -- CI failed on "Could not resolve
+// './.openai/hosting.json'" the moment a different failure stopped masking it. Read it if it is
+// there, otherwise fall back to the binding names the deployed worker actually uses, which are
+// public in cloudflare/wrangler.jsonc. These names only shape the LOCAL dev bindings; production
+// bindings come from that wrangler config, not from here.
+const hostingConfig: { d1?: string; r2?: string } = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL("./.openai/hosting.json", import.meta.url), "utf8"));
+  } catch {
+    return { d1: "DB", r2: "ARCHIVE" };
+  }
+})();
 
 const { d1, r2 } = hostingConfig;
 
