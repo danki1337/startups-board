@@ -272,3 +272,53 @@ test("a real location, or a path with no place in it, is left alone", () => {
   assert.equal(workdayLocation("2 Locations", ""), "2 Locations");
   assert.equal(workdayLocation(null, "/job/Berlin/Role_1"), null);
 });
+
+test("Workday pagination survives the total:0 every page after the first reports", async () => {
+  // Verified live against usbank.wd1: offset 0 answers total=1486, offsets 20 and 40 answer
+  // total=0 while still returning 20 real postings each. The stop condition was
+  // `jobs.length >= payload.total`, so after two pages it asked `40 >= 0`, said yes, and dropped
+  // the other 1,446. The registry wore that plainly: 1,509 active Workday boards held EXACTLY 40
+  // jobs, ten times the next most common value, with no bump at 20, 60 or 80.
+  const PAGE = 20;
+  const REAL_TOTAL = 65;
+  const pages = [];
+  for (let offset = 0; offset < REAL_TOTAL; offset += PAGE) {
+    pages.push({
+      // Only the first page tells the truth about the count, exactly as Workday does.
+      total: offset === 0 ? REAL_TOTAL : 0,
+      jobPostings: Array.from({ length: Math.min(PAGE, REAL_TOTAL - offset) }, (_, index) => ({
+        title: `Role ${offset + index}`,
+        externalPath: `/job/Berlin/Role-${offset + index}`,
+        locationsText: "Berlin",
+      })),
+    });
+  }
+
+  let call = 0;
+  const request = async () => new Response(JSON.stringify(pages[call++]), { headers: { "content-type": "application/json" } });
+  const workday = getProvider("workday");
+  const jobs = await workday.fetchJobs(
+    { apiUrl: "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/jobs", boardUrl: "https://acme.wd1.myworkdayjobs.com/careers" },
+    request,
+  );
+
+  assert.equal(jobs.length, REAL_TOTAL, "every page is walked, not just the two that fit under total:0");
+  assert.equal(call, pages.length, "and it stops on the short final page rather than paging forever");
+});
+
+test("Workday still stops when a real total says it should", async () => {
+  // The zeros are ignored, not all totals: a board whose count genuinely moves mid-crawl must still
+  // bound the walk, which is what the original stop condition was written for.
+  const pages = [
+    { total: 20, jobPostings: Array.from({ length: 20 }, (_, i) => ({ title: `A${i}`, externalPath: `/job/X/A-${i}` })) },
+    { total: 20, jobPostings: Array.from({ length: 20 }, (_, i) => ({ title: `B${i}`, externalPath: `/job/X/B-${i}` })) },
+  ];
+  let call = 0;
+  const request = async () => new Response(JSON.stringify(pages[call++]), { headers: { "content-type": "application/json" } });
+  const jobs = await getProvider("workday").fetchJobs(
+    { apiUrl: "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/careers/jobs", boardUrl: "https://acme.wd1.myworkdayjobs.com/careers" },
+    request,
+  );
+  assert.equal(jobs.length, 20, "a full page that already meets the stated total ends the walk");
+  assert.equal(call, 1);
+});

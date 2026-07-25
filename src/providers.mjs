@@ -800,6 +800,23 @@ async function fetchBambooHrJobs(candidate, request) {
 async function fetchWorkdayJobs(candidate, request) {
   const jobs = [];
   const seenJobs = new Set();
+  // Workday reports the real count on the FIRST page only. Every page after it answers `total: 0`
+  // while still returning a full page of postings -- verified live against usbank.wd1:
+  //
+  //     offset=0    total=1486  returned=20
+  //     offset=20   total=0     returned=20
+  //     offset=40   total=0     returned=20
+  //
+  // The stop condition below is `jobs.length >= payload.total`, so after two pages it asked
+  // `40 >= 0`, said yes, and threw away the other 1,446 postings. The fingerprint of that is
+  // unmistakable in the registry: 1,509 active Workday boards hold EXACTLY 40 jobs -- ten times the
+  // next most common value, with no bump whatsoever at 20, 60 or 80.
+  //
+  // Only a positive total updates this, which keeps the behaviour the original comment below was
+  // written for (a board whose count genuinely moves mid-crawl) while ignoring the zeros. Infinity
+  // to start, so a board is bounded by its short page or by WORKDAY_MAX_PAGES until a real total
+  // arrives rather than by a number we have not been told yet.
+  let expectedTotal = Number.POSITIVE_INFINITY;
 
   for (let page = 0; page < WORKDAY_MAX_PAGES; page += 1) {
     const response = await request(candidate.apiUrl, {
@@ -822,6 +839,7 @@ async function fetchWorkdayJobs(candidate, request) {
     }
 
     if (!payload.jobPostings.length) return jobs;
+    if (payload.total > 0) expectedTotal = payload.total;
 
     let added = 0;
     for (const job of payload.jobPostings) {
@@ -836,7 +854,7 @@ async function fetchWorkdayJobs(candidate, request) {
     // Workday totals can genuinely change while a board is being updated, and
     // blocked endpoints can silently repeat a page. Follow changing totals, but
     // stop on a partial/repeated page so either case cannot loop forever.
-    if (!added || payload.jobPostings.length < WORKDAY_PAGE_SIZE || jobs.length >= payload.total) {
+    if (!added || payload.jobPostings.length < WORKDAY_PAGE_SIZE || jobs.length >= expectedTotal) {
       return jobs;
     }
   }
