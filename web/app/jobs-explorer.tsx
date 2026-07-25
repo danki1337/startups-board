@@ -352,8 +352,10 @@ export function JobsExplorer({
   // it cannot cause a server/client markup mismatch. The setState is the whole point of this mount
   // effect, so the cascading-render lint rule does not apply.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Not a setState -- it fills the module-level logo cache, and must run before the first rows
+    // mount so recycled rows can read it.
     hydrateLogoOutcomes();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
     setNow(Date.now());

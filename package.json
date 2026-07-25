@@ -20,7 +20,7 @@
     "serve": "node src/cli.mjs serve",
     "system": "node src/cli.mjs system",
     "poc": "node src/cli.mjs run",
-    "test": "node tools/design-lint.mjs && node --test",
+    "test": "node tools/design-lint.mjs && node --test && npm --prefix web run lint",
     "seed:boards": "node scripts/seed-boards.mjs",
     "cloudflare:deploy:nobuild": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
     "design:lint": "node tools/design-lint.mjs",
