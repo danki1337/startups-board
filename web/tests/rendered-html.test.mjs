@@ -142,7 +142,16 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(styles, /\.overlay-scrollbar-thumb/);
   assert.match(styles, /scrollbar-width: none/);
   assert.doesNotMatch(styles, /scrollbar-width: thin/);
-  assert.match(styles, /overscroll-behavior: contain/);
+  // `none`, not `contain`: contain still allows the box to rubber-band past its own top, and the
+  // sticky column header rides that bounce.
+  assert.match(styles, /overscroll-behavior: none/);
+  // The row separator is an inset shadow, not a border, so it adds no height and rows are exactly
+  // the 60px fixedItemHeight promises.
+  assert.match(styles, /box-shadow: inset 0 -1px 0/);
+  assert.doesNotMatch(styles, /tbody tr td \{[^}]*border-bottom/);
+  // Company has a dropdown of its own, backed by the job_companies aggregate.
+  assert.match(explorer, /<CompanyCheckList/);
+  assert.match(explorer, /companiesUrl/);
   // The section claims the viewport and the card flexes into what is left, so the page itself does
   // not scroll and the sticky column header cannot be carried off with it.
   assert.match(explorer, /min-h-\[100dvh\]/);

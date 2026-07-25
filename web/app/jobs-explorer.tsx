@@ -21,6 +21,9 @@ const apiUrl = typeof window !== "undefined" && window.location.hostname === "lo
 const titlesUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "http://localhost:3002/api/titles"
   : "/api/titles";
+const companiesUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
+  ? "http://localhost:3002/api/companies"
+  : "/api/companies";
 const pageSize = 100;
 // Shared by the results table and the skeleton stacked behind it, so the two layers are the same
 // size and the cross-fade between them moves nothing.
@@ -350,6 +353,7 @@ export function JobsExplorer({
   // effect, so the cascading-render lint rule does not apply.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    hydrateLogoOutcomes();
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
     setNow(Date.now());
@@ -597,7 +601,7 @@ export function JobsExplorer({
             // separator adds a 1px border on top of that. The virtualizer positions every row from
             // this number, so a 1px understatement compounds -- a thousand rows down it has the
             // scroll height off by a thousand pixels. Measured in the browser, not inferred.
-            fixedItemHeight={61}
+            fixedItemHeight={60}
             // Without this the virtualizer renders nothing until it has mounted and measured, so the
             // 100 rows the server already queried and shipped in the payload were invisible until
             // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the
@@ -1085,6 +1089,82 @@ function ListSkeleton({ rows = 9 }: { rows?: number }) {
 
 // Title picker: a search box that lists matching real job titles as checkbox rows. Title is a single
 // value, so picking one replaces it and picking the selected one clears it.
+// Company picker. Single-value like Title -- the filter is one substring match, so picking a second
+// company would return nothing rather than both. Backed by the job_companies aggregate, so the
+// count beside each name is exact and the list opens on the companies actually hiring most.
+function CompanyCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<{ company: string; jobCount: number }[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+
+  useEffect(() => {
+    const term = query.trim();
+    const controller = new AbortController();
+    // Entering the loading state as the request starts is what this effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setState("loading");
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`${companiesUrl}?q=${encodeURIComponent(term)}&limit=100`, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Companies API returned ${response.status}`);
+        const payload = (await response.json()) as { companies: { company: string; jobCount: number }[] };
+        setRows(payload.companies ?? []);
+        setState("ready");
+      } catch (caught) {
+        if ((caught as Error).name === "AbortError") return;
+        console.error("Loading companies failed", caught);
+        setState("failed");
+      }
+    }, 160);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  // The current selection is pinned at the top even when the search has moved elsewhere, so it can
+  // always be unpicked without clearing the box first.
+  const shown = value && !rows.some((row) => row.company === value)
+    ? [{ company: value, jobCount: 0 }, ...rows]
+    : rows;
+
+  return (
+    <div>
+      <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search companies" />
+      <ScrollShadow className="mt-1 h-80 t-resize">
+        {shown.map((row) => {
+          const checked = row.company === value;
+          return (
+            <button
+              key={row.company}
+              type="button"
+              onClick={() => onChange(checked ? "" : row.company)}
+              aria-pressed={checked}
+              className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
+            >
+              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.company}</span>
+              <span className="flex shrink-0 items-center gap-2">
+                {row.jobCount > 0 && (
+                  <span className="tabular-nums text-[14px] text-[var(--muted)]">{row.jobCount.toLocaleString()}</span>
+                )}
+                <FilterCheckbox checked={checked} />
+              </span>
+            </button>
+          );
+        })}
+        {shown.length === 0 && state === "loading" && <ListSkeleton />}
+        {shown.length === 0 && state !== "loading" && (
+          <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
+            {state === "failed"
+              ? "Couldn't load companies. Type a name to filter by it anyway."
+              : "No matching companies"}
+          </p>
+        )}
+      </ScrollShadow>
+    </div>
+  );
+}
+
 function TitleCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   // Starts empty, not seeded from the current selection. Seeding it meant reopening the dropdown
   // after picking "Product Designer" pre-filled the search with "Product Designer" and showed only
@@ -1604,9 +1684,17 @@ function FilterDropdownBar({
   const options = (key: (typeof FILTER_CATEGORIES)[number]["key"]) =>
     FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
   return (
-    <div className="flex flex-wrap items-center gap-[10px]">
+    // The pills and the search side are two groups, not one wrapping run. Without the inner
+    // wrapper every control shared one flex line, so a narrow window pushed Search and the date
+    // pill onto their own row and left-aligned them under the pills. Now only the pill group wraps;
+    // the search side keeps its place on the right.
+    <div className="flex items-start justify-between gap-[10px]">
+      <div className="flex min-w-0 flex-wrap items-center gap-[10px]">
       <FilterDropdown Icon={IconTitleF} label="Title" width="w-72">
         <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
+      </FilterDropdown>
+      <FilterDropdown Icon={IconUser} label="Company" width="w-72">
+        <CompanyCheckList value={filters.company} onChange={(value) => update({ company: value })} />
       </FilterDropdown>
       <FilterDropdown Icon={IconJobTypeF} label="Job type" width="w-72">
         <SidebarPills options={options("employmentType")} selected={filters.employmentType} onToggle={(value) => toggle("employmentType", value)} glyph="jobtype" />
@@ -1626,7 +1714,8 @@ function FilterDropdownBar({
         <SidebarPills options={options("source")} selected={filters.source} onToggle={(value) => toggle("source", value)} glyph="ats" />
       </FilterDropdown>
 
-      <div className="ms-auto flex items-center gap-[10px]">
+      </div>
+      <div className="flex shrink-0 items-center gap-[10px]">
         <SearchBox value={filters.search} onChange={(value) => update({ search: value })} />
         <DateDropdown value={filters.postedWithin} onChange={(value) => update({ postedWithin: value })} />
       </div>
@@ -1767,9 +1856,9 @@ function TableHeader() {
           company sits beneath it as context, rather than the company owning the first column. */}
       <TableHeading className="w-[34%]">Role</TableHeading>
       <TableHeading className="w-[20%]">Location</TableHeading>
-      <TableHeading className="w-[12%]">Posted</TableHeading>
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
+      <TableHeading className="w-[12%]">Posted</TableHeading>
       <TableHeading className="w-[11%] text-end">Source</TableHeading>
     </tr>
   );
@@ -1848,11 +1937,11 @@ function JobCells({
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
           <div className="min-w-0">
-            <span {...titleTip.tipProps} className="block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            <span {...titleTip.tipProps} className="job-role-line block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]">
               {job.title}
             </span>
             {titleTip.tip}
-            <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
+            <span className="job-meta-line flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
               <button
                 type="button"
                 onClick={() => onToggleWatch(job.company)}
@@ -1929,6 +2018,15 @@ function JobCells({
           {locationTip.tip}
         </span>
       </td>
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+        {/* Providers spell this every way there is -- "Full-Time", "full time", "Full Time" -- which
+            is why the SQL filter matches on lower(replace(employment_type, '-', ' ')). The icon
+            lookup has to normalise identically or the glyph appears for some spellings only. */}
+        <ValueWithIcon Icon={JOB_TYPE_ICONS[(job.employmentType ?? "").toLowerCase().replaceAll("-", " ")]} value={job.employmentType} />
+      </td>
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+        <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
+      </td>
       <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted-strong)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
             client can legitimately render a slightly different string. title keeps the exact date. */}
@@ -1943,15 +2041,6 @@ function JobCells({
         ) : (
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
-      </td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">
-        {/* Providers spell this every way there is -- "Full-Time", "full time", "Full Time" -- which
-            is why the SQL filter matches on lower(replace(employment_type, '-', ' ')). The icon
-            lookup has to normalise identically or the glyph appears for some spellings only. */}
-        <ValueWithIcon Icon={JOB_TYPE_ICONS[(job.employmentType ?? "").toLowerCase().replaceAll("-", " ")]} value={job.employmentType} />
-      </td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">
-        <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
       </td>
       <td className="whitespace-nowrap px-5 py-3 text-end">
         <a
@@ -1976,7 +2065,46 @@ function JobCells({
 // state cannot remember anything: scrolling back over rows replayed the skeleton and the fade-in on
 // images the browser already had, and re-mounted (and re-measured) banners already known to be
 // unusable. Keyed by URL rather than by job, so the second row from the same company is instant too.
+const LOGO_CACHE_KEY = "startups-board:logo-outcomes";
+// Bounded so the entry can never grow without limit; oldest are dropped when it overflows.
+const LOGO_CACHE_MAX = 4000;
+
+// Seeded from localStorage, so what a previous visit learned about a URL is known before the first
+// paint of this one. That matters more than it sounds: a quarter of the index is Workday, whose
+// logo URL is constructed rather than verified and almost always resolves to a wide header banner
+// or a 404. Without this, every one of those was re-requested, decoded and re-rejected on every
+// single page load -- hundreds of image fetches whose only possible outcome was the monogram that
+// was already going to be drawn.
+// Deliberately EMPTY at module scope, and filled by hydrateLogoOutcomes() after mount. Seeding it
+// from storage during module evaluation would make the client's very first render disagree with the
+// server's -- the server has no localStorage, so it renders a placeholder where the client would
+// already render a finished logo (or a monogram) -- and that is a hydration mismatch. Filling it a
+// tick later costs only the dozen rows the server sent; every row scrolled into view afterwards,
+// which is the overwhelming majority, still reads the cache.
 const logoOutcome = new Map<string, "ok" | "bad">();
+
+export function hydrateLogoOutcomes() {
+  for (const [url, outcome] of readStored<[string, "ok" | "bad"][]>(LOGO_CACHE_KEY, [])) {
+    if (!logoOutcome.has(url)) logoOutcome.set(url, outcome);
+  }
+}
+
+// Written back on a timer rather than on every settle: a screenful of rows resolves in a burst, and
+// serialising 4,000 entries per image would cost more than the fetches saved.
+let logoCacheFlush = 0;
+function persistLogoOutcomes() {
+  if (typeof window === "undefined") return;
+  window.clearTimeout(logoCacheFlush);
+  logoCacheFlush = window.setTimeout(() => {
+    try {
+      const entries = [...logoOutcome.entries()].slice(-LOGO_CACHE_MAX);
+      window.localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(entries));
+    } catch {
+      // A full or disabled localStorage is not worth breaking the page over; the in-memory map
+      // still works for this session.
+    }
+  }, 1_000);
+}
 
 // Two shapes of multi-location arrive from the ATSs, and both used to render as if they were a
 // place name.
@@ -2033,9 +2161,12 @@ function CompanyLogo({ job }: { job: Job }) {
 
   const settle = useCallback((result: "ok" | "bad") => {
     logoOutcome.set(url, result);
+    persistLogoOutcomes();
     setOutcome(result);
   }, [url]);
 
+  // A URL already known to be unusable renders the monogram directly -- no <img>, so no request,
+  // no decode, no skeleton flash on the way to the same result.
   if (job.companyLogoUrl && !failed) {
     return (
       <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
@@ -2050,6 +2181,9 @@ function CompanyLogo({ job }: { job: Job }) {
           // images that are about to be on screen either way.
           loading="eager"
           decoding="async"
+          // Low priority: a logo is decoration next to the row text, and it must not compete with
+          // the jobs request that fills the table in the first place.
+          fetchPriority="low"
           referrerPolicy="no-referrer"
           // No inset: the logo fills the tile edge to edge. object-contain still keeps a
           // not-quite-square mark whole rather than cropping it -- only genuinely square logos

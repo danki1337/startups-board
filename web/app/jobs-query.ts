@@ -73,6 +73,8 @@ const COUNT_CAP = 5000;
 // distinct title), so a longer list costs little and lets the dropdown show a real, scrollable set
 // rather than a top-30 teaser.
 const TITLE_SUGGESTION_MAX = 300;
+// Companies are a flat list with no folding, so the cap is just how many rows the popover shows.
+const COMPANY_SUGGESTION_MAX = 200;
 // D1 rejects any statement with more than 100 bound parameters.
 const D1_MAX_BIND = 100;
 // Held back for the binds appended after the filters: the three exactness patterns, posted-within,
@@ -550,6 +552,45 @@ export async function queryTitleSuggestions(query: string, limit = 8) {
   `).bind(`%${escaped}%`, `${escaped}%`, readCap).all();
 
   return collapseTitles((rows.results ?? []) as { title: string; jobCount: number }[], cap);
+}
+
+// The Company dropdown's options. Unlike titles there is no folding to do -- a company name is
+// already the value the filter matches -- so this is a straight read of the daily aggregate, with
+// exact counts and no read window.
+export async function queryCompanySuggestions(query: string, limit = 50) {
+  const term = query.trim().toLowerCase().slice(0, 60);
+  const cap = Math.min(COMPANY_SUGGESTION_MAX, Math.max(1, limit));
+
+  if (term.length < 2) {
+    const rows = await getD1().prepare(`
+      SELECT company, job_count AS jobCount FROM job_companies ORDER BY job_count DESC LIMIT ?
+    `).bind(cap).all();
+    return prettyCompanies(rows.results ?? []);
+  }
+
+  // ESCAPE, so a company with a literal % or _ in its name is matched rather than turned into a
+  // wildcard -- the same guard queryTitleSuggestions uses.
+  const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
+  const rows = await getD1().prepare(`
+    SELECT company, job_count AS jobCount
+    FROM job_companies
+    WHERE lower(company) LIKE ? ESCAPE '\\'
+    ORDER BY CASE WHEN lower(company) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
+    LIMIT ?
+  `).bind(`%${escaped}%`, `${escaped}%`, cap).all();
+  return prettyCompanies(rows.results ?? []);
+}
+
+// A stored value is either a real company name (left alone) or a bare identifier like "dollartree"
+// or "acme-corp", which the table renders titlecased -- so the dropdown must too, or picking a row
+// looks like it filtered to something else.
+function prettyCompanies(rows: unknown[]) {
+  return (rows as { company: string; jobCount: number }[]).map((row) => ({
+    company: /[a-z]/.test(row.company) && !/\s/.test(row.company)
+      ? row.company.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+      : row.company,
+    jobCount: row.jobCount,
+  }));
 }
 
 function orderBy(sort: SortOption) {

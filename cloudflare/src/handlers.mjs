@@ -16,6 +16,7 @@ import {
   reconcileStuckSyncRuns,
   reconcileProviderHealth,
   refreshTitleSuggestions,
+  refreshCompanySuggestions,
   releaseBoards,
   upsertDiscoveredBoards,
 } from "./database.mjs";
@@ -39,6 +40,7 @@ export async function scheduled(controller, env, ctx) {
       reconcileStuckSyncRuns(env.DB, dailyAt),
       pruneFailedTasks(env.DB, dailyAt),
       refreshTitleSuggestions(env.DB, dailyAt),
+      refreshCompanySuggestions(env.DB, dailyAt),
     );
   }
   // allSettled, not all: the daily tasks are independent, and Promise.all rejects on the first

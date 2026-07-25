@@ -400,6 +400,35 @@ export async function refreshTitleSuggestions(db, now = new Date().toISOString()
   return { titles: Number(result.meta?.changes ?? 0) };
 }
 
+// The Company dropdown's options, rebuilt on the same schedule and for the same reason as the
+// titles above. Grouped on the display name, because the company filter matches with a substring
+// LIKE against company_name/company_identifier -- so the value offered has to be a value the filter
+// can actually find. Boards that never supplied a name fall back to their identifier, which is what
+// the table renders for them too.
+export async function refreshCompanySuggestions(db, now = new Date().toISOString()) {
+  const [, result] = await db.batch([
+    db.prepare("DELETE FROM job_companies"),
+    db.prepare(`
+      INSERT INTO job_companies (company, job_count, updated_at)
+      SELECT
+        coalesce(
+          nullif(company_name, ''),
+          -- Workday identifiers are "tenant|wdN|site"; only the tenant is a company name, and it is
+          -- what the table renders. Grouping on the raw string would split one company across three
+          -- rows and offer a value no reader recognises.
+          CASE WHEN instr(company_identifier, '|') > 0
+               THEN substr(company_identifier, 1, instr(company_identifier, '|') - 1)
+               ELSE company_identifier END
+        ) AS company,
+        count(*) AS job_count, ?
+      FROM jobs
+      WHERE is_active = 1 AND coalesce(nullif(company_name, ''), company_identifier) IS NOT NULL
+      GROUP BY company
+    `).bind(now),
+  ]);
+  return { companies: Number(result.meta?.changes ?? 0) };
+}
+
 // The per-refresh delta in applyBoardSnapshot can drift when a board fails midway or rows are
 // archived out from under it, so the true counts are recomputed once a day instead of per board.
 export async function reconcileProviderHealth(db, now = new Date().toISOString()) {

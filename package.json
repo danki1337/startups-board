@@ -23,7 +23,8 @@
     "test": "node tools/design-lint.mjs && node --test",
     "seed:boards": "node scripts/seed-boards.mjs",
     "cloudflare:deploy:nobuild": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
-    "design:lint": "node tools/design-lint.mjs"
+    "design:lint": "node tools/design-lint.mjs",
+    "ci:health": "node tools/ci-health.mjs"
   },
   "engines": {
     "node": ">=22.13.0"

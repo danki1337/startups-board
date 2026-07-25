@@ -215,7 +215,11 @@ button:disabled,
 }
 
 .jobs-table tbody tr td {
-  border-bottom: 1px solid oklch(0 0 0 / 0.09);
+  /* The separator is an inset shadow, not a border, because a border adds its 1px to the row box:
+     36px of logo + 24px of padding + 1px made every row 61px while fixedItemHeight promised 60, and
+     that 1px compounds over thousands of rows into a scroll extent a thousand pixels wrong. A
+     shadow paints in the same place and costs no layout. */
+  box-shadow: inset 0 -1px 0 oklch(0 0 0 / 0.09);
   background: #ffffff;
   /* No transition: hover feedback is instant everywhere in this UI. */
   /* Uniform row height is what lets Virtuoso predict the scroll extent exactly. A wrapped date or
@@ -230,12 +234,25 @@ button:disabled,
   min-width: 0;
 }
 
+/* The role cell stacks a title over a company name, and at 14px with normal leading that stack is
+   taller than the 36px logo beside it -- so the TEXT began driving the row height instead of the
+   logo. That is how a row reported 68px on a browser with a larger default font size while
+   measuring 61px here: anything that scales the type scales the row. Pinning both lines in px caps
+   the stack at 34px, so the logo governs and the row is the same height in every environment. */
+.jobs-table .job-role-line {
+  line-height: 18px;
+}
+
+.jobs-table .job-meta-line {
+  line-height: 16px;
+}
+
 .jobs-table tbody tr:hover td {
   background: var(--row-hover);
 }
 
 .jobs-table tbody tr:last-child td {
-  border-bottom: 0;
+  box-shadow: none;
 }
 
 /* Source chevron: hidden until the row is hovered. Opacity only — a transform inside a virtualized
@@ -336,9 +353,11 @@ button:disabled,
   --fade-top: 0px;
   --fade-bottom: 0px;
   overflow: auto;
-  /* Reaching the end of a dropdown list or the results table must not hand the remaining scroll to
-     the page behind it, which scrolled the whole board out from under the open popover. */
-  overscroll-behavior: contain;
+  /* `none`, not `contain`. Both stop the scroll chaining to the page, but `contain` still lets the
+     box rubber-band past its own top -- and a sticky header rides that bounce, so scrolling up at
+     the top of the table dragged the column header down with the rows and let them show above it.
+     `none` removes the bounce as well, which is what pins the header. */
+  overscroll-behavior: none;
   mask-image: linear-gradient(
     to bottom,
     transparent 0,

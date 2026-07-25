@@ -27,6 +27,13 @@ jobs:
   harvest:
     runs-on: ubuntu-latest
     timeout-minutes: 330
+    # A shard dying to Common Crawl throttling is an EXPECTED outcome this workflow already handles:
+    # the checkpoint uploads with if: always() below, and merge runs with if: always() too, so its
+    # partial results still reach the registry. Marking the job failed on top of that bought nothing
+    # and cost a notification per shard -- twelve red emails for a run that did its job. The shard
+    # records its outcome instead. A shard failing REPEATEDLY across runs is the real signal, and
+    # `npm run ci:health` surfaces exactly that.
+    continue-on-error: true
     strategy:
       fail-fast: false
       # Unlike the refresh matrix, every shard here talks to the SAME upstream -- Common Crawl's
@@ -54,6 +61,10 @@ jobs:
             --resume-discovery true \
             --output "data/shard-${{ matrix.provider }}.json" \
             --discovery-state "data/discovery-state.json"
+
+      - name: Record the outcome
+        if: always()
+        run: echo "- **${{ matrix.provider }}** — ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
 
       # if: always() -- when a shard dies mid-run (Common Crawl throttling), the checkpoint file on
       # disk still holds everything found before the failure; upload it so the merge keeps it.
