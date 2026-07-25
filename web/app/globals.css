@@ -328,19 +328,15 @@ button:disabled,
 }
 
 /* ---- Tooltip ----
-   For values the table had to crop. Shown on hover and on keyboard focus, which the native title
-   attribute never does, and readable because it is not clipped by the cell that truncated it. */
-.tip {
-  position: relative;
-}
-.tip::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: 40;
-  max-width: 320px;
+   For values the table or a filter list had to crop. Shown on hover and on keyboard focus, which the
+   native title attribute never does. It is placed by useTruncationTip() into a portal on <body> and
+   positioned with fixed coordinates, because the element that truncated the text did so with
+   overflow:hidden -- which clipped the previous ::after version out of existence. */
+.tip-bubble {
+  position: fixed;
+  z-index: 60;
   width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
   padding: 6px 8px;
   border-radius: 8px;
   background: #16161a;
@@ -348,16 +344,18 @@ button:disabled,
   font-size: 12px;
   font-weight: 500;
   line-height: 1.35;
-  white-space: normal;
-  opacity: 0;
-  visibility: hidden;
   pointer-events: none;
   box-shadow: var(--shadow-lift);
+  animation: tip-in 120ms var(--ease-out) both;
 }
-.tip:hover::after,
-.tip:focus-visible::after {
-  opacity: 1;
-  visibility: visible;
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-bubble { animation: none; }
 }
 
 /* ---- Card resize (transitions.dev) ----

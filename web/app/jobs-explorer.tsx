@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Input, TextField } from "@heroui/react";
 import { TableVirtuoso, type TableComponents, type VirtuosoHandle } from "react-virtuoso";
 import {
@@ -114,8 +115,9 @@ type Filters = {
   title: string;
   location: string;
   company: string;
-  country: string;
-  // Multi-select facets (comma-joined into the query, which already treats city/industry as sets).
+  // Multi-select facets (comma-joined into the query, which already treats country/city/industry as
+  // sets). The API caps each set at FILTER_VALUE_MAX values.
+  country: string[];
   city: string[];
   roleFamily: string;
   industry: string[];
@@ -134,7 +136,7 @@ const emptyFilters: Filters = {
   title: "",
   location: "",
   company: "",
-  country: "",
+  country: [],
   city: [],
   roleFamily: "",
   industry: [],
@@ -161,7 +163,7 @@ function filtersFromSearchParams(query: string): Filters {
     // "anywhere" was a value the chip row rendered but the Country list had no option for, so it
     // showed as an active filter the dropdown reported as unset and only the chip could clear. It
     // means "no country filter", so it is normalised away on the way in.
-    country: (params.get("country") ?? "") === "anywhere" ? "" : params.get("country") ?? "",
+    country: list("country").filter((value) => value !== "anywhere"),
     city: list("city"),
     roleFamily: params.get("roleFamily") ?? "",
     industry: list("industry"),
@@ -187,7 +189,7 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.title.trim()) params.set("title", filters.title.trim());
   if (filters.location.trim()) params.set("location", filters.location.trim());
   if (filters.company.trim()) params.set("company", filters.company.trim());
-  if (filters.country) params.set("country", filters.country);
+  if (filters.country.length) params.set("country", filters.country.join(","));
   if (filters.city.length) params.set("city", filters.city.join(","));
   if (filters.roleFamily) params.set("roleFamily", filters.roleFamily);
   if (filters.industry.length) params.set("industry", filters.industry.join(","));
@@ -323,13 +325,17 @@ export function JobsExplorer({
     setSavedViews((current) => [...current.filter((view) => view.name !== trimmed), { name: trimmed, query }]);
   }, [filters]);
 
-  function toggle(key: "workplace" | "source" | "employmentType" | "industry" | "city", value: string) {
+  function toggle(key: FilterCategoryKey, value: string) {
     setFilters((current) => {
       const values = current[key];
-      return {
-        ...current,
-        [key]: values.includes(value) ? values.filter((v) => v !== value) : [...values, value],
-      };
+      if (values.includes(value)) {
+        return { ...current, [key]: values.filter((v) => v !== value) };
+      }
+      // The API keeps only the first FILTER_VALUE_MAX values of a set, so selecting past the cap
+      // would silently do nothing. The dropdown disables further options at the cap; this is the
+      // backstop for the paths that do not go through it (a hand-edited URL, a saved view).
+      if (values.length >= FILTER_VALUE_MAX) return current;
+      return { ...current, [key]: [...values, value] };
     });
   }
 
@@ -468,15 +474,14 @@ export function JobsExplorer({
     if (filters.location.trim()) chips.push({ kind: "location", label: `Location: ${filters.location.trim()}`, value: filters.location.trim(), clear: () => update({ location: "" }) });
     if (filters.title.trim()) chips.push({ kind: "title", label: `Role: ${filters.title.trim()}`, value: filters.title.trim(), clear: () => update({ title: "" }) });
     if (filters.company.trim()) chips.push({ kind: "company", label: `Company: ${filters.company.trim()}`, value: filters.company.trim(), clear: () => update({ company: "" }) });
-    if (filters.country) {
-      // The flag rides along as an ISO code so the chip renders the same SVG glyph as the dropdown,
-      // rather than an emoji that only some platforms draw.
-      const anywhere = filters.country === "anywhere";
+    // The flag rides along as an ISO code so the chip renders the same SVG glyph as the dropdown,
+    // rather than an emoji that only some platforms draw.
+    for (const value of filters.country) {
       chips.push({
         kind: "country",
-        label: anywhere ? "🌍 Anywhere" : countryName(filters.country) ?? filters.country,
-        code: anywhere ? undefined : filters.country,
-        clear: () => update({ country: "" }),
+        label: countryName(value) ?? value,
+        code: value,
+        clear: () => toggle("country", value),
       });
     }
     for (const value of filters.city) chips.push({ kind: "city", label: value, clear: () => toggle("city", value) });
@@ -733,6 +738,89 @@ const IconJobType = () => <LineIcon><circle cx="6" cy="5" r="2.2" /><path d="M2.
 const IconAts = () => <LineIcon><path d="M4.5 2.5h4l3 3v8h-7z" /><path d="M8.5 2.5v3h3" /><circle cx="8" cy="9.5" r="1.6" /></LineIcon>;
 const IconGlobe = () => <LineIcon><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5Z" /></LineIcon>;
 
+// ---- Tooltip for truncated text -------------------------------------------------------------
+// A value the table or a filter list had to crop shows its full text on hover and on keyboard focus.
+// Two things this does that the earlier CSS-only version could not: it renders into document.body,
+// so it is not clipped by the very `overflow: hidden` that did the truncating (nor by the table's
+// scroller), and it measures the element first, so a value that already fits gets no tooltip at all.
+const TIP_DELAY = 120;
+
+function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: string; onDismiss: () => void }) {
+  const bubble = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Measured before paint, so the bubble never flashes at the top-left corner on its way to place.
+  useLayoutEffect(() => {
+    const el = bubble.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
+    const above = anchor.top - height - 8;
+    setPos({ left, top: above >= 8 ? above : anchor.bottom + 8 });
+  }, [anchor]);
+
+  // Any scroll slides the anchor out from under the bubble. The listener is in the capture phase
+  // because the scroll that matters is the table's own scroller, which does not bubble to window.
+  useEffect(() => {
+    window.addEventListener("scroll", onDismiss, true);
+    window.addEventListener("resize", onDismiss);
+    return () => {
+      window.removeEventListener("scroll", onDismiss, true);
+      window.removeEventListener("resize", onDismiss);
+    };
+  }, [onDismiss]);
+
+  return createPortal(
+    <div
+      ref={bubble}
+      // The full text is already in the DOM -- truncation is purely visual -- so a screen reader
+      // reads the value either way and announcing the bubble too would just double it.
+      aria-hidden="true"
+      className="tip-bubble"
+      style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, opacity: 0 }}
+    >
+      {label}
+    </div>,
+    document.body,
+  );
+}
+
+function useTruncationTip(label: string) {
+  const node = useRef<HTMLElement | null>(null);
+  const timer = useRef(0);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+
+  const hide = useCallback(() => {
+    window.clearTimeout(timer.current);
+    setAnchor(null);
+  }, []);
+
+  const show = useCallback(() => {
+    window.clearTimeout(timer.current);
+    // The delay keeps tooltips from strobing as the pointer sweeps down a column of rows.
+    timer.current = window.setTimeout(() => {
+      const el = node.current;
+      // scrollWidth exceeds clientWidth only where the text actually overflowed its box. The 1px
+      // slack absorbs sub-pixel layout, which otherwise reports untruncated rows as truncated.
+      if (!el || el.scrollWidth <= el.clientWidth + 1) return;
+      setAnchor(el.getBoundingClientRect());
+    }, TIP_DELAY);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const ref = useCallback((element: HTMLElement | null) => {
+    node.current = element;
+  }, []);
+
+  return {
+    open: anchor !== null,
+    // Spread onto the element that does the truncating -- the one carrying `truncate`.
+    tipProps: { ref, onPointerEnter: show, onPointerLeave: hide, onFocus: show, onBlur: hide },
+    tip: anchor ? <TipBubble anchor={anchor} label={label} onDismiss={hide} /> : null,
+  };
+}
+
 function FilterCheckbox({ checked }: { checked: boolean }) {
   return checked ? (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-[var(--ink)]">
@@ -744,11 +832,17 @@ function FilterCheckbox({ checked }: { checked: boolean }) {
 }
 
 // "city" has no dropdown of its own — it is set by clicking a location in the table and cleared from
-// its chip — so it carries no option list here.
-type FilterCategoryKey = "industry" | "city" | "workplace" | "employmentType" | "source";
+// its chip — so it carries no option list here; "country" has one, but its options are the ISO list
+// rather than a literal taxonomy.
+type FilterCategoryKey = "industry" | "city" | "country" | "workplace" | "employmentType" | "source";
+
+// How many values one facet may carry. addSetFilter() in jobs-query.ts keeps the first 12 and drops
+// the rest, and the D1 statement has a 100-parameter ceiling that the watchlist shares -- so this is
+// the API's cap surfaced in the UI rather than a preference.
+const FILTER_VALUE_MAX = 12;
 
 const FILTER_CATEGORIES: {
-  key: Exclude<FilterCategoryKey, "city">;
+  key: Exclude<FilterCategoryKey, "city" | "country">;
   options: readonly { label: string; value: string }[];
 }[] = [
   { key: "industry", options: INDUSTRY_OPTIONS.map((name) => ({ label: name, value: name })) },
@@ -756,6 +850,38 @@ const FILTER_CATEGORIES: {
   { key: "employmentType", options: employmentOptions.map((name) => ({ label: name, value: name })) },
   { key: "source", options: sourceOptions.map((name) => ({ label: name, value: name })) },
 ];
+
+// One option row. Split out of the map below so it can hold the tooltip hook for its own label --
+// a country like "South Georgia and the South Sandwich Islands" does not fit the popover.
+function CheckOption({
+  option,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  option: { label: string; value: string; code?: string };
+  checked: boolean;
+  disabled: boolean;
+  onToggle: (value: string) => void;
+}) {
+  const tip = useTruncationTip(option.label);
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(option.value)}
+      aria-pressed={checked}
+      disabled={disabled}
+      className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--control-hover)] disabled:pointer-events-none disabled:opacity-40"
+    >
+      <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
+        <Flag code={option.code} />
+        <span {...tip.tipProps} className="min-w-0 truncate">{option.label}</span>
+        {tip.tip}
+      </span>
+      <FilterCheckbox checked={checked} />
+    </button>
+  );
+}
 
 // A search box over a static option list, with each match a checkbox row (multi-select).
 function SearchCheckList({
@@ -780,6 +906,8 @@ function SearchCheckList({
     ...matches.filter((option) => !selectedSet.has(option.value)),
   ];
   const shown = ordered.slice(0, 50);
+  // At the cap, unpicked options go inert rather than silently no-oping when clicked.
+  const atCap = selected.length >= FILTER_VALUE_MAX;
 
   return (
     <div>
@@ -788,23 +916,20 @@ function SearchCheckList({
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
           return (
-            <button
+            <CheckOption
               key={option.value}
-              type="button"
-              onClick={() => onToggle(option.value)}
-              aria-pressed={checked}
-              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
-            >
-              <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
-                <Flag code={option.code} />
-                <span className="min-w-0 truncate">{option.label}</span>
-              </span>
-              <FilterCheckbox checked={checked} />
-            </button>
+              option={option}
+              checked={checked}
+              disabled={atCap && !checked}
+              onToggle={onToggle}
+            />
           );
         })}
         {shown.length === 0 && (
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>
+        )}
+        {atCap && (
+          <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">{FILTER_VALUE_MAX} at a time — unselect one to add another.</p>
         )}
         {ordered.length > shown.length && (
           <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">Keep typing to narrow {ordered.length - shown.length} more…</p>
@@ -1327,52 +1452,6 @@ function FilterDropdown({
 
 // A searchable single-select list (Country): one value, a checkmark on the chosen row; clicking the
 // chosen row clears it.
-function SearchSelectList({
-  options,
-  value,
-  onChange,
-}: {
-  options: readonly { label: string; value: string; code?: string }[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const term = query.trim().toLowerCase();
-  const matches = term ? options.filter((option) => option.label.toLowerCase().includes(term)) : options;
-  const selected = options.find((option) => option.value === value);
-  const ordered = selected && !matches.some((option) => option.value === value) ? [selected, ...matches] : matches;
-  const shown = ordered.slice(0, 60);
-
-  return (
-    <div>
-      <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search countries" />
-      <ScrollShadow className="mt-1 max-h-64 t-resize">
-        {shown.map((option) => {
-          const checked = option.value === value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(checked ? "" : option.value)}
-              aria-pressed={checked}
-              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--control-hover)] ${checked ? "bg-[var(--accent-wash)]" : ""}`}
-            >
-              <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
-                <Flag code={option.code} />
-                <span className="min-w-0 truncate">{option.label}</span>
-              </span>
-              {checked && (
-                <svg viewBox="0 0 16 16" aria-hidden="true" className="size-4 shrink-0 text-[var(--accent-strong)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
-              )}
-            </button>
-          );
-        })}
-        {shown.length === 0 && <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>}
-      </ScrollShadow>
-    </div>
-  );
-}
-
 // The filter row: an independent dropdown per filter, then the Search field and the date pill on
 // the right.
 function FilterDropdownBar({
@@ -1398,7 +1477,7 @@ function FilterDropdownBar({
         <SidebarPills options={options("workplace")} selected={filters.workplace} onToggle={(value) => toggle("workplace", value)} glyph="globe" />
       </FilterDropdown>
       <FilterDropdown Icon={IconCountryF} label="Country">
-        <SearchSelectList options={countryOptions} value={filters.country} onChange={(value) => update({ country: value })} />
+        <SearchCheckList options={countryOptions} selected={filters.country} onToggle={(value) => toggle("country", value)} searchLabel="Search countries" />
       </FilterDropdown>
       <FilterDropdown Icon={IconIndustryF} label="Industry">
         <SearchCheckList options={options("industry")} selected={filters.industry} onToggle={(value) => toggle("industry", value)} searchLabel="Search industries" />
@@ -1616,6 +1695,10 @@ function JobCells({
   // Relative label only once `now` is set on the client (0 during SSR -> null -> the absolute date
   // renders, matching the server markup).
   const relative = postedDate && now ? relativePosted(postedDate, now) : null;
+  // Three columns crop their text at the cell edge; each gets the full value back on hover/focus.
+  const titleTip = useTruncationTip(job.title);
+  const companyTip = useTruncationTip(job.company);
+  const locationTip = useTruncationTip(job.location);
 
   return (
     <>
@@ -1623,9 +1706,10 @@ function JobCells({
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
           <div className="min-w-0">
-            <span className="tip block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]" data-tip={job.title}>
+            <span {...titleTip.tipProps} className="block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]">
               {job.title}
             </span>
+            {titleTip.tip}
             <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
               <button
                 type="button"
@@ -1642,14 +1726,17 @@ function JobCells({
               <button
                 type="button"
                 onClick={() => onFilter({ company: job.company })}
-                title={`Show only jobs at ${job.company}`}
+                // The native title explains what clicking does; it is dropped while the truncation
+                // tooltip is up so the two never stack on the same element.
+                title={companyTip.open ? undefined : `Show only jobs at ${job.company}`}
                 // The 52% cap existed to leave room for the category beside it; with that gone the
                 // company gets the whole line, so names stop truncating for no reason.
-                data-tip={job.company}
-                className="tip -mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                {...companyTip.tipProps}
+                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
+              {companyTip.tip}
 
             </span>
           </div>
@@ -1670,13 +1757,14 @@ function JobCells({
               // Filtering by the resolved city is far more useful than the raw string, which is
               // often a full address that would match only this one posting.
               onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: job.location }))}
-              title={job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
-              data-tip={job.location}
-              className="tip -mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
+              {...locationTip.tipProps}
+              className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
             >
               {job.location}
             </button>
           )}
+          {locationTip.tip}
         </span>
       </td>
       <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted-strong)]">

@@ -118,6 +118,19 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /<DateDropdown/);
   assert.doesNotMatch(explorer, /<Select\.Trigger/);
   assert.match(explorer, /watchlistOnly/);
+  // Cropped values get their full text back on hover/focus. The tooltip is portalled to <body> and
+  // measures the element first: the previous ::after version was clipped out of existence by the
+  // same overflow:hidden that truncated the text, and it fired on values that were never cropped.
+  assert.match(explorer, /useTruncationTip/);
+  assert.match(explorer, /createPortal/);
+  assert.match(explorer, /scrollWidth <= el\.clientWidth/);
+  assert.match(styles, /\.tip-bubble/);
+  assert.doesNotMatch(explorer, /data-tip/);
+  // Country is a multi-select like industry: the API already read it as a comma-separated set.
+  assert.match(explorer, /country: string\[\]/);
+  assert.match(explorer, /selected=\{filters\.country\}/);
+  assert.match(explorer, /FILTER_VALUE_MAX/);
+  assert.doesNotMatch(explorer, /SearchSelectList/);
   // A failed fetch is a visible, retryable state rather than a console message: the first page gets
   // an error panel, a stale-results banner, and infinite scroll keeps its cursor so it can retry.
   assert.match(explorer, /Couldn&rsquo;t load jobs/);
