@@ -15,6 +15,25 @@ on:
         required: false
         default: "24"
         type: string
+      # A re-scan is a real operation, not a one-off deletion of the ledger. The parser can change
+      # in ways that make an already-covered page worth reading again -- isSharedHostIdentifier used
+      # to reject any board slug containing a space, so every Ashby board registered under its
+      # display name (jobs.ashbyhq.com/Solana%20Foundation, 9 open roles) was discarded at parse
+      # time on pages this ledger then marked covered forever. Turning resume off is how those pages
+      # get re-read, and it belongs here rather than in a commit that wipes the ledger.
+      resume:
+        description: "Skip pages already in the coverage ledger. Set false to re-scan after a parser fix."
+        required: false
+        default: true
+        type: boolean
+      # Narrow a re-scan to the providers a fix actually touches. The six that share a host and go
+      # through isSharedHostIdentifier are ashby, greenhouse, lever, gem, rippling, smartrecruiters;
+      # re-scanning workday or icims for a slug fix would burn hours for nothing.
+      providers:
+        description: 'JSON array of providers, e.g. ["ashby","greenhouse"]. Empty runs all twelve.'
+        required: false
+        default: ""
+        type: string
 
 concurrency:
   group: ats-company-discovery
@@ -42,7 +61,7 @@ jobs:
       # the resumable coverage ledger means later shards lose nothing by waiting.
       max-parallel: 3
       matrix:
-        provider: [icims, workday, greenhouse, lever, bamboohr, ashby, paylocity, gem, getro, sparkhire, rippling, smartrecruiters]
+        provider: ${{ fromJSON(inputs.providers != '' && inputs.providers || '["icims","workday","greenhouse","lever","bamboohr","ashby","paylocity","gem","getro","sparkhire","rippling","smartrecruiters"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,7 +77,7 @@ jobs:
             --max-pages 25 \
             --max-urls-per-target 100000 \
             --merge-existing false \
-            --resume-discovery true \
+            --resume-discovery "${{ inputs.resume == false && 'false' || 'true' }}" \
             --output "data/shard-${{ matrix.provider }}.json" \
             --discovery-state "data/discovery-state.json"
 
