@@ -884,7 +884,13 @@ async function fetchPaylocityJobs(candidate, request) {
   const companyLogoUrl = typeof payload.LogoUrl === "string" && payload.LogoUrl
     ? new URL(payload.LogoUrl, "https://recruiting.paylocity.com").href
     : null;
-  return payload.Jobs.map((job) => ({ ...job, __companyLogoUrl: companyLogoUrl }));
+  // The employer's real name, which pageData has carried all along and nothing read. Paylocity
+  // boards are keyed by a bare GUID, so without this all 95,507 of their active postings had no
+  // company_name at all and fell back to the identifier -- rendering as an invented "Paylocity
+  // employer 54C656" that no column contained and no filter could match. The board keyed
+  // 54c656b3-6cbc-4b60-a7c1-1a4b0c4ded38 is Toyota Sunnyvale, and says so in ModuleTitle.
+  const companyName = cleanString(payload.ModuleTitle);
+  return payload.Jobs.map((job) => ({ ...job, __companyLogoUrl: companyLogoUrl, __companyName: companyName }));
 }
 
 function normalizeLeverJob(candidate, job, syncedAt) {
@@ -1133,6 +1139,7 @@ function normalizePaylocityJob(candidate, job, syncedAt) {
     : candidate.boardUrl;
   return normalizedJob(candidate, syncedAt, {
     sourceId: job.JobId || `${job.JobTitle}|${location}`,
+    companyName: decodeHtml(job.__companyName),
     companyLogoUrl: job.__companyLogoUrl,
     title: decodeHtml(job.JobTitle),
     location: decodeHtml(location),

@@ -7,12 +7,35 @@
   --surface: #ffffff;
   --control: #ffffff;
   --control-hover: #f7f7fb;
+  /* One step below --control-hover, for a control that is held rather than merely pointed at: the
+     search field's hover, an open dropdown pill. */
+  --control-active: #ececf4;
   --row-hover: #f7f7fb;
   --border: #e6e7e9;
   --border-soft: #ededf2;
+  /* Icon grey, deliberately lighter than --muted: a 16px filled glyph beside a label reads heavier
+     than text set at the same value, so matching them makes the glyph shout. Decoration next to a
+     labelled control, so 3:1 rather than 4.5:1 is the bar it answers to (4.06:1 on --canvas). */
+  --glyph: #868990;
+  /* The only non-brand hue on the page: a failure notice, which must not be pink -- the accent is
+     what the page uses to mean "this is your filter", and a red-adjacent message means the opposite.
+     #8a1f1f on #fff4f4 is 8.1:1. */
+  --danger-wash: #fff4f4;
+  --danger-ink: #8a1f1f;
   --ink: #16161a;
-  --muted-strong: rgba(60, 60, 67, 0.78);
-  --muted: rgba(60, 60, 67, 0.6);
+  /* The two greys carry real body copy — the location column, the source label, the empty state,
+     "Location not specified" — so they answer to 4.5:1, not to the 3:1 that decoration gets.
+     At 0.6, --muted composited to rgb(137,137,141) for a relative luminance of 0.251 and a
+     contrast of 3.43:1 on --canvas: a fail, on ordinary sentences, in the default theme.
+     Raising it alone would have closed the gap to --muted-strong to six alpha points and flattened
+     three levels of hierarchy into two, so both moved. Measured against the DARKEST ground either
+     one sits on (--control-hover #f7f7fb, the table header):
+       --muted        rgb(109,109,115)   4.84:1
+       --muted-strong rgb( 83, 83, 90)   7.34:1
+       --ink          #16161a           16.9:1
+     Three steps, each clearly separated, each passing. */
+  --muted-strong: rgba(60, 60, 67, 0.88);
+  --muted: rgba(60, 60, 67, 0.74);
   /* Pink is the primary. --accent is the brand hue (decorative surfaces, focus ring);
      --accent-strong is the text-safe shade — it carries ~4.9:1 on --accent-wash, which the brand
      pink itself does not. */

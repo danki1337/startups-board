@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { companyDisplayExpression, humanizeIdentifier } from "./company-name.mjs";
 
 const SCHEMA = `
 PRAGMA busy_timeout = 5000;
@@ -609,10 +610,8 @@ function addSetCondition(conditions, column, value, normalize = (input) => input
 export async function queryCompanySuggestions(query, databasePath = "data/jobs.db", limit = 50) {
   const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
   const cap = clampInteger(limit, 50, 1, 1000);
-  // The display name, matching what the D1 aggregate groups on: the provider's name when there is
-  // one, otherwise the tenant segment of a piped Workday identifier.
-  const display = `coalesce(nullif(company_name, ''), CASE WHEN instr(company_identifier, '|') > 0
-      THEN substr(company_identifier, 1, instr(company_identifier, '|') - 1) ELSE company_identifier END)`;
+  // The shared display expression, so the local dropdown offers exactly what the D1 one does.
+  const display = companyDisplayExpression();
   const where = term.length >= 2 ? `AND lower(${display}) LIKE ${sqlLike(term)} ESCAPE '\\'` : "";
   const rows = await querySqlite(resolve(databasePath), `
     SELECT ${display} AS company, count(*) AS jobCount, max(company_logo_url) AS logoUrl
@@ -624,7 +623,7 @@ export async function queryCompanySuggestions(query, databasePath = "data/jobs.d
   `);
   return rows.map((row) => ({
     company: /[a-z]/.test(row.company) && !/\s/.test(row.company)
-      ? String(row.company).replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+      ? humanizeIdentifier(String(row.company), "")
       : row.company,
     jobCount: Number(row.jobCount),
     logoUrl: row.logoUrl ?? null,

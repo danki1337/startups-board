@@ -155,7 +155,10 @@ const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
 function Flag({ code }: { code?: string | null }) {
   const cc = (code ?? "").trim().toLowerCase();
   const [failed, setFailed] = useState(false);
-  if (cc.length !== 2) return null;
+  // Two ASCII letters, not merely two characters. `code` is job.country, ingested from a dozen ATS
+  // payloads, and it goes straight into a remote URL below -- so what it is allowed to contain has
+  // to be stated here rather than assumed of every upstream normalizer forever.
+  if (!/^[a-z]{2}$/.test(cc)) return null;
   if (failed) {
     return <span aria-hidden="true" className="text-[13px] leading-none">{countryFlag(cc) ?? ""}</span>;
   }
@@ -593,7 +596,7 @@ export function JobsExplorer({
     {correctionNote}
     <div className={`row-collapse ${error && jobs.length > 0 ? "is-open" : ""}`}>
       <div inert={error && jobs.length > 0 ? undefined : true}>
-        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[#FFF4F4] px-3 py-2 text-[13px] text-[#8A1F1F]">
+        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--danger-wash)] px-3 py-2 text-[13px] text-[var(--danger-ink)]">
           <span>These results may be out of date &mdash; the last refresh failed.</span>
           <button
             type="button"
@@ -825,17 +828,9 @@ function LineIcon({ children }: { children: React.ReactNode }) {
     </svg>
   );
 }
-const IconLocate = () => <LineIcon><circle cx="8" cy="8" r="4" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" /><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" /></LineIcon>;
-const IconPin = () => <LineIcon><path d="M8 14s4.5-4 4.5-7A4.5 4.5 0 0 0 3.5 7c0 3 4.5 7 4.5 7Z" /><circle cx="8" cy="6.8" r="1.6" /></LineIcon>;
 const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
-const IconCalendar = () => <LineIcon><rect x="2.5" y="3.5" width="11" height="10" rx="2" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" /></LineIcon>;
 const IconUpDown = () => <LineIcon><path d="M5.5 6.5 8 4l2.5 2.5M5.5 9.5 8 12l2.5-2.5" /></LineIcon>;
 const IconUser = () => <LineIcon><circle cx="8" cy="5.3" r="2.4" /><path d="M3.5 13.5c0-2.4 2-3.9 4.5-3.9s4.5 1.5 4.5 3.9" /></LineIcon>;
-const IconIndustry = () => <LineIcon><path d="M2 13.5V8l3 1.6V8l3 1.6V5.5l3.5 2v6z" /><path d="M2 13.5h11.5" /></LineIcon>;
-const IconWorkplace = () => <LineIcon><rect x="3" y="2.5" width="6" height="11" rx="1" /><path d="M5.2 5h1.6M5.2 7.3h1.6M5.2 9.6h1.6" /><path d="M9 6.5h3.5v7H9" /><path d="M10.7 9h.01M10.7 11h.01" /></LineIcon>;
-const IconJobType = () => <LineIcon><circle cx="6" cy="5" r="2.2" /><path d="M2.5 12.6c0-2 1.6-3.4 3.5-3.4c.6 0 1.2.1 1.7.4" /><circle cx="11" cy="10.5" r="3" /><path d="M11 9.3v1.3l1 .6" /></LineIcon>;
-const IconAts = () => <LineIcon><path d="M4.5 2.5h4l3 3v8h-7z" /><path d="M8.5 2.5v3h3" /><circle cx="8" cy="9.5" r="1.6" /></LineIcon>;
-const IconGlobe = () => <LineIcon><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5Z" /></LineIcon>;
 
 // ---- Overlay scrollbar -----------------------------------------------------------------------
 // Every scroll box here sits inside a rounded, clipped container, and a native scrollbar cannot live
@@ -1465,7 +1460,7 @@ function SidebarPills({
                 <AtsMark source={option.value} size={4} />
               </span>
             )}
-            {OptionIcon && <span className={checked ? "" : "text-[#868990]"}><OptionIcon /></span>}
+            {OptionIcon && <span className={checked ? "" : "text-[var(--glyph)]"}><OptionIcon /></span>}
             {option.label}
           </button>
         );
@@ -1512,7 +1507,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
-          <span className="inline-flex [&>svg]:size-5 text-[#868990]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
+          <span className="inline-flex [&>svg]:size-5 text-[var(--glyph)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
         )}
         {chip.kind === "source" && (
           <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
@@ -1645,7 +1640,7 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 // actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
 // value -- below 0.95 it reads as the button flinching.
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[#F5F5FA] active:bg-[#F5F5FA] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // A scrollable box that fades its own content at whichever edge still has more to scroll, so a long
 // option list reads as continuing rather than ending. Driven off scroll position rather than a
@@ -1740,8 +1735,8 @@ function SearchBox({
     inputRef.current?.focus({ preventScroll: true });
   }, [focusOnMount]);
   const shell = full
-    ? "w-full bg-[#F5F5FA] hover:bg-[#ECECF4] focus-within:bg-[#F5F5FA] focus-within:shadow-[inset_0_0_0_1.5px_#FF73E5]"
-    : "w-[231px] bg-white shadow-[var(--shadow-control)] hover:bg-[#F5F5FA] focus-within:bg-[#F5F5FA] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]";
+    ? "w-full bg-[var(--control-hover)] hover:bg-[var(--control-active)] focus-within:bg-[var(--control-hover)] focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]"
+    : "w-[231px] bg-white shadow-[var(--shadow-control)] hover:bg-[var(--control-hover)] focus-within:bg-[var(--control-hover)] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_var(--accent)]";
   return (
     <label className={`flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
       <IconSearchGlyph />
@@ -1835,7 +1830,7 @@ function FilterDropdown({
         aria-haspopup="dialog"
         // An open dropdown carries the same focused treatment as the search field, so the pill the
         // panel belongs to is obvious when several sit side by side.
-        className={`${V4_PILL} ${open ? "bg-[#F5F5FA] shadow-[var(--shadow-control),inset_0_0_0_1.5px_#FF73E5]" : ""}`}
+        className={`${V4_PILL} ${open ? "bg-[var(--control-hover)] shadow-[var(--shadow-control),inset_0_0_0_1.5px_var(--accent)]" : ""}`}
       >
         <Icon />
         <span>{label}</span>
@@ -2140,9 +2135,24 @@ function JobCells({
         <div className="flex min-w-0 items-center gap-3">
           <CompanyLogo job={job} />
           <div className="min-w-0">
-            <span {...titleTip.tipProps} className="job-role-line block truncate text-sm font-semibold tracking-[-0.01em] text-[var(--ink)]">
+            {/* A real anchor, which is the only thing on this row that opens the posting for anyone
+                not using a mouse. The whole action used to be an onClick on the <tr>: no tabIndex,
+                no role, no key handler, so a keyboard user could reach the star, the company and the
+                location and had no way at all to reach the job -- the one thing the page is for.
+                That is WCAG 2.1.1 at level A. It also meant 1.24M postings had no href for a crawler
+                to follow.
+                A <td> may legally contain an anchor; it is wrapping the <tr> that is not allowed,
+                which is what VirtuosoRow's comment is about. The row's own click handler already
+                defers to anything inside it matching "a,button", so the two do not fight. */}
+            <a
+              {...titleTip.tipProps}
+              href={job.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="job-role-line block truncate rounded-sm text-sm font-semibold tracking-[-0.01em] text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+            >
               {job.title}
-            </span>
+            </a>
             {titleTip.tip}
             <span className="job-meta-line flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
               <button
@@ -2349,7 +2359,7 @@ function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value
   if (!value) return null;
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      {Icon && <span className="inline-flex shrink-0 text-[#868990] [&>svg]:size-4"><Icon /></span>}
+      {Icon && <span className="inline-flex shrink-0 text-[var(--glyph)] [&>svg]:size-4"><Icon /></span>}
       <span className="min-w-0 truncate">{value}</span>
     </span>
   );

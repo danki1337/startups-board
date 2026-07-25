@@ -1,6 +1,11 @@
 import { getD1 } from "../db";
 import type { Job } from "./jobs";
 import { countryFlag } from "./countries";
+import {
+  companyMatchExpression,
+  humanizeIdentifier,
+  normalizeCompanyValue,
+} from "../../src/company-name.mjs";
 
 // Shared by the /api/jobs route and the server-rendered first page, so the initial paint and every
 // subsequent fetch apply exactly the same filter semantics. Previously the page shipped a 12-row
@@ -166,7 +171,18 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       bindings.push(`%${term}%`, `%${term}%`);
     }
   }
-  addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", params.get("location"));
+  // Narrowed through FTS first, exactly as title and company are, and for the same reason -- this
+  // was the last unindexed filter left, and the slowest: ?location=new%20york took 3.5s against
+  // 0.52s for the indexed ?city=Berlin, because a leading-wildcard LIKE over an expression cannot
+  // use any index and the accompanying count has nothing to stop at. jobs_fts has indexed the
+  // location column since the first migration; it was simply never used.
+  const locationValue = params.get("location");
+  const locationMatch = locationFtsQuery(locationValue);
+  if (locationMatch) {
+    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
+    bindings.push(locationMatch);
+  }
+  addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", locationValue);
   // Narrowed through the FTS index first, exactly as the title filter is, and for the same reason:
   // a leading-wildcard LIKE over an expression cannot use any index, so this was a full scan of
   // every active row. Measured on production, ?company=Revolut took 13.4s and ?company=Stripe 3.8s
@@ -278,7 +294,13 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const offset = isSearch && cursor && "offset" in cursor
     ? Math.max(0, Math.min(cursor.offset, SEARCH_RESULT_CAP))
     : 0;
-  if (!isSearch && cursor && "key" in cursor) pushCursorCondition(conditions, bindings, sort, cursor);
+  // Named, because the count below has to strip exactly the clause this pushes and nothing else. It
+  // used to re-derive the answer as `!isSearch && cursor`, which is a different question: hand a
+  // browse request an OFFSET cursor -- clear the search box while paging, or share that URL -- and
+  // the count sliced off a genuine filter instead. Harmless today only because a cursor also turns
+  // the count off; a trap for whoever changes either line next.
+  const hasKeysetCursor = !isSearch && cursor !== null && "key" in cursor;
+  if (hasKeysetCursor) pushCursorCondition(conditions, bindings, sort, cursor as KeysetCursor);
 
   const limit = clampInteger(params.get("limit"), 100, 1, 100);
   const where = conditions.join(" AND ");
@@ -345,7 +367,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // subquery) and reported as "N+"; browse counts stay exact and index-backed. The count inherits
   // the `filtered()` markers from `conditions`, which is what keeps a filtered search's count on the
   // FTS-driven plan rather than the pathological per-row-probe one.
-  const countConditions = conditions.slice(0, !isSearch && cursor ? -1 : undefined);
+  const countConditions = hasKeysetCursor ? conditions.slice(0, -1) : conditions;
   const countWhere = countConditions.join(" AND ");
   const countBindings = bindings.slice(0, filterBindingCount);
   const count = isSearch
@@ -436,6 +458,12 @@ function nextCursor(
   // tail so those jobs stay reachable. Restricted to dated cursor pages so nulls are never re-fetched.
   if (sort === "newest" && cursor !== null && cursor.value !== null) {
     return encodeCursor({ value: null, key: "" });
+  }
+  // The mirror image for the ascending sort: the undated group comes first there, so a short page
+  // inside it hands off to the dates rather than the other way round. "" is the sentinel
+  // pushCursorCondition reads as "dated rows, from the beginning".
+  if (sort === "oldest" && cursor !== null && cursor.value === null) {
+    return encodeCursor({ value: "", key: "" });
   }
   return null;
 }
@@ -611,8 +639,12 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
 // looks like it filtered to something else.
 function prettyCompanies(rows: unknown[]) {
   return (rows as { company: string; jobCount: number; logoUrl: string | null }[]).map((row) => ({
+    // Through the shared humanizer, and with no provider: the aggregate's own SQL has already
+    // stripped the provider-specific packaging (the Workday tenant pipe, the iCIMS careers prefix),
+    // so all that is left here is reading separators as spaces -- and reading them the same way the
+    // table does, which is the whole point of the shared module.
     company: /[a-z]/.test(row.company) && !/\s/.test(row.company)
-      ? row.company.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+      ? humanizeIdentifier(row.company, "")
       : row.company,
     jobCount: row.jobCount,
     logoUrl: row.logoUrl ?? null,
@@ -620,7 +652,12 @@ function prettyCompanies(rows: unknown[]) {
 }
 
 function orderBy(sort: SortOption) {
-  if (sort === "oldest") return "coalesce(j.published_at, '') ASC, j.key";
+  // Raw column, and a DESCENDING key tiebreak, so that (is_active, published_at DESC, key) can be
+  // walked backwards and satisfy this outright. The coalesce bought nothing -- SQLite already orders
+  // NULLs first in ASC, exactly where coalesce(…, '') put them -- and cost everything: an expression
+  // is not the indexed column, so this ordering was a full sort of 1.24M rows and ?sort=oldest was
+  // the slowest request the API served, at 5.9s.
+  if (sort === "oldest") return "j.published_at ASC, j.key DESC";
   if (sort === "company") return "lower(coalesce(j.company_name, j.company_identifier)) ASC, j.key";
   // Raw column (not coalesce) so the (is_active, published_at DESC, key) index satisfies the sort
   // with a covering scan instead of reading and sorting the whole table. SQLite orders NULLs last in
@@ -631,7 +668,7 @@ function orderBy(sort: SortOption) {
 // orderBy re-expressed over the outer query's aliased columns, so the join-for-logo wrapper restores
 // the exact browse order the inner subquery produced.
 function baseOrderBy(sort: SortOption) {
-  if (sort === "oldest") return "coalesce(base.publishedAt, '') ASC, base.key";
+  if (sort === "oldest") return "base.publishedAt ASC, base.key DESC";
   if (sort === "company") return "lower(coalesce(base.companyName, base.companyIdentifier)) ASC, base.key";
   return "base.publishedAt DESC, base.key";
 }
@@ -657,35 +694,62 @@ function pushCursorCondition(
     }
     return;
   }
-  const column = sort === "company"
-    ? "lower(coalesce(j.company_name, j.company_identifier))"
-    : "coalesce(j.published_at, '')";
+  // The same two phases as newest, inverted: ascending puts the NULL-dated rows FIRST, so phase one
+  // is the tail of that group and phase two the dates. The key tiebreak is `<` because the ordering
+  // above walks the index backwards, which reverses the key within a tie.
+  if (sort === "oldest") {
+    if (cursor.value === null) {
+      conditions.push("(j.published_at IS NULL AND j.key < ?)");
+      bindings.push(cursor.key);
+    } else if (cursor.value === "") {
+      // The handoff sentinel written by nextCursor when the NULL group runs out: every real date is
+      // greater than the empty string, and NULL compares to nothing, so this is exactly "the dated
+      // rows, from the beginning".
+      conditions.push("j.published_at IS NOT NULL");
+    } else {
+      conditions.push("(j.published_at > ? OR (j.published_at = ? AND j.key < ?))");
+      bindings.push(cursor.value, cursor.value, cursor.key);
+    }
+    return;
+  }
+  const column = "lower(coalesce(j.company_name, j.company_identifier))";
   conditions.push(`(${column} > ? OR (${column} = ? AND j.key > ?))`);
   bindings.push(cursor.value ?? "", cursor.value ?? "", cursor.key);
 }
 
 function sortValue(row: JobRow, sort: SortOption): string | null {
   if (sort === "company") return (row.companyName || row.companyIdentifier || "").toLowerCase();
-  if (sort === "newest") return row.publishedAt ?? null; // null preserved so the cursor knows the tail
-  return row.publishedAt ?? "";
+  // null preserved in both date sorts so the cursor knows which phase it is in -- the undated group
+  // leads in `oldest` and trails in `newest`, and either way it is walked by key alone.
+  return row.publishedAt ?? null;
 }
 
-// Column-scoped FTS terms for the title filter. Same tokenizer rules as ftsQuery so the terms match
-// what the index actually holds, but not prefix-matched: the title filter is an exact phrase the
-// user picked from a list, not something they are still typing.
-// The company name as the UI shows it: the provider's name when there is one, otherwise the tenant
-// segment of the identifier. Lower-cased with separators flattened to spaces, so "acme-corp",
-// "acme_corp" and the "Acme Corp" the dropdown displays all compare equal.
-const COMPANY_DISPLAY_SQL = `lower(replace(replace(replace(
-  coalesce(
-    nullif(j.company_name, ''),
-    CASE WHEN instr(j.company_identifier, '|') > 0
-         THEN substr(j.company_identifier, 1, instr(j.company_identifier, '|') - 1)
-         ELSE j.company_identifier END
-  ), '-', ' '), '_', ' '), '.', ' '))`;
+// The company name as the UI shows it, reduced to its comparison form. Imported rather than written
+// out here: this expression and the humanizeIdentifier that produces the value it is compared
+// against were two independent implementations of one idea, and they disagreed for 25% of the index
+// (see src/company-name.mjs).
+const COMPANY_DISPLAY_SQL = companyMatchExpression("j");
 
-function normalizeCompanyValue(value: string) {
-  return value.trim().toLowerCase().replace(/[._-]+/g, " ");
+// Column-scoped FTS narrowing, shared by the title, company and location filters. Each of the three
+// is a substring LIKE over an expression, which means a leading wildcard and therefore a scan of
+// every active row; running the FTS index in front of it is what turns that back into a seek. The
+// LIKE always stays, as the exactness check -- FTS ignores word order and punctuation, so it
+// narrows correctly but does not decide correctly.
+//
+// `prefixLast` prefix-matches the final token, for the filters whose value can be partially typed.
+// Returns null when nothing usable is left, in which case the caller keeps its LIKE alone and
+// accepts the scan rather than silently matching nothing.
+function columnFtsQuery(columns: string, value: string | null, prefixLast: boolean) {
+  const raw = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  // Single-character tokens are dropped: a bare "a" prefix-matches almost everything, which is both
+  // useless and pathologically slow. The exception is a value that IS one character -- there is no
+  // longer token to fall back on, and one prefix term still narrows far below a whole-table scan.
+  const tokens = (raw.length === 1 && raw[0].length === 1 ? raw : raw.filter((token) => token.length >= 2))
+    .slice(0, 8);
+  if (!tokens.length) return null;
+  const phrases = tokens.map((token, index) =>
+    prefixLast && index === tokens.length - 1 ? `"${token}"*` : `"${token}"`);
+  return `${columns}:(${phrases.join(" AND ")})`;
 }
 
 // Company names are matched across BOTH indexed company columns -- the display name when a provider
@@ -693,28 +757,33 @@ function normalizeCompanyValue(value: string) {
 // still narrows correctly (a hand-typed ?company=revolut has to keep reaching Revolut), and the
 // LIKE that follows removes anything the widening let through.
 function companyFtsQuery(value: string | null) {
-  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => token.length >= 2)
-    .slice(0, 8) ?? [];
-  if (!tokens.length) return null;
-  const phrases = tokens.map((token, index) =>
-    index === tokens.length - 1 ? `"${token}"*` : `"${token}"`);
-  return `{company_identifier company_name}:(${phrases.join(" AND ")})`;
+  return columnFtsQuery("{company_identifier company_name}", value, true);
 }
 
+// Not prefix-matched: the title filter is an exact phrase the user picked from a list, not something
+// they are still typing.
 function titleFtsQuery(value: string | null) {
-  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => token.length >= 2)
-    .slice(0, 8) ?? [];
-  if (!tokens.length) return null;
-  return `title:(${tokens.map((token) => `"${token}"`).join(" AND ")})`;
+  return columnFtsQuery("title", value, false);
+}
+
+// Prefix-matched, because unlike title and company this value is not always picked from a list -- a
+// click on a row's location supplies the whole string, but a hand-typed ?location=berl has to keep
+// reaching Berlin.
+function locationFtsQuery(value: string | null) {
+  return columnFtsQuery("location", value, true);
 }
 
 function addLikeFilter(conditions: string[], bindings: unknown[], column: string, value: string | null) {
   const normalized = value?.trim().toLowerCase().slice(0, 48);
   if (!normalized) return;
-  conditions.push(`${column} LIKE ?`);
-  bindings.push(`%${normalized}%`);
+  // ESCAPE, which the two suggestion queries have always had and this one never did. Without it the
+  // caller's value is not matched, it is EXECUTED: ?location=%25 returned all 1,240,216 active rows
+  // and ?location=_aris was byte-for-byte the same response as ?location=paris. It also made
+  // ?title=%25 the most expensive statement the API can be asked for -- a full scan plus an
+  // unbounded count over the whole table -- from a URL anyone can type.
+  const escaped = normalized.replace(/[\\%_]/g, (character) => `\\${character}`);
+  conditions.push(`${column} LIKE ? ESCAPE '\\'`);
+  bindings.push(`%${escaped}%`);
 }
 
 function addSetFilter(
@@ -883,16 +952,6 @@ function toPublicJob(job: JobRow): PublicJob {
     skills: [],
     url: job.url,
   };
-}
-
-function humanizeIdentifier(value: string, provider: string) {
-  let identifier = value || "Unknown company";
-  if (provider === "workday") identifier = identifier.split("|")[0];
-  if (provider === "icims") identifier = identifier.replace(/^(?:careers|jobs)[.-]/i, "");
-  if (provider === "paylocity" && /^[a-f0-9-]{8,}$/i.test(identifier)) {
-    return `Paylocity employer ${identifier.slice(0, 6).toUpperCase()}`;
-  }
-  return identifier.replace(/^www\./, "").replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function initials(value: string) {

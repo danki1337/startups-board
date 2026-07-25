@@ -97,6 +97,11 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /Berlin, Germany/);
   assert.doesNotMatch(html, /Find the work|worth doing|How the index works/i);
   assert.doesNotMatch(html, /Sample data|Demo fallback/i);
+  // The posting is reachable without a mouse, and reachable by a crawler. Opening a job used to be
+  // an onClick on the <tr> with no tabIndex, no role and no key handler -- so a keyboard user could
+  // reach the watchlist star, the company and the location and had no way at all to reach the job,
+  // which is WCAG 2.1.1 at level A. It also meant 1.24M postings carried no href.
+  assert.match(html, /<a[^>]+href="https:\/\/job-boards\.greenhouse\.io\/acme\/jobs\/1"[^>]*>Staff Platform Engineer</);
 });
 
 testWithBuild("keeps HeroUI controls and table-first filters", async () => {
@@ -196,6 +201,18 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);
   assert.match(packageJson, /"react-virtuoso"/);
+  // The two greys carry body copy, so they answer to 4.5:1. At 0.6 --muted composited to
+  // rgb(137,137,141) for 3.43:1 on --canvas -- a fail, on ordinary sentences.
+  assert.match(styles, /--muted: rgba\(60, 60, 67, 0\.74\)/);
+  assert.match(styles, /--muted-strong: rgba\(60, 60, 67, 0\.88\)/);
+  // The previous accent survived the palette change in three focus rings because it sat INSIDE a
+  // shadow-[...] arbitrary value, which the colour rule's regex did not reach into. Both the rule
+  // and the rings are fixed; this pins the rings.
+  assert.doesNotMatch(explorer, /#FF73E5/i);
+  // A social card at last: the image had been sitting unreferenced in public/, so every link to the
+  // site anywhere unfurled as a bare URL.
+  assert.match(layout, /openGraph/);
+  assert.match(layout, /startups-board-og\.png/);
 });
 
 testWithBuild("ranks text search by relevance with a bounded count", async () => {

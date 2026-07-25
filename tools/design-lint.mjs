@@ -64,16 +64,24 @@ function lintSource(file, tokens) {
 
     // R1/R2 -- colour literals. An arbitrary Tailwind value carrying a hex bypasses the token
     // system entirely, so a palette change silently misses it.
-    for (const match of brandAsset ? [] : text.matchAll(/\[(#[0-9a-fA-F]{3,8})\]/g)) {
-      const hex = match[1].toLowerCase();
+    //
+    // Anywhere INSIDE the brackets, not filling them. The pattern used to be `\[(#hex)\]`, which
+    // only ever saw a hex that was the whole arbitrary value -- so `text-[#868990]` was caught and
+    // `shadow-[inset_0_0_0_1.5px_#FF73E5]` was not. Three focus rings kept the previous accent pink
+    // through a change that replaced every other instance of it, and the linter whose entire job is
+    // to catch that reported them clean.
+    const arbitraryValues = brandAsset ? [] : [...text.matchAll(/\[([^\]]*)\]/g)];
+    const hexes = arbitraryValues.flatMap((value) => [...value[1].matchAll(/#[0-9a-fA-F]{3,8}\b/g)]);
+    for (const match of hexes) {
+      const hex = match[0].toLowerCase();
       const token = tokens.get(hex);
       if (token) {
         report("error", "token-drift", file, line,
-          `${match[1]} is already the token ${token}.`,
+          `${match[0]} is already the token ${token}.`,
           `Use var(${token}) so a palette change reaches this too.`);
       } else {
         report("warn", "untokenized-color", file, line,
-          `${match[1]} has no token in ${CSS}.`,
+          `${match[0]} has no token in ${CSS}.`,
           "Promote it to a token, or reuse the nearest existing one.");
       }
     }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
+import { companyDisplayExpression } from "../../src/company-name.mjs";
 import { INVALID_CLOSE_STRIKES, nextSyncAt } from "./config.mjs";
 
 // Providers that re-list other boards' jobs rather than hosting their own, so their snapshots are
@@ -349,16 +350,6 @@ export async function upsertDiscoveredBoards(db, boards, now = new Date().toISOS
   return inserted;
 }
 
-export async function cleanupClosedJobs(db, now = new Date().toISOString()) {
-  return db.prepare(`
-    DELETE FROM jobs WHERE key IN (
-      SELECT key FROM jobs
-      WHERE is_active = 0 AND closed_at < ?
-      LIMIT 5000
-    )
-  `).bind(isoShift(now, -30 * DAY_MS)).run();
-}
-
 export async function archiveAndCleanupClosedJobs(env, now = new Date().toISOString()) {
   const rows = await env.DB.prepare(`
     SELECT * FROM jobs
@@ -411,15 +402,11 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
     db.prepare(`
       INSERT INTO job_companies (company, job_count, logo_url, updated_at)
       SELECT
-        coalesce(
-          nullif(company_name, ''),
-          -- Workday identifiers are "tenant|wdN|site"; only the tenant is a company name, and it is
-          -- what the table renders. Grouping on the raw string would split one company across three
-          -- rows and offer a value no reader recognises.
-          CASE WHEN instr(company_identifier, '|') > 0
-               THEN substr(company_identifier, 1, instr(company_identifier, '|') - 1)
-               ELSE company_identifier END
-        ) AS company,
+        -- The shared expression, not a local copy of it. This used to be written out here AND in
+        -- jobs-query.ts, and the two drifted: this one handled the Workday tenant pipe but not the
+        -- iCIMS careers prefix, so the dropdown offered "Careers Commonspirit" (5,465 jobs) as if
+        -- that were a company. See src/company-name.mjs.
+        ${companyDisplayExpression()} AS company,
         count(*) AS job_count,
         -- One logo per company: max() over the group picks any non-null one, and every board of a
         -- company resolves to the same employer logo anyway.

@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getDatabaseStats, queryActiveJobs, queryCompanySuggestions, queryTitleSuggestions } from "./database.mjs";
 import { countryFlag } from "./locations.mjs";
+// The fourth copy of this lived here. The dev API is what the local UI reads, so a copy that drifts
+// makes local behaviour disagree with production for exactly the boards the shared module fixes.
+import { humanizeIdentifier } from "./company-name.mjs";
 
 const COMPANY_COLORS = [
   "bg-[#ebe7ff] text-[#5436a8]",
@@ -133,19 +136,6 @@ export function toPublicJob(job) {
     skills: [],
     url: job.url,
   };
-}
-
-function humanizeIdentifier(value, provider) {
-  let identifier = String(value || "Unknown company");
-  if (provider === "workday") identifier = identifier.split("|")[0];
-  if (provider === "icims") identifier = identifier.replace(/^(?:careers|jobs)[.-]/i, "");
-  if (provider === "paylocity" && /^[a-f0-9-]{8,}$/i.test(identifier)) {
-    return `Paylocity employer ${identifier.slice(0, 6).toLocaleUpperCase()}`;
-  }
-  return identifier
-    .replace(/^www\./, "")
-    .replace(/[._-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function initials(value) {
