@@ -409,7 +409,7 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
   const [, result] = await db.batch([
     db.prepare("DELETE FROM job_companies"),
     db.prepare(`
-      INSERT INTO job_companies (company, job_count, updated_at)
+      INSERT INTO job_companies (company, job_count, logo_url, updated_at)
       SELECT
         coalesce(
           nullif(company_name, ''),
@@ -420,7 +420,11 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
                THEN substr(company_identifier, 1, instr(company_identifier, '|') - 1)
                ELSE company_identifier END
         ) AS company,
-        count(*) AS job_count, ?
+        count(*) AS job_count,
+        -- One logo per company: max() over the group picks any non-null one, and every board of a
+        -- company resolves to the same employer logo anyway.
+        max(company_logo_url) AS logo_url,
+        ?
       FROM jobs
       WHERE is_active = 1 AND coalesce(nullif(company_name, ''), company_identifier) IS NOT NULL
       GROUP BY company

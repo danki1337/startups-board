@@ -73,8 +73,10 @@ const COUNT_CAP = 5000;
 // distinct title), so a longer list costs little and lets the dropdown show a real, scrollable set
 // rather than a top-30 teaser.
 const TITLE_SUGGESTION_MAX = 300;
-// Companies are a flat list with no folding, so the cap is just how many rows the popover shows.
-const COMPANY_SUGGESTION_MAX = 200;
+// Companies are a flat list with no folding, so this is only a bound on one response, not a filter
+// on what is reachable: the search box narrows 33.6k companies long before a thousand rows matter,
+// and the previous 200 made the list look arbitrarily truncated for no benefit.
+const COMPANY_SUGGESTION_MAX = 1_000;
 // D1 rejects any statement with more than 100 bound parameters.
 const D1_MAX_BIND = 100;
 // Held back for the binds appended after the filters: the three exactness patterns, posted-within,
@@ -165,7 +167,19 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     }
   }
   addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", params.get("location"));
-  addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", params.get("company"));
+  // Narrowed through the FTS index first, exactly as the title filter is, and for the same reason:
+  // a leading-wildcard LIKE over an expression cannot use any index, so this was a full scan of
+  // every active row. Measured on production, ?company=Revolut took 13.4s and ?company=Stripe 3.8s
+  // for result sets of a few hundred rows. jobs_fts already indexes both company columns.
+  const companyValue = params.get("company");
+  const companyMatch = companyFtsQuery(companyValue);
+  if (companyMatch) {
+    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
+    bindings.push(companyMatch);
+  }
+  // The LIKE stays as the exactness check: FTS matches whole tokens, so it alone would also return
+  // "Revolution Foods" for "Revolut". Narrow with the index, then filter for the real substring.
+  addLikeFilter(conditions, bindings, "lower(coalesce(j.company_name, j.company_identifier))", companyValue);
   // Role and company are separate fields: searching "stripe" as a role should not match every
   // posting at Stripe, and vice versa.
   // The title filter is a substring match, which means a leading wildcard and therefore an
@@ -563,7 +577,7 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
 
   if (term.length < 2) {
     const rows = await getD1().prepare(`
-      SELECT company, job_count AS jobCount FROM job_companies ORDER BY job_count DESC LIMIT ?
+      SELECT company, job_count AS jobCount, logo_url AS logoUrl FROM job_companies ORDER BY job_count DESC LIMIT ?
     `).bind(cap).all();
     return prettyCompanies(rows.results ?? []);
   }
@@ -572,7 +586,7 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
   // wildcard -- the same guard queryTitleSuggestions uses.
   const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
   const rows = await getD1().prepare(`
-    SELECT company, job_count AS jobCount
+    SELECT company, job_count AS jobCount, logo_url AS logoUrl
     FROM job_companies
     WHERE lower(company) LIKE ? ESCAPE '\\'
     ORDER BY CASE WHEN lower(company) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
@@ -585,11 +599,12 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
 // or "acme-corp", which the table renders titlecased -- so the dropdown must too, or picking a row
 // looks like it filtered to something else.
 function prettyCompanies(rows: unknown[]) {
-  return (rows as { company: string; jobCount: number }[]).map((row) => ({
+  return (rows as { company: string; jobCount: number; logoUrl: string | null }[]).map((row) => ({
     company: /[a-z]/.test(row.company) && !/\s/.test(row.company)
       ? row.company.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
       : row.company,
     jobCount: row.jobCount,
+    logoUrl: row.logoUrl ?? null,
   }));
 }
 
@@ -647,6 +662,20 @@ function sortValue(row: JobRow, sort: SortOption): string | null {
 // Column-scoped FTS terms for the title filter. Same tokenizer rules as ftsQuery so the terms match
 // what the index actually holds, but not prefix-matched: the title filter is an exact phrase the
 // user picked from a list, not something they are still typing.
+// Company names are matched across BOTH indexed company columns -- the display name when a provider
+// supplied one, the identifier when it did not. The final token is a prefix match so a partial name
+// still narrows correctly (a hand-typed ?company=revolut has to keep reaching Revolut), and the
+// LIKE that follows removes anything the widening let through.
+function companyFtsQuery(value: string | null) {
+  const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
+    ?.filter((token) => token.length >= 2)
+    .slice(0, 8) ?? [];
+  if (!tokens.length) return null;
+  const phrases = tokens.map((token, index) =>
+    index === tokens.length - 1 ? `"${token}"*` : `"${token}"`);
+  return `{company_identifier company_name}:(${phrases.join(" AND ")})`;
+}
+
 function titleFtsQuery(value: string | null) {
   const tokens = value?.trim().toLowerCase().match(/[\p{L}\p{N}]+/gu)
     ?.filter((token) => token.length >= 2)

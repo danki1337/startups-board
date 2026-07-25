@@ -666,12 +666,10 @@ export function JobsExplorer({
       </button>
     </p>
   ) : (
-    <p className="mt-4 text-center text-[13px] tabular-nums text-[var(--muted)]">
-      Showing {jobs.length.toLocaleString()} of {formatTotal(total, totalCapped)}
-      {/* Gate on the cursor, not jobs.length < total: a capped search shows "N+" but stops paging
-          at the relevance cap, so there is nothing more to scroll to even though jobs.length < total. */}
-      {isPaging ? " · Loading…" : cursor ? " · Scroll for more" : ""}
-    </p>
+    // Hidden: the count already sits above the table ("157,212 jobs") and "Scroll for more" told
+    // people to do the thing they were already doing. The failure branch above stays -- a paging
+    // error still needs somewhere to say so and offer a retry.
+    null
   );
 
   return (
@@ -776,6 +774,11 @@ const SCROLLBAR_INSET = 10;
 const SCROLLBAR_MIN_THUMB = 32;
 
 function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
+  // The track is measured from the RAIL, not from the scroller, because the rail starts below the
+  // sticky column header (see --jobs-header-height in globals.css) while the scroller does not.
+  // Sizing the thumb against the scroller would have made it overshoot the shorter track by exactly
+  // the header's height.
+  const rail = useRef<HTMLDivElement | null>(null);
   const [thumb, setThumb] = useState<{ top: number; height: number } | null>(null);
   const [visible, setVisible] = useState(false);
   const fade = useRef(0);
@@ -793,7 +796,8 @@ function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
     // Nothing to scroll, nothing to draw -- a track sitting over content that already fits reads as
     // an unexplained line down the edge of the card.
     if (overflow <= 1) return setThumb(null);
-    const track = clientHeight - SCROLLBAR_INSET * 2;
+    const railHeight = rail.current?.clientHeight ?? clientHeight;
+    const track = railHeight - SCROLLBAR_INSET * 2;
     const height = Math.max(SCROLLBAR_MIN_THUMB, Math.round((clientHeight / scrollHeight) * track));
     setThumb({ top: SCROLLBAR_INSET + (scrollTop / overflow) * (track - height), height });
   }, [target]);
@@ -842,7 +846,7 @@ function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
   if (!thumb) return null;
 
   return (
-    <div className="overlay-scrollbar" data-visible={visible || undefined} aria-hidden="true">
+    <div ref={rail} className="overlay-scrollbar" data-visible={visible || undefined} aria-hidden="true">
       <div
         className="overlay-scrollbar-thumb"
         style={{ top: thumb.top, height: thumb.height }}
@@ -857,7 +861,7 @@ function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
           const held = drag.current;
           const box = scroller.current;
           if (!held || !box) return;
-          const track = box.clientHeight - SCROLLBAR_INSET * 2;
+          const track = (rail.current?.clientHeight ?? box.clientHeight) - SCROLLBAR_INSET * 2;
           const travel = track - thumb.height;
           if (travel <= 0) return;
           // The pointer moves across the track; the content moves across its own overflow. One drag
@@ -919,6 +923,39 @@ function TipBubble({ anchor, label, onDismiss }: { anchor: DOMRect; label: strin
     </div>,
     document.body,
   );
+}
+
+// A tooltip that does not measure anything: it shows whenever the pointer is on the target. Used
+// where the hidden content is not truncated text but deliberately summarised -- the "+2" locations
+// badge, which stands in for places the cell never rendered at all, so there is no overflow for
+// useTruncationTip to detect.
+function useHoverTip(label: string) {
+  const node = useRef<HTMLElement | null>(null);
+  const timer = useRef(0);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+
+  const hide = useCallback(() => {
+    window.clearTimeout(timer.current);
+    setAnchor(null);
+  }, []);
+
+  const show = useCallback(() => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      if (node.current) setAnchor(node.current.getBoundingClientRect());
+    }, TIP_DELAY);
+  }, []);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const ref = useCallback((element: HTMLElement | null) => {
+    node.current = element;
+  }, []);
+
+  return {
+    tipProps: { ref, onPointerEnter: show, onPointerLeave: hide, onFocus: show, onBlur: hide },
+    tip: anchor ? <TipBubble anchor={anchor} label={label} onDismiss={hide} /> : null,
+  };
 }
 
 function useTruncationTip(label: string) {
@@ -1098,9 +1135,48 @@ function ListSkeleton({ rows = 9 }: { rows?: number }) {
 // Company picker. Single-value like Title -- the filter is one substring match, so picking a second
 // company would return nothing rather than both. Backed by the job_companies aggregate, so the
 // count beside each name is exact and the list opens on the companies actually hiring most.
+// The table's avatar at dropdown scale. Same fallback rule -- a monogram when there is no logo, and
+// when the logo turns out to be unusable -- so a company looks the same in the list as in the rows.
+function initialsOf(name: string) {
+  return name.split(/[\s|_-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase() ?? "").join("");
+}
+
+function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (logoUrl && !failed) {
+    return (
+      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={logoUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          className="size-full object-contain"
+          onError={() => setFailed(true)}
+          onLoad={(event) => {
+            const img = event.currentTarget;
+            if (!isUsableLogoRatio(img.naturalWidth, img.naturalHeight)) setFailed(true);
+          }}
+        />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
+      style={{ background: "linear-gradient(150deg, #ff8ee4 0%, #d426b0 100%)" }}
+    >
+      {initialsOf(name)}
+    </span>
+  );
+}
+
 function CompanyCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<{ company: string; jobCount: number }[]>([]);
+  const [rows, setRows] = useState<{ company: string; jobCount: number; logoUrl: string | null }[]>([]);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
 
   useEffect(() => {
@@ -1113,7 +1189,7 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
       try {
         const response = await fetch(`${companiesUrl}?q=${encodeURIComponent(term)}&limit=100`, { signal: controller.signal });
         if (!response.ok) throw new Error(`Companies API returned ${response.status}`);
-        const payload = (await response.json()) as { companies: { company: string; jobCount: number }[] };
+        const payload = (await response.json()) as { companies: { company: string; jobCount: number; logoUrl: string | null }[] };
         setRows(payload.companies ?? []);
         setState("ready");
       } catch (caught) {
@@ -1131,13 +1207,13 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
   // The current selection is pinned at the top even when the search has moved elsewhere, so it can
   // always be unpicked without clearing the box first.
   const shown = value && !rows.some((row) => row.company === value)
-    ? [{ company: value, jobCount: 0 }, ...rows]
+    ? [{ company: value, jobCount: 0, logoUrl: null }, ...rows]
     : rows;
 
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search companies" />
-      <ScrollShadow className="mt-1 h-80 t-resize">
+      <ScrollShadow className="mt-1 max-h-80 t-resize">
         {shown.map((row) => {
           const checked = row.company === value;
           return (
@@ -1148,7 +1224,10 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
               aria-pressed={checked}
               className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
             >
-              <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.company}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <CompanyMark name={row.company} logoUrl={row.logoUrl} />
+                <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.company}</span>
+              </span>
               <span className="flex shrink-0 items-center gap-2">
                 {row.jobCount > 0 && (
                   <span className="tabular-nums text-[14px] text-[var(--muted)]">{row.jobCount.toLocaleString()}</span>
@@ -1220,7 +1299,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
       <SearchBox full focusOnMount value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
       {/* Fixed height, not max-height: the panel used to open at the skeleton's ~200px and then jump
           to 320px the moment the suggestions arrived. Both states now occupy the same box. */}
-      <ScrollShadow className="mt-1 h-80">
+      <ScrollShadow className="mt-1 max-h-80">
         {rows.map((row) => {
           const checked = row.title === value;
           return (
@@ -1810,11 +1889,19 @@ function SaveViewPill({
   );
 }
 
-function TableHeading({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+// The align prop is a prop rather than a className, because passing "text-end" alongside the base
+// "text-start" put two conflicting utilities on one element -- and which of them wins is decided by
+// Tailwind's emission order, not by the order they appear in the attribute. The Source heading
+// asked to be right-aligned and was silently left-aligned over right-aligned cells.
+function TableHeading({
+  children,
+  className = "",
+  align = "start",
+}: { children: React.ReactNode; className?: string; align?: "start" | "end" }) {
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 text-start text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
+      className={`px-5 pb-3 ${align === "end" ? "text-end" : "text-start"} text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -1865,7 +1952,7 @@ function TableHeader() {
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
       <TableHeading className="w-[12%]">Posted</TableHeading>
-      <TableHeading className="w-[11%] text-end">Source</TableHeading>
+      <TableHeading className="w-[11%]" align="end">Source</TableHeading>
     </tr>
   );
 }
@@ -1934,6 +2021,8 @@ function JobCells({
   const titleTip = useTruncationTip(job.title);
   const companyTip = useTruncationTip(job.company);
   const places = splitLocations(job.location);
+  // The badge stands for locations the cell never drew, so hovering it has to be able to show them.
+  const extraTip = useHoverTip(places.all);
   // The tooltip carries the whole list, not just the entry the cell had room for.
   const locationTip = useTruncationTip(places.all);
 
@@ -2012,12 +2101,16 @@ function JobCells({
                   the tooltip, so nothing is hidden -- it just stops one posting in three from
                   spending the whole column on a semicolon-joined address list. */}
               {places.extra > 0 && (
-                <span
-                  className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-medium tabular-nums text-[var(--muted-strong)]"
-                  title={places.all}
-                >
-                  +{places.extra}
-                </span>
+                <>
+                  <span
+                    {...extraTip.tipProps}
+                    tabIndex={0}
+                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-medium tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                  >
+                    +{places.extra}
+                  </span>
+                  {extraTip.tip}
+                </>
               )}
             </>
           )}
@@ -2174,8 +2267,10 @@ function CompanyLogo({ job }: { job: Job }) {
   // A URL already known to be unusable renders the monogram directly -- no <img>, so no request,
   // no decode, no skeleton flash on the way to the same result.
   if (job.companyLogoUrl && !failed) {
+    // The ring sits OUTSIDE the tile (offset 0, not -1) so it frames the logo rather than cropping
+    // a pixel off it, and uses the shared border token so it matches every other hairline here.
     return (
-      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-black/10">
+      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
         {!loaded && <span className="skeleton skeleton-pulse absolute inset-0" aria-hidden="true" />}
         {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2218,7 +2313,7 @@ function CompanyLogo({ job }: { job: Job }) {
   // design's app-icon style logos.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 -outline-offset-1 outline-black/5"
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
       style={{ background: "linear-gradient(150deg, #ff8ee4 0%, #d426b0 100%)" }}
       aria-hidden="true"
     >

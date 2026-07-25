@@ -161,7 +161,9 @@ button:disabled,
 
 .overlay-scrollbar {
   position: absolute;
-  top: 0;
+  /* Starts below the sticky column header instead of running over it. The variable is published on
+     the table wrapper by the scroller ref; a dropdown has no header, so it falls back to 0. */
+  top: var(--jobs-header-height, 0px);
   right: 3px;
   bottom: 0;
   width: 10px;

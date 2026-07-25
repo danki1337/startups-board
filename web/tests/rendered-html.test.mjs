@@ -168,7 +168,11 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // per-row state made every scroll-back replay the placeholder and fade on an image already held
   // in the browser cache.
   assert.match(explorer, /const logoOutcome = new Map<string, "ok" \| "bad">\(\)/);
-  assert.doesNotMatch(explorer, /loading="lazy"[\s\S]{0,200}object-contain/);
+  // The TABLE logo is eager and low-priority: virtualization already limits it to rows near the
+  // viewport, so lazy only added a second visibility check. The dropdown mark stays lazy -- that
+  // list is long and mostly off-screen, which is the case lazy exists for.
+  assert.match(explorer, /loading="eager"/);
+  assert.match(explorer, /fetchPriority="low"/);
   // One page, one layout: the earlier /v2-/v4 experiments and their `variant` switch are gone.
   assert.doesNotMatch(explorer, /variant/);
   // Hover feedback is instant everywhere; only press-scale and the dropdown enter keep a transition.
