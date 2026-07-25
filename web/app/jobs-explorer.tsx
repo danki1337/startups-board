@@ -571,7 +571,7 @@ export function JobsExplorer({
     // ("Last 7 days"), so a chip would double it. "Any time" in the same dropdown clears it.
     if (watchlistActive) chips.push({ kind: "watchlist", label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
     return chips;
-  }, [filters, watchlistActive]);
+  }, [filters, watchlistActive, jobs]);
 
   // A small "Showing results for X" note when a typo'd search was auto-corrected.
   const correctionNote = (
@@ -821,7 +821,6 @@ function LineIcon({ children }: { children: React.ReactNode }) {
     </svg>
   );
 }
-const IconSearch = () => <LineIcon><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5 14 14" /></LineIcon>;
 const IconLocate = () => <LineIcon><circle cx="8" cy="8" r="4" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" /><circle cx="8" cy="8" r="1.3" fill="currentColor" stroke="none" /></LineIcon>;
 const IconPin = () => <LineIcon><path d="M8 14s4.5-4 4.5-7A4.5 4.5 0 0 0 3.5 7c0 3 4.5 7 4.5 7Z" /><circle cx="8" cy="6.8" r="1.6" /></LineIcon>;
 const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
@@ -1067,13 +1066,22 @@ function useTruncationTip(label: string) {
   };
 }
 
+// Both states are always rendered and cross-faded, rather than one replacing the other. Swapping
+// the elements meant the tick appeared fully formed with no acknowledgement that anything happened;
+// this way the box reads as filling. 120ms, which is short enough to keep a list you are ticking
+// through several options in feeling immediate.
 function FilterCheckbox({ checked }: { checked: boolean }) {
-  return checked ? (
-    <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-[var(--ink)]">
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
+  return (
+    <span className="relative flex size-5 shrink-0 items-center justify-center">
+      <span
+        className={`absolute inset-0 rounded-md border-[1.5px] border-[var(--border)] transition-opacity duration-[120ms] ease-[var(--ease-out)] ${checked ? "opacity-0" : "opacity-100"}`}
+      />
+      <span
+        className={`check-fill absolute inset-0 flex items-center justify-center rounded-md bg-[var(--ink)] ${checked ? "is-on" : ""}`}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3.5" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 8.5 6.5 11.5 12.5 5" /></svg>
+      </span>
     </span>
-  ) : (
-    <span className="size-5 shrink-0 rounded-md border-[1.5px] border-[var(--border)]" />
   );
 }
 
@@ -1468,20 +1476,21 @@ function SidebarPills({
 // One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
 // value (with its glyph — flag, globe, or ATS mark), and an ×. Clicking anywhere removes it.
 function FilterChip({ chip }: { chip: ActiveChip }) {
-  // A company chip shows that company's logo in place of the generic person glyph, so the chip and
-  // the rows it filtered to look like the same company.
-  const Icon = CHIP_ICONS[chip.kind];
+  // Only the company chip carries a leading mark now, and it is that company's logo -- so the chip
+  // and the rows it filtered to look like the same company.
   const value = chip.value ?? chip.label;
   return (
     <button
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
-      {chip.kind === "company"
-        ? <CompanyMark name={value} logoUrl={chip.logoUrl ?? null} />
-        : Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
+      {/* No leading category glyph. It named the FILTER ("this is a country filter") while the mark
+          beside the value already names the VALUE (a flag, a globe, an ATS logo) -- two icons for one
+          fact, and the redundant one came first. The company chip keeps its logo because that is the
+          value's own mark, not a category label. */}
+      {chip.kind === "company" && <CompanyMark name={value} logoUrl={chip.logoUrl ?? null} />}
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
@@ -1544,12 +1553,6 @@ const IconCountryF = () => (
     <path d="M5.76949 13.9626C5.84669 13.9578 5.92419 13.9633 5.99991 13.979C6.22567 14.0263 6.41056 14.15 6.53462 14.3448C6.65423 14.5327 6.69285 14.7609 6.64172 14.9779C6.5716 15.2806 6.32213 15.5348 6.02413 15.6072C5.38444 15.7624 4.82587 15.9052 4.26156 16.2585C4.5557 16.4212 4.84317 16.5598 5.16334 16.6656C7.43728 17.4184 10.9692 17.4316 13.3227 17.0277C14.0629 16.9007 14.822 16.7316 15.4961 16.3921C15.5543 16.3626 15.6728 16.3122 15.6937 16.2487C15.6736 16.2102 15.5861 16.1635 15.5428 16.1395C15.2069 15.9521 14.8277 15.8353 14.4604 15.7288C14.2062 15.6531 13.9371 15.6283 13.7086 15.4854C13.309 15.2358 13.221 14.6891 13.4863 14.3064C13.6109 14.1285 13.8025 14.0091 14.0168 13.9754C14.4469 13.904 15.7328 14.3658 16.1362 14.5674C16.3439 14.6714 16.5421 14.7888 16.7341 14.9241C17.1112 15.2211 17.3932 15.5276 17.4798 16.0268C17.5478 16.4184 17.4328 16.8087 17.1982 17.1234C16.4323 18.1501 14.3754 18.5837 13.1421 18.7523C10.5531 19.09 7.82985 19.0557 5.2861 18.4391C4.3089 18.2021 2.67695 17.6225 2.51561 16.4624C2.46065 16.0685 2.56867 15.6693 2.81471 15.3569C3.34392 14.6711 4.33679 14.3264 5.14207 14.1049C5.31828 14.0565 5.59866 13.9839 5.76949 13.9626Z" fill="#868990" />
   </svg>
 );
-const IconIndustryF = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
-    <path d="M4.9562 6.04636C5.41675 6.02143 5.93752 6.04097 6.40235 6.04104L8.92593 6.04139L10.1892 6.04045C10.4276 6.04033 10.6845 6.03201 10.9201 6.05536C11.0551 6.06957 11.1759 6.13246 11.2725 6.22474C11.4294 6.37399 11.4586 6.57105 11.46 6.77722C11.4618 7.05432 11.4635 7.33125 11.467 7.60797C11.4728 8.05609 11.5108 8.50485 11.5191 8.95246C12.1469 8.96975 12.7871 8.9507 13.4163 8.95763C13.7058 8.96082 14.036 8.94109 14.3202 8.97933C14.4691 8.99938 14.6131 9.07356 14.7246 9.17532C15.0739 9.49466 14.9911 9.88334 15.0097 10.3051C15.0928 12.1931 15.6325 14.0448 16.738 15.5927C16.89 15.8056 17.2397 16.2645 17.4366 16.4474C17.8065 16.5013 18.157 16.3627 18.4962 16.6955C18.6552 16.8495 18.7458 17.061 18.7478 17.2823C18.7502 17.5085 18.6597 17.7258 18.4974 17.8834C18.4074 17.9723 18.2351 18.0865 18.1113 18.1029C17.7864 18.146 17.3939 18.1297 17.0622 18.1297L15.0586 18.1294H6.0765L3.38329 18.1301L2.56092 18.1304C2.37308 18.1302 2.19833 18.1339 2.01049 18.1179C1.29192 18.0567 1.00749 17.2054 1.49617 16.6912C1.78326 16.389 2.31807 16.4565 2.70299 16.4587C2.84727 16.1526 2.98344 15.7912 3.0979 15.4723C3.54157 14.2044 3.85913 12.896 4.04598 11.5658C4.19778 10.5096 4.29519 9.44618 4.33786 8.37992C4.35184 8.03237 4.36225 7.68467 4.36906 7.33691C4.3702 7.24079 4.37107 7.14364 4.37184 7.04747C4.37463 6.69669 4.33201 6.31514 4.69591 6.11996C4.79038 6.06928 4.84932 6.06148 4.9562 6.04636ZM13.1195 16.4498C13.4767 16.4754 13.9785 16.4541 14.3508 16.4587C14.5629 16.4615 15.1065 16.4715 15.2965 16.453C15.2233 16.3265 15.1208 16.1806 15.0409 16.0542C14.9077 15.8427 14.782 15.6267 14.6639 15.4065C14.0609 14.2595 13.6584 13.0179 13.4739 11.7353C13.4166 11.3485 13.3918 11.0225 13.357 10.6363C12.9919 10.6289 12.6268 10.6269 12.2616 10.6304C12.1187 10.6311 11.8021 10.6413 11.669 10.6235C11.6865 10.9602 11.7738 11.4875 11.8262 11.8263C12.0755 13.4393 12.4814 14.9478 13.1195 16.4498Z" fill="#868990" />
-    <path d="M16.1714 1.88038C16.4266 1.86443 16.6826 1.89188 16.9287 1.96154C17.5225 2.13218 17.9899 2.51059 18.3849 2.97658C18.6487 3.28762 18.8352 3.56128 18.7055 3.99082C18.5935 4.36192 18.1887 4.61789 17.8065 4.56313C17.5107 4.52076 17.3152 4.33541 17.1477 4.10388C16.9905 3.89791 16.7612 3.66623 16.5112 3.58265C15.8836 3.39623 15.5082 4.14081 15.1589 4.51804C14.9702 4.72184 14.7522 4.89602 14.507 5.02189C14.207 5.17869 13.8663 5.23965 13.5305 5.19657C13.0259 5.13641 12.5912 4.84309 12.2699 4.46062C11.971 4.1049 11.7915 3.74854 11.3152 3.59515C10.7444 3.5142 10.4846 4.01241 10.1522 4.36266C9.83066 4.69551 9.25296 4.66378 8.95772 4.31676C8.43923 3.68481 8.99726 3.07908 9.44298 2.64912C10.5909 1.54177 12.1551 1.71916 13.1619 2.90519C13.2323 2.98823 13.6508 3.55834 13.7392 3.52979C13.925 3.46973 14.162 3.07534 14.2992 2.92864C14.8031 2.33214 15.3843 1.95321 16.1714 1.88038Z" fill="#868990" />
-  </svg>
-);
 const IconAtsF = () => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
     <path d="M8.16274 1.04855C8.78449 1.04037 9.41036 1.03764 10.0312 1.04417C10.4981 1.04909 10.9527 1.12629 11.3555 1.37475C11.7548 1.62105 12.1359 2.03771 12.4715 2.37452L13.5647 3.47253L15.4037 5.32051C15.8487 5.76764 16.2871 6.19648 16.7103 6.66759C17.3643 7.3957 17.2944 8.27077 17.2925 9.1843C17.2912 9.78243 17.303 10.3775 17.2869 10.9708C17.1935 10.8542 16.9935 10.7067 16.868 10.6182C16.2254 10.1648 15.3288 9.90544 14.5448 10.0454C14.0012 10.1424 13.6332 10.4677 13.3302 10.9104C12.9085 10.2749 12.3828 9.98564 11.6147 10.0089C9.75911 10.065 8.26728 11.6573 8.33673 13.5118C8.35679 14.0479 8.60889 14.4745 8.99883 14.8252C9.06049 14.8782 9.17095 14.9496 9.24074 14.9975C8.66367 15.4017 8.33717 15.8734 8.33394 16.6051C8.33797 17.4846 8.68401 18.3281 9.29885 18.9569C8.59228 18.9543 7.93885 18.9588 7.22722 18.9148C6.02985 18.8409 4.86676 18.6812 3.95474 17.8256C2.85441 16.7932 2.75126 15.1112 2.72272 13.6799C2.70427 12.0323 2.69953 10.3845 2.70851 8.73674L2.71204 6.62494C2.72086 5.72925 2.74235 4.82776 2.94238 3.95146C3.20502 2.80078 4.05948 1.8004 5.17785 1.40671C6.12147 1.07452 7.17208 1.06632 8.16274 1.04855ZM15.603 7.9149C15.5227 7.71456 14.7244 6.9437 14.5258 6.74342L13.1033 5.31262L11.6126 3.81602C11.3898 3.59255 10.6685 2.82288 10.4241 2.71952C10.3907 2.93326 10.409 3.33845 10.4136 3.57206C10.4343 4.61574 10.4422 5.8248 11.0736 6.70831C11.945 7.92776 13.6124 7.88612 14.9534 7.91839C15.1414 7.92292 15.4182 7.93249 15.603 7.9149Z" fill="#868990" />
@@ -1603,22 +1606,6 @@ const WORKPLACE_ICONS: Record<string, () => React.ReactElement> = {
   remote: IconRemoteF,
 };
 
-// Category icon per chip kind. These are the same filled glyphs the filter row uses, so a chip and
-// the dropdown it came from are drawn identically; only search/company/location have no pill of
-// their own and keep a line icon.
-const CHIP_ICONS: Partial<Record<ChipKind, () => React.ReactElement>> = {
-  search: IconSearch,
-  location: IconCountryF,
-  title: IconTitleF,
-  company: IconUser,
-  country: IconCountryF,
-  city: IconCountryF,
-  roleFamily: IconTitleF,
-  industry: IconIndustryF,
-  workplace: IconWorkplaceF,
-  source: IconAtsF,
-  employmentType: IconJobTypeF,
-};
 
 // The supplied 20px close glyph, drawn at the chip's scale.
 const IconCloseGlyph = () => (
@@ -2044,13 +2031,15 @@ function TableHeader() {
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
           company sits beneath it as context, rather than the company owning the first column. */}
-      <TableHeading className="w-[32%]">Role</TableHeading>
+      <TableHeading className="w-[30%]">Role</TableHeading>
       <TableHeading className="w-[20%]">Location</TableHeading>
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
       <TableHeading className="w-[12%]">Posted</TableHeading>
-      {/* 13%, not 11%: "Greenhouse" is the longest provider name and was being cut to "Greenhous". */}
-      <TableHeading className="w-[13%]" align="end">Source</TableHeading>
+      {/* 15%. "SmartRecruiters" is the longest provider name at 15 characters -- longer than
+          Greenhouse, which is what 13% was sized for -- and it needs the mark and the gap beside it
+          too. The 2% comes off Role, which truncates gracefully and has the most to spare. */}
+      <TableHeading className="w-[15%]" align="end">Source</TableHeading>
     </tr>
   );
 }
@@ -2339,7 +2328,7 @@ function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value
   if (!value) return null;
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      {Icon && <span className="inline-flex shrink-0 text-[#868990] [&>svg]:size-[18px]"><Icon /></span>}
+      {Icon && <span className="inline-flex shrink-0 text-[#868990] [&>svg]:size-4"><Icon /></span>}
       <span className="min-w-0 truncate">{value}</span>
     </span>
   );

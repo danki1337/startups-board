@@ -448,6 +448,39 @@ button:disabled,
    scale(0.97), never scale(0) -- a panel that grows from nothing reads as a popup demanding
    attention, when this is just the answer to a filter. No exit: it is replaced by content the user
    asked for, and animating out would delay that. */
+/* The checkbox fill. Scaled from 0.6 rather than 0 -- a mark that grows from nothing draws more
+   attention than ticking a filter deserves -- and paired with the outline fading out beneath it, so
+   the two states cross over instead of swapping. */
+.check-fill {
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+
+.check-fill.is-on {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* A chip enters when a filter is applied. Deliberately the lightest entrance here: chips appear
+   several at a time and are read at a glance, so this is a settle, not a performance. */
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.chip-in {
+  animation: chip-in 140ms var(--ease-out) both;
+}
+
 @keyframes panel-in {
   from {
     opacity: 0;
@@ -606,8 +639,17 @@ button:disabled,
   }
 
   /* Movement is the part people are sensitive to; the fade still bridges the swap. */
-  .panel-in {
+  .panel-in,
+  .chip-in {
     animation-name: reduced-fade-in;
+  }
+
+  .check-fill {
+    transform: none;
+    transition: opacity 120ms var(--ease-out);
+  }
+  .check-fill.is-on {
+    transform: none;
   }
 
   .t-resize {
