@@ -133,10 +133,18 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.doesNotMatch(explorer, /SearchSelectList/);
   // Every scroll box is inside a rounded, clipped container, so the scrollbar is styled rather than
   // left as a macOS overlay bar drawn over the sticky table header and the dropdowns' checkboxes.
-  assert.match(styles, /\.scroll-shadow::-webkit-scrollbar\b/);
-  assert.match(styles, /@supports not selector\(::-webkit-scrollbar\)/);
+  // The native bar is hidden outright and replaced by an overlay drawn as a sibling of the scroller.
+  // Neither native option survives a rounded, clipped container: a gutter cuts a white notch out of
+  // the corners, an overlay bar gets sliced by the same radius.
+  assert.match(explorer, /<OverlayScrollbar/);
+  assert.match(styles, /\.overlay-scrollbar-thumb/);
+  assert.match(styles, /scrollbar-width: none/);
+  assert.doesNotMatch(styles, /scrollbar-width: thin/);
   assert.match(styles, /overscroll-behavior: contain/);
-  assert.doesNotMatch(styles, /\.jobs-table-scroll \{\s*scrollbar-color/);
+  // The section claims the viewport and the card flexes into what is left, so the page itself does
+  // not scroll and the sticky column header cannot be carried off with it.
+  assert.match(explorer, /min-h-\[100dvh\]/);
+  assert.match(explorer, /TABLE_MIN_HEIGHT/);
   // Dropdown rows share one radius.
   assert.doesNotMatch(explorer, /rounded-lg px-2 py-1\.5/);
   // A failed fetch is a visible, retryable state rather than a console message: the first page gets

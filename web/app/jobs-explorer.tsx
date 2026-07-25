@@ -24,9 +24,13 @@ const titlesUrl = typeof window !== "undefined" && window.location.hostname === 
 const pageSize = 100;
 // Shared by the results table and the skeleton stacked behind it, so the two layers are the same
 // size and the cross-fade between them moves nothing.
-const TABLE_HEIGHT = "clamp(420px, 68vh, 760px)";
+// The floor the results card will not shrink past. Above it the card grows to fill the viewport
+// (see the flex section below), so on a normal screen the page itself does not scroll and the
+// sticky column header stays put. Below it -- a short window, a phone -- the page scrolls again
+// rather than crushing the table into a few rows.
 // How many role titles the Title dropdown pulls. There are ~99k distinct titles, so "all" is not a
 // literal option -- this is the long tail worth scrolling, backed by the search box above it.
+const TABLE_MIN_HEIGHT = "420px";
 const TITLE_SUGGESTION_LIMIT = 200;
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -287,6 +291,8 @@ export function JobsExplorer({
   // at its end, which immediately fired endReached and auto-paged. It reads as "the filter did
   // nothing". Reset to the top whenever a new result set replaces the old one.
   const tableRef = useRef<VirtuosoHandle>(null);
+  // The results scroller, captured from virtuoso so the overlay scrollbar can measure it.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
 
   const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
 
@@ -534,8 +540,8 @@ export function JobsExplorer({
       // sent them it is true on the first paint (nothing was ever loading, so nothing animates), and
       // when a search starts from empty it transitions, which is exactly when the reveal is wanted.
       <div
-        className={`t-skel overflow-hidden rounded-[24px] shadow-[var(--shadow-table)] ${jobs.length > 0 ? "is-revealed" : ""}`}
-        style={{ height: TABLE_HEIGHT }}
+        className={`t-skel min-h-0 flex-1 overflow-hidden rounded-[24px] shadow-[var(--shadow-table)] ${jobs.length > 0 ? "is-revealed" : ""}`}
+        style={{ minHeight: TABLE_MIN_HEIGHT }}
       >
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
           <JobsSkeleton />
@@ -549,6 +555,7 @@ export function JobsExplorer({
             // so a top fade would wash the header out the moment you scrolled.
             scrollerRef={(node) => {
               const el = node as HTMLElement | null;
+              setScroller((current) => (current === el ? current : el));
               if (!el || el.dataset.fadeBound) return;
               el.dataset.fadeBound = "1";
               const sync = () => {
@@ -603,6 +610,7 @@ export function JobsExplorer({
           {/* Drawn as an overlay rather than folded into the scroller's mask: a mask fades sticky
               children too, so a top fade there would wash out the column header. */}
           <div className="jobs-table-top-fade" aria-hidden="true" />
+          <OverlayScrollbar target={scroller} />
         </div>
       </div>
     ) : error ? (
@@ -652,7 +660,7 @@ export function JobsExplorer({
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      <section className="mx-auto w-full max-w-[1240px] px-5 pb-24 pt-10 sm:px-8 sm:pt-14">
+      <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-10 pt-10 sm:px-8 sm:pt-14">
         <div className="mb-10 text-center">
           <span
             className="mx-auto mb-8 block h-[42px] w-24 rounded-xl"
@@ -740,6 +748,106 @@ const IconWorkplace = () => <LineIcon><rect x="3" y="2.5" width="6" height="11" 
 const IconJobType = () => <LineIcon><circle cx="6" cy="5" r="2.2" /><path d="M2.5 12.6c0-2 1.6-3.4 3.5-3.4c.6 0 1.2.1 1.7.4" /><circle cx="11" cy="10.5" r="3" /><path d="M11 9.3v1.3l1 .6" /></LineIcon>;
 const IconAts = () => <LineIcon><path d="M4.5 2.5h4l3 3v8h-7z" /><path d="M8.5 2.5v3h3" /><circle cx="8" cy="9.5" r="1.6" /></LineIcon>;
 const IconGlobe = () => <LineIcon><circle cx="8" cy="8" r="5.5" /><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5C6.4 11.9 5.6 10.1 5.6 8S6.4 4.1 8 2.5Z" /></LineIcon>;
+
+// ---- Overlay scrollbar -----------------------------------------------------------------------
+// Every scroll box here sits inside a rounded, clipped container, and a native scrollbar cannot live
+// there cleanly. Left as a macOS overlay it is painted flush to the scroller's edge, so the card's
+// 24px radius slices its ends off; styled into its own gutter it becomes an opaque 12px strip that
+// cuts a white notch out of those same corners and pushes the last column inward. This is neither:
+// it is a sibling of the scroller, so no ancestor clips it, and it is transparent until the box is
+// scrolled or hovered.
+const SCROLLBAR_FADE_MS = 900;
+// Keeps both ends of the thumb clear of the container's corner radius.
+const SCROLLBAR_INSET = 10;
+const SCROLLBAR_MIN_THUMB = 32;
+
+function OverlayScrollbar({ target }: { target: HTMLElement | null }) {
+  const [thumb, setThumb] = useState<{ top: number; height: number } | null>(null);
+  const [visible, setVisible] = useState(false);
+  const fade = useRef(0);
+  const drag = useRef<{ grabY: number; startScroll: number } | null>(null);
+
+  const measure = useCallback(() => {
+    if (!target) return setThumb(null);
+    const { scrollHeight, clientHeight, scrollTop } = target;
+    const overflow = scrollHeight - clientHeight;
+    // Nothing to scroll, nothing to draw -- a track sitting over content that already fits reads as
+    // an unexplained line down the edge of the card.
+    if (overflow <= 1) return setThumb(null);
+    const track = clientHeight - SCROLLBAR_INSET * 2;
+    const height = Math.max(SCROLLBAR_MIN_THUMB, Math.round((clientHeight / scrollHeight) * track));
+    setThumb({ top: SCROLLBAR_INSET + (scrollTop / overflow) * (track - height), height });
+  }, [target]);
+
+  useEffect(() => {
+    if (!target) return;
+    measure();
+
+    const hide = (delay: number) => {
+      window.clearTimeout(fade.current);
+      fade.current = window.setTimeout(() => {
+        if (!drag.current) setVisible(false);
+      }, delay);
+    };
+    const reveal = () => {
+      window.clearTimeout(fade.current);
+      setVisible(true);
+    };
+    const onScroll = () => {
+      measure();
+      reveal();
+      hide(SCROLLBAR_FADE_MS);
+    };
+
+    target.addEventListener("scroll", onScroll, { passive: true });
+    target.addEventListener("pointerenter", reveal);
+    target.addEventListener("pointerleave", () => hide(300));
+    // The scrollable height changes without the box resizing -- infinite scroll appends rows, a
+    // filter replaces them, a dropdown list narrows as you type -- so watch the content, not just
+    // the container.
+    const observer = new ResizeObserver(measure);
+    observer.observe(target);
+    if (target.firstElementChild) observer.observe(target.firstElementChild);
+
+    return () => {
+      target.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+      window.clearTimeout(fade.current);
+    };
+  }, [target, measure]);
+
+  if (!thumb) return null;
+
+  return (
+    <div className="overlay-scrollbar" data-visible={visible || undefined} aria-hidden="true">
+      <div
+        className="overlay-scrollbar-thumb"
+        style={{ top: thumb.top, height: thumb.height }}
+        onPointerDown={(event) => {
+          if (!target) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = { grabY: event.clientY, startScroll: target.scrollTop };
+        }}
+        onPointerMove={(event) => {
+          const held = drag.current;
+          if (!held || !target) return;
+          const track = target.clientHeight - SCROLLBAR_INSET * 2;
+          const travel = track - thumb.height;
+          if (travel <= 0) return;
+          // The pointer moves across the track; the content moves across its own overflow. One drag
+          // of the full track must therefore cover the whole scroll range, not the track's length.
+          const overflow = target.scrollHeight - target.clientHeight;
+          target.scrollTop = held.startScroll + ((event.clientY - held.grabY) / travel) * overflow;
+        }}
+        onPointerUp={(event) => {
+          drag.current = null;
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+      />
+    </div>
+  );
+}
 
 // ---- Tooltip for truncated text -------------------------------------------------------------
 // A value the table or a filter list had to crop shows its full text on hover and on keyboard focus.
@@ -1277,6 +1385,7 @@ const V4_PILL =
 // static gradient, so a list that already fits shows no fade at all.
 function ScrollShadow({ className = "", children }: { className?: string; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
   const [edges, setEdges] = useState({ top: false, bottom: false });
 
   const measure = useCallback(() => {
@@ -1293,14 +1402,22 @@ function ScrollShadow({ className = "", children }: { className?: string; childr
   }, [measure, children]);
 
   return (
-    <div
-      ref={ref}
-      onScroll={measure}
-      data-scroll-top={edges.top || undefined}
-      data-scroll-bottom={edges.bottom || undefined}
-      className={`scroll-shadow ${className}`}
-    >
-      {children}
+    // The scrollbar is absolutely positioned against this wrapper rather than drawn by the scroller
+    // itself, which is the whole point: the scroller clips its own overflow.
+    <div className="relative">
+      <div
+        ref={(node) => {
+          ref.current = node;
+          setScroller((current) => (current === node ? current : node));
+        }}
+        onScroll={measure}
+        data-scroll-top={edges.top || undefined}
+        data-scroll-bottom={edges.bottom || undefined}
+        className={`scroll-shadow ${className}`}
+      >
+        {children}
+      </div>
+      <OverlayScrollbar target={scroller} />
     </div>
   );
 }
