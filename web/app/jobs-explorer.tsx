@@ -898,14 +898,18 @@ function SearchCheckList({
   const [query, setQuery] = useState("");
   const term = query.trim().toLowerCase();
   const matches = term ? options.filter((option) => option.label.toLowerCase().includes(term)) : options;
-  // The city/industry lists run to hundreds of entries; cap the rendered rows so a section stays
-  // light, and surface selected-but-unmatched values first so they never hide off the end.
+  // Selected-but-unmatched values sort first so they never hide off the end of the list.
+  //
+  // Every match is rendered. There used to be a 50-row cap here with a "keep typing to narrow N
+  // more" note under it, from when this list also served the 231-entry city picker -- city is now
+  // set by clicking a location in the table and has no dropdown, so the only lists left are
+  // Industry (13) and Country (62). The cap fired on exactly one of them and did nothing but hide
+  // 12 countries behind a search box.
   const selectedSet = new Set(selected);
-  const ordered = [
+  const shown = [
     ...matches.filter((option) => selectedSet.has(option.value)),
     ...matches.filter((option) => !selectedSet.has(option.value)),
   ];
-  const shown = ordered.slice(0, 50);
   // At the cap, unpicked options go inert rather than silently no-oping when clicked.
   const atCap = selected.length >= FILTER_VALUE_MAX;
 
@@ -930,9 +934,6 @@ function SearchCheckList({
         )}
         {atCap && (
           <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">{FILTER_VALUE_MAX} at a time — unselect one to add another.</p>
-        )}
-        {ordered.length > shown.length && (
-          <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">Keep typing to narrow {ordered.length - shown.length} more…</p>
         )}
       </ScrollShadow>
     </div>
