@@ -1719,7 +1719,7 @@ function TableHeading({ children, className = "" }: { children: React.ReactNode;
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 text-start text-[14px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
+      className={`px-5 pb-3 text-start text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -1838,7 +1838,9 @@ function JobCells({
   // Three columns crop their text at the cell edge; each gets the full value back on hover/focus.
   const titleTip = useTruncationTip(job.title);
   const companyTip = useTruncationTip(job.company);
-  const locationTip = useTruncationTip(job.location);
+  const places = splitLocations(job.location);
+  // The tooltip carries the whole list, not just the entry the cell had room for.
+  const locationTip = useTruncationTip(places.all);
 
   return (
     <>
@@ -1891,18 +1893,38 @@ function JobCells({
               {job.workplace === "Remote" ? "🌍" : ""}
             </span>
           )}
-          {job.location === "Location not specified" ? null : (
-            <button
-              type="button"
-              // Filtering by the resolved city is far more useful than the raw string, which is
-              // often a full address that would match only this one posting.
-              onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: job.location }))}
-              title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${job.location}`}
-              {...locationTip.tipProps}
-              className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
-            >
-              {job.location}
-            </button>
+          {job.location === "Location not specified" ? null : places.count !== null ? (
+            // A bare count is not a place, so it is not made to look like one: no filter link (there
+            // is nothing to filter by), no flag, and lowercase so it reads as a description of the
+            // posting rather than the name of somewhere.
+            <span className="min-w-0 truncate text-[var(--muted)]">
+              {places.count > 0 ? `${places.count} locations` : "Multiple locations"}
+            </span>
+          ) : (
+            <>
+              <button
+                type="button"
+                // Filtering by the resolved city is far more useful than the raw string, which is
+                // often a full address that would match only this one posting.
+                onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: places.primary }))}
+                title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${places.primary}`}
+                {...locationTip.tipProps}
+                className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              >
+                {places.primary}
+              </button>
+              {/* The remaining places, as a count rather than a truncated run-on. The full list is
+                  the tooltip, so nothing is hidden -- it just stops one posting in three from
+                  spending the whole column on a semicolon-joined address list. */}
+              {places.extra > 0 && (
+                <span
+                  className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-medium tabular-nums text-[var(--muted-strong)]"
+                  title={places.all}
+                >
+                  +{places.extra}
+                </span>
+              )}
+            </>
           )}
           {locationTip.tip}
         </span>
@@ -1922,8 +1944,15 @@ function JobCells({
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
       </td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">{job.employmentType}</td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">{job.workplace}</td>
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+        {/* Providers spell this every way there is -- "Full-Time", "full time", "Full Time" -- which
+            is why the SQL filter matches on lower(replace(employment_type, '-', ' ')). The icon
+            lookup has to normalise identically or the glyph appears for some spellings only. */}
+        <ValueWithIcon Icon={JOB_TYPE_ICONS[(job.employmentType ?? "").toLowerCase().replaceAll("-", " ")]} value={job.employmentType} />
+      </td>
+      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+        <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
+      </td>
       <td className="whitespace-nowrap px-5 py-3 text-end">
         <a
           href={job.url}
@@ -1948,6 +1977,50 @@ function JobCells({
 // images the browser already had, and re-mounted (and re-measured) banners already known to be
 // unusable. Keyed by URL rather than by job, so the second row from the same company is instant too.
 const logoOutcome = new Map<string, "ok" | "bad">();
+
+// Two shapes of multi-location arrive from the ATSs, and both used to render as if they were a
+// place name.
+//
+//   "2 Locations", "Multiple locations"  -- Workday. A COUNT, with no place names at all: 28k+ rows
+//                                           that say only that there is more than one. There is
+//                                           nothing to geocode, which is also why these rows carry
+//                                           no country and so never drew a flag.
+//   "Berlin · Munich · Remote"           -- Ashby (middot), and others use a semicolon. A real list
+//                                           where the first entry is a usable answer on its own.
+//
+// The list case is the one worth fixing properly: show the first place, mark how many more there
+// are, and put the full set in the tooltip. The count case cannot be improved by parsing -- it is
+// labelled as a count instead of dressed up as a city.
+const LOCATION_COUNT = /^(?:(\d+)\s+locations?|multiple\s+locations?)$/i;
+
+function splitLocations(location: string): { primary: string; extra: number; all: string; count: number | null } {
+  const value = (location ?? "").trim();
+  const counted = LOCATION_COUNT.exec(value);
+  if (counted) {
+    // "Multiple locations" states no number; treat it as unknown rather than inventing one.
+    return { primary: "", extra: 0, all: value, count: counted[1] ? Number(counted[1]) : 0 };
+  }
+  const parts = value.split(/\s*[;·•]\s*|\s+\u00b7\s+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return { primary: value, extra: 0, all: value, count: null };
+  // A trailing "Multiple locations" inside a real list adds nothing the +N does not already say.
+  const places = parts.filter((part) => !LOCATION_COUNT.test(part));
+  const head = places[0] ?? parts[0];
+  return { primary: head, extra: Math.max(0, places.length - 1), all: places.join(" · "), count: null };
+}
+
+// A table value carrying the same filled glyph its filter pill uses, so "Full time" reads the same
+// in the row as it does in the dropdown it came from. Only some values have a glyph -- Unspecified
+// and the long tail of provider-specific employment types do not -- and those simply render as text
+// rather than reserving an empty slot that would misalign the column.
+function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value: string | null }) {
+  if (!value) return null;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      {Icon && <span className="inline-flex shrink-0 text-[#868990] [&>svg]:size-[18px]"><Icon /></span>}
+      <span className="min-w-0 truncate">{value}</span>
+    </span>
+  );
+}
 
 function CompanyLogo({ job }: { job: Job }) {
   const url = job.companyLogoUrl ?? "";

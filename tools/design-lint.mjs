@@ -28,7 +28,10 @@ const BRAND_ASSET_FILES = new Set(["web/app/ats-marks.tsx"]);
 // The type scale. Anything outside it is drift -- a one-off size that nothing else on the page
 // shares and no token explains. Tailwind's own text-sm/base/lg are fine; this governs the
 // arbitrary-value escape hatch only.
-const TYPE_SCALE = new Set([11, 13, 14, 16, 18, 20, 24, 32, 42]);
+// 12 is here for the two places that read as metadata rather than content -- the table's uppercase
+// column header, and the "+N" locations badge beside it. Body text went to 14 deliberately; these
+// two did not, because at 14 an uppercase tracked header competes with the rows underneath it.
+const TYPE_SCALE = new Set([11, 12, 13, 14, 16, 18, 20, 24, 32, 42]);
 
 const findings = [];
 const report = (level, rule, file, line, message, fix) =>
