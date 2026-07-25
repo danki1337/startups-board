@@ -666,13 +666,11 @@ export function JobsExplorer({
 
   return (
     <main className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
-      <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-10 pt-10 sm:px-8 sm:pt-14">
-        <div className="mb-10 text-center">
-          <span
-            className="mx-auto mb-8 block h-[42px] w-24 rounded-xl"
-            style={{ background: "var(--chip)" }}
-            aria-hidden="true"
-          />
+      {/* The section owns the viewport and the results card takes whatever the hero and controls
+          leave, so every pixel trimmed above goes straight into rows on screen. Kept deliberately
+          tight for that reason. */}
+      <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-6 pt-8 sm:px-8 sm:pt-10">
+        <div className="mb-8 text-center">
           <h1
             className="mx-auto text-[clamp(38px,6vw,58px)] leading-[1.02] tracking-[-0.01em] text-balance"
             style={{ fontFamily: "var(--font-pixel), var(--font-inter), sans-serif", fontWeight: 500 }}
@@ -708,7 +706,7 @@ export function JobsExplorer({
           </div>
         </div>
 
-        <div className="mb-3 mt-7 flex items-center justify-between gap-4 px-1">
+        <div className="mb-3 mt-5 flex items-center justify-between gap-4 px-1">
           <p aria-live="polite" className="text-sm font-medium text-[var(--muted-strong)]">
             <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
             {total === 1 ? "job" : "jobs"}

@@ -19,7 +19,6 @@
   --accent: #ff73e5;
   --accent-strong: #c2189e;
   --accent-wash: #ffecf9;
-  --chip: #ffb8ee;
   --success: #2f9b65;
   /* The brand pink is only ~2.4:1 on white, and a focus indicator needs 3:1 (WCAG 1.4.11) or a
      keyboard user cannot see where they are. The ring uses the deeper shade, which clears it. */
