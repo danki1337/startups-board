@@ -1197,6 +1197,8 @@ function SearchCheckList({
 
   return (
     <div>
+      {/* No `loading`: this list is filtered in memory from a fixed set of options, so there is
+          never a request to wait for. */}
       <SearchBox full focusOnMount value={query} onChange={setQuery} label={searchLabel} />
       <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
@@ -1325,7 +1327,10 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
 
   return (
     <div>
-      <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search companies" />
+      {/* These two lists fetch on every query change -- /api/companies and /api/titles, behind a
+          160ms debounce -- so they have something to wait for and a spinner to show for it. The
+          state they already tracked for the skeleton below is the same state the field needs. */}
+      <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search companies" loading={state === "loading"} />
       <ScrollShadow className="mt-1 max-h-80">
         {shown.map((row) => {
           const checked = row.company === value;
@@ -1409,7 +1414,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
 
   return (
     <div>
-      <SearchBox full focusOnMount value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" />
+      <SearchBox full focusOnMount value={query} onChange={setQuery} placeholder="Search titles" label="Search job titles" loading={state === "loading"} />
       {/* Fixed height, not max-height: the panel used to open at the skeleton's ~200px and then jump
           to 320px the moment the suggestions arrived. Both states now occupy the same box. */}
       <ScrollShadow className="mt-1 max-h-80">
@@ -1947,7 +1952,13 @@ function FilterDropdownBar({
           value={filters.search}
           loading={searchBusy}
           onChange={(value) => {
-            onSearchInput();
+            // Only claim to be busy when the keystroke actually changes the QUERY, which is the
+            // trimmed value -- that is what filtersToSearchParams puts in the URL and therefore what
+            // the fetch effect keys on. Typing a trailing space, or retyping a value character for
+            // character, leaves queryString identical, so the effect never re-runs and never reaches
+            // the `finally` that would put the field back to idle: the spinner would stay up over
+            // results that had already arrived.
+            if (value.trim() !== filters.search.trim()) onSearchInput();
             update({ search: value });
           }}
         />
