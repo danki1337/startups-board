@@ -20,9 +20,10 @@
     "serve": "node src/cli.mjs serve",
     "system": "node src/cli.mjs system",
     "poc": "node src/cli.mjs run",
-    "test": "node --test",
+    "test": "node tools/design-lint.mjs && node --test",
     "seed:boards": "node scripts/seed-boards.mjs",
-    "cloudflare:deploy:nobuild": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc"
+    "cloudflare:deploy:nobuild": "node web/node_modules/wrangler/bin/wrangler.js deploy --config cloudflare/wrangler.jsonc",
+    "design:lint": "node tools/design-lint.mjs"
   },
   "engines": {
     "node": ">=22.13.0"

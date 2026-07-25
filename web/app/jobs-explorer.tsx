@@ -591,7 +591,11 @@ export function JobsExplorer({
                 now={now}
               />
             )}
-            fixedItemHeight={60}
+            // 61, not 60: the row's content box is 60px (a 36px logo inside 12px padding), and the
+            // separator adds a 1px border on top of that. The virtualizer positions every row from
+            // this number, so a 1px understatement compounds -- a thousand rows down it has the
+            // scroll height off by a thousand pixels. Measured in the browser, not inferred.
+            fixedItemHeight={61}
             // Without this the virtualizer renders nothing until it has mounted and measured, so the
             // 100 rows the server already queried and shipped in the payload were invisible until
             // hydration -- and invisible to crawlers and no-JS visitors entirely. This paints the
@@ -1044,7 +1048,7 @@ function SearchCheckList({
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">No matches</p>
         )}
         {atCap && (
-          <p className="px-2 pt-1 text-[12px] text-[var(--muted)]">{FILTER_VALUE_MAX} at a time — unselect one to add another.</p>
+          <p className="px-2 pt-1 text-[14px] text-[var(--muted)]">{FILTER_VALUE_MAX} at a time — unselect one to add another.</p>
         )}
       </ScrollShadow>
     </div>
@@ -1131,7 +1135,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
               <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.title}</span>
               <span className="flex shrink-0 items-center gap-2">
                 {row.jobCount > 0 && (
-                  <span className="tabular-nums text-[12px] text-[var(--muted)]">{row.jobCount.toLocaleString()}</span>
+                  <span className="tabular-nums text-[14px] text-[var(--muted)]">{row.jobCount.toLocaleString()}</span>
                 )}
                 <FilterCheckbox checked={checked} />
               </span>
@@ -1181,7 +1185,7 @@ function SidebarPills({
             aria-pressed={checked}
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
               checked
-                ? "border-[#FF73E5]/30 bg-[#FF73E5]/15 text-[var(--accent-strong)]"
+                ? "border-[var(--accent)]/30 bg-[var(--accent)]/15 text-[var(--accent-strong)]"
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
             }`}
           >
@@ -1700,7 +1704,7 @@ function TableHeading({ children, className = "" }: { children: React.ReactNode;
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 text-start text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
+      className={`px-5 pb-3 text-start text-[14px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -1831,7 +1835,7 @@ function JobCells({
               {job.title}
             </span>
             {titleTip.tip}
-            <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
+            <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
               <button
                 type="button"
                 onClick={() => onToggleWatch(job.company)}

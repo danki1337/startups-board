@@ -26,10 +26,16 @@ jobs:
 
       # The root package has no dependencies -- the pipeline runs on stdlib Node -- but the test
       # suite loads the built worker from web/dist, so the frontend install is required.
-      # --no-optional keeps the darwin-arm64 rolldown binding from failing the Linux runner.
+      #
+      # Plain `npm ci`. This used to pass --no-optional to stop the darwin-arm64 rolldown binding
+      # from failing the Linux runner, which was the wrong read of the problem: rolldown ships its
+      # native binding as fifteen platform-specific OPTIONAL dependencies, each tagged with its own
+      # `os`/`cpu`, and npm already installs only the one that matches the host. --no-optional
+      # skipped all fifteen, so the runner got no binding at all and every build died on
+      # "Cannot find module '@rolldown/binding-linux-x64-gnu'".
       - name: Install web dependencies
         working-directory: web
-        run: npm ci --no-optional
+        run: npm ci
 
       - name: Build web (also produces the worker bundle the tests render)
         working-directory: web
