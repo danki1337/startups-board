@@ -71,14 +71,16 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, />Title</);
   assert.match(html, />Job type</);
   assert.match(html, />Country</);
-  assert.match(html, />Industry</);
   assert.match(html, />ATS</);
   // The date pill shows the cropped label ("All", "24h", "7d"); the menu below it spells each one
   // out, but that only exists once the popover is opened.
   assert.match(html, />All</);
   assert.doesNotMatch(html, />Any time</);
-  // City has no dropdown of its own, and sort is not a control at all.
+  // City and Industry have no dropdown of their own, and sort is not a control at all. Both
+  // filters still work from a URL or a chip -- only the pill is gone. Industry is hidden because
+  // 55% of active jobs have no industry, so selecting every option returns half the index.
   assert.doesNotMatch(html, />City</);
+  assert.doesNotMatch(html, />Industry</);
   assert.doesNotMatch(html, />Sort</);
   // The results table is virtualized, which renders nothing until it mounts and measures unless it
   // is given initialItemCount. Without that the server shipped a header over an empty box and the
