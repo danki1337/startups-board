@@ -491,14 +491,23 @@ function collapseTitles(rows: { title: string; jobCount: number }[], limit: numb
   // filter -- so "Product Designer" also matches "Senior Product Designer" and "Product Designer,
   // App Store". Summing only the rows that fold onto the label understated it badly: the dropdown
   // read 392 where the filter returned 1,704. Counting by containment makes the number a promise.
-  return labels.slice(0, limit).map((label) => {
-    const needle = label.toLowerCase();
-    let jobCount = 0;
-    for (const row of rows) {
-      if (row.title.toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
-    }
-    return { title: label, jobCount };
-  });
+  //
+  // Which labels make the cut is still decided by the raw popularity order above (counting every
+  // label before slicing would be O(labels x rows) over the whole 2,000-row window). The list is
+  // then ordered by the number actually shown, so the dropdown reads biggest-first -- folding
+  // variants together reshuffles the magnitudes enough that the pre-fold order no longer matched
+  // the counts beside each row.
+  return labels
+    .slice(0, limit)
+    .map((label) => {
+      const needle = label.toLowerCase();
+      let jobCount = 0;
+      for (const row of rows) {
+        if (row.title.toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
+      }
+      return { title: label, jobCount };
+    })
+    .sort((a, b) => b.jobCount - a.jobCount || a.title.localeCompare(b.title));
 }
 
 export async function queryTitleSuggestions(query: string, limit = 8) {

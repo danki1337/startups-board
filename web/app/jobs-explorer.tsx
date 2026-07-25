@@ -871,7 +871,7 @@ function CheckOption({
       onClick={() => onToggle(option.value)}
       aria-pressed={checked}
       disabled={disabled}
-      className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--control-hover)] disabled:pointer-events-none disabled:opacity-40"
+      className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)] disabled:pointer-events-none disabled:opacity-40"
     >
       <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
         <Flag code={option.code} />
@@ -1014,7 +1014,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
               type="button"
               onClick={() => onChange(checked ? "" : row.title)}
               aria-pressed={checked}
-              className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
+              className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
             >
               <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.title}</span>
               <span className="flex shrink-0 items-center gap-2">
@@ -1512,7 +1512,7 @@ function DateDropdown({ value, onChange }: { value: string; onChange: (value: st
                 onChange(option.value);
                 close();
               }}
-              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-start text-sm text-[var(--ink)] hover:bg-[var(--control-hover)]"
+              className="flex items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start text-sm text-[var(--ink)] hover:bg-[var(--control-hover)]"
             >
               {option.label}
               {option.value === current.value && (

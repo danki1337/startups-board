@@ -375,16 +375,19 @@ function collapseTitles(rows, limit) {
     seen.add(key);
     labels.push(label);
   }
-  // Counted by containment, because that is what the title filter does -- see the note in
-  // web/app/jobs-query.ts.
-  return labels.slice(0, limit).map((label) => {
-    const needle = label.toLowerCase();
-    let jobCount = 0;
-    for (const row of rows) {
-      if (String(row.title).toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
-    }
-    return { title: label, jobCount };
-  });
+  // Counted by containment and then ordered by that count, because that is what the title filter
+  // does and what the dropdown shows -- see the note in web/app/jobs-query.ts.
+  return labels
+    .slice(0, limit)
+    .map((label) => {
+      const needle = label.toLowerCase();
+      let jobCount = 0;
+      for (const row of rows) {
+        if (String(row.title).toLowerCase().includes(needle)) jobCount += Number(row.jobCount);
+      }
+      return { title: label, jobCount };
+    })
+    .sort((a, b) => b.jobCount - a.jobCount || a.title.localeCompare(b.title));
 }
 
 export async function queryTitleSuggestions(query, databasePath = "data/jobs.db", limit = 8) {

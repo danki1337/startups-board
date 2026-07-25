@@ -131,6 +131,14 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /selected=\{filters\.country\}/);
   assert.match(explorer, /FILTER_VALUE_MAX/);
   assert.doesNotMatch(explorer, /SearchSelectList/);
+  // Every scroll box is inside a rounded, clipped container, so the scrollbar is styled rather than
+  // left as a macOS overlay bar drawn over the sticky table header and the dropdowns' checkboxes.
+  assert.match(styles, /\.scroll-shadow::-webkit-scrollbar\b/);
+  assert.match(styles, /@supports not selector\(::-webkit-scrollbar\)/);
+  assert.match(styles, /overscroll-behavior: contain/);
+  assert.doesNotMatch(styles, /\.jobs-table-scroll \{\s*scrollbar-color/);
+  // Dropdown rows share one radius.
+  assert.doesNotMatch(explorer, /rounded-lg px-2 py-1\.5/);
   // A failed fetch is a visible, retryable state rather than a console message: the first page gets
   // an error panel, a stale-results banner, and infinite scroll keeps its cursor so it can retry.
   assert.match(explorer, /Couldn&rsquo;t load jobs/);
