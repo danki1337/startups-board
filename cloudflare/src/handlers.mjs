@@ -1,4 +1,9 @@
-import { resolveBoardLogo } from "../../src/company-logo.mjs";
+import {
+  resolveBoardLogoCandidates,
+  firstUsableLogo,
+  verifyLogoShape,
+  CONSTRUCTED_LOGO_PROVIDERS,
+} from "../../src/company-logo.mjs";
 import { syncBoard } from "../../src/jobs.mjs";
 import { requestWithRetry } from "../../src/validation.mjs";
 import { queueForProvider } from "./config.mjs";
@@ -172,7 +177,18 @@ async function processBoardTask(env, task, options = {}) {
 // board whose single first-sync scrape failed stayed logo-less forever.
 async function resolveLogoIfStale(env, board, result) {
   if (result.board.status === "error") return { url: null, checked: false };
-  if (result.jobs?.some((job) => job.companyLogoUrl)) return { url: null, checked: false };
+
+  // A payload-supplied logo short-circuits everything below -- but only when the provider actually
+  // published it. Workday's is CONSTRUCTED from the tenant URL, assumed rather than verified, and
+  // measured across 13 production tenants it was usable exactly zero times: twelve website header
+  // banners and a 404. Because it is non-null it also won the coalesce against companies.logo_url
+  // in the read path, so it suppressed the scrape that would have worked. Constructed URLs now have
+  // to prove themselves, and a failure falls through to the same HTML scrape every other provider
+  // uses rather than being stored unverified.
+  const payloadLogo = result.jobs?.find((job) => job.companyLogoUrl)?.companyLogoUrl ?? null;
+  if (payloadLogo && !CONSTRUCTED_LOGO_PROVIDERS.has(board.provider)) {
+    return { url: null, checked: false };
+  }
 
   const company = await env.DB.prepare(`
     SELECT c.logo_url AS logoUrl, c.logo_checked_at AS checkedAt
@@ -185,8 +201,22 @@ async function resolveLogoIfStale(env, board, result) {
     return { url: null, checked: false };
   }
 
+  const fetchImage = (target) =>
+    requestWithRetry(target, {
+      timeoutMs: 10_000,
+      retries: 1,
+      requestInit: { headers: { accept: "image/*,*/*;q=0.8" } },
+    });
+
   try {
-    const url = await resolveBoardLogo(board, (target) =>
+    // A constructed candidate gets one chance to prove it is a real, square-ish image. When it
+    // passes, that is the cheapest possible answer -- no scrape at all.
+    if (payloadLogo) {
+      const verified = await verifyLogoShape(payloadLogo, fetchImage);
+      if (verified) return { url: verified, checked: true };
+    }
+
+    const candidates = await resolveBoardLogoCandidates(board, (target) =>
       requestWithRetry(target, {
         timeoutMs: 15_000,
         retries: 1,
@@ -194,6 +224,12 @@ async function resolveLogoIfStale(env, board, result) {
         // board's HTML page.
         requestInit: { headers: { accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" } },
       }));
+    // Each candidate is verified, best-priority first, and the first real square-ish image wins.
+    // og:image is a social-share banner by design, and the boards that fall through to it are the
+    // ones whose own favicon we reject as a vendor asset -- so taking the top pick on trust threw
+    // away a usable icon further down the list. Sampled on Lever, 30 of 32 stored logos were
+    // banners the browser was always going to reject.
+    const url = await firstUsableLogo(candidates, fetchImage);
     return { url, checked: true };
   } catch (error) {
     // A board that serves jobs but not a scrapable page is not a refresh failure; still counts as

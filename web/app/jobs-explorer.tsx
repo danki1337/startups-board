@@ -12,6 +12,10 @@ import {
 import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
 import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark } from "./ats-marks";
+// Shared with the ingestion worker, which decides whether to STORE a logo using exactly these
+// numbers. They used to be written out here and agree with the server by coincidence; the cost of
+// that coincidence was 324,728 stored Workday URLs the server had no idea this file would reject.
+import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -2195,8 +2199,7 @@ function CompanyLogo({ job }: { job: Job }) {
           // on its placeholder. The ref catches that case on mount.
           ref={(node) => {
             if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
-              const ratio = node.naturalWidth / (node.naturalHeight || 1);
-              settle(ratio > 1.6 || ratio < 0.625 ? "bad" : "ok");
+              settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
             }
           }}
           onError={() => settle("bad")}
@@ -2205,8 +2208,7 @@ function CompanyLogo({ job }: { job: Job }) {
           // failed logo so it falls back to the clean monogram.
           onLoad={(event) => {
             const img = event.currentTarget;
-            const ratio = img.naturalWidth / (img.naturalHeight || 1);
-            settle(ratio > 1.6 || ratio < 0.625 ? "bad" : "ok");
+            settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
           }}
         />
       </span>
