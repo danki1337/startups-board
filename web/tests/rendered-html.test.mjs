@@ -66,6 +66,8 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /<title>Startup jobs — Startups\.board/);
   assert.match(html, /<table/);
   assert.match(html, /Workplace/);
+  // The first column and its filter pill call the same field the same name.
+  assert.match(html, />Title</);
   // The filter row renders one dropdown pill per filter, then the search field and the date pill.
   assert.match(html, /placeholder="Search"/);
   assert.match(html, />Title</);
@@ -184,8 +186,8 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // Pink is the primary, at the brand hue. --accent-strong is the text-safe partner: the brand
   // colour is 3.80:1 on white, which clears the 3:1 a focus ring needs but not the 4.5:1 body text
   // does, so the two are deliberately different values and both are asserted.
-  assert.match(styles, /--accent: #ff007a/);
-  assert.match(styles, /--accent-strong: #b00055/);
+  assert.match(styles, /--accent: #f50fb4/);
+  assert.match(styles, /--accent-strong: #a30077/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);

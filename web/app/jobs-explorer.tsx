@@ -757,7 +757,7 @@ export function JobsExplorer({
               sentence rather than breaking it. Inter, not the pixel face -- a display face is for
               three or four words, and this is a sentence with a number in it. */}
           <h1
-            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,42px)] font-semibold leading-[1.15] tracking-[-0.02em]"
+            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-semibold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
             <span className="tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
@@ -778,9 +778,13 @@ export function JobsExplorer({
             <div inert={activeChips.length === 0 ? true : undefined}>
               <div className="mt-3 flex flex-wrap items-center gap-[10px] border-t border-[var(--border)] pt-3">
                 {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
+                {/* Last in the row and wearing the chip's own dashed pill, because it belongs to the
+                    filters rather than to the page -- it is the "and clear all of these" at the end
+                    of the list, not a separate control parked on the right. Save view stays right:
+                    it acts on the whole view, not on the chips. */}
+                <ClearAllChip onClick={() => setFilters(emptyFilters)} />
                 <span className="ms-auto flex items-center gap-[10px]">
                   <SaveViewPill onSaveView={saveView} canSaveView />
-                  <PillButton onClick={() => setFilters(emptyFilters)}>Clear all</PillButton>
                 </span>
               </div>
             </div>
@@ -1248,7 +1252,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
     <span
       aria-hidden="true"
       className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
-      style={{ background: "linear-gradient(150deg, #ff5c9f 0%, #c2005d 100%)" }}
+      style={{ background: "linear-gradient(150deg, #f96ad4 0%, #b3007f 100%)" }}
     >
       {initialsOf(name)}
     </span>
@@ -1475,6 +1479,20 @@ function SidebarPills({
 
 // One selected filter, rendered as the design's dashed pill: category icon, the word "is", the
 // value (with its glyph — flag, globe, or ATS mark), and an ×. Clicking anywhere removes it.
+// The same dashed pill a chip wears, so it reads as the last item in the row rather than a
+// different kind of control. No leading mark: it stands for all of them, not for one value.
+function ClearAllChip({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+    >
+      Clear all
+    </button>
+  );
+}
+
 function FilterChip({ chip }: { chip: ActiveChip }) {
   // Only the company chip carries a leading mark now, and it is that company's logo -- so the chip
   // and the rows it filtered to look like the same company.
@@ -2031,7 +2049,10 @@ function TableHeader() {
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
           company sits beneath it as context, rather than the company owning the first column. */}
-      <TableHeading className="w-[30%]">Role</TableHeading>
+      {/* "Title", matching the filter pill that searches it. A column and its filter calling one
+          field two different names is the kind of mismatch that makes people wonder whether they
+          are in fact two different things. */}
+      <TableHeading className="w-[30%]">Title</TableHeading>
       <TableHeading className="w-[20%]">Location</TableHeading>
       <TableHeading className="w-[12%]">Job type</TableHeading>
       <TableHeading className="w-[11%]">Workplace</TableHeading>
@@ -2405,7 +2426,7 @@ function CompanyLogo({ job }: { job: Job }) {
   return (
     <span
       className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
-      style={{ background: "linear-gradient(150deg, #ff5c9f 0%, #c2005d 100%)" }}
+      style={{ background: "linear-gradient(150deg, #f96ad4 0%, #b3007f 100%)" }}
       aria-hidden="true"
     >
       {job.companyMark}
