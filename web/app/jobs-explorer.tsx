@@ -592,6 +592,12 @@ export function JobsExplorer({
     return chips;
   }, [filters, watchlistActive, jobs]);
 
+  // How many things "Clear all" would actually clear. Not simply activeChips.length: the date filter
+  // deliberately has no chip of its own (the date pill already shows its own selection, and a chip
+  // would double it), but Clear all resets it too -- so with one chip AND a date set there really
+  // are two filters and the control earns its place.
+  const clearableCount = activeChips.length + (filters.postedWithin ? 1 : 0);
+
   // A small "Showing results for X" note when a typo'd search was auto-corrected.
   const correctionNote = (
     <div className={`row-collapse ${correctedTo ? "is-open" : ""}`}>
@@ -815,7 +821,11 @@ export function JobsExplorer({
                     filters rather than to the page -- it is the "and clear all of these" at the end
                     of the list, not a separate control parked on the right. Save view stays right:
                     it acts on the whole view, not on the chips. */}
-                <ClearAllChip onClick={() => setFilters(emptyFilters)} />
+                {/* Only once there is more than one thing to clear. With a single filter, its own
+                    chip already carries an X that does exactly what this does, so the two sat side
+                    by side offering the same action twice -- and the reader has to work out whether
+                    the second one means something different. */}
+                {clearableCount > 1 && <ClearAllChip onClick={() => setFilters(emptyFilters)} />}
                 <span className="ms-auto flex items-center gap-[10px]">
                   <SaveViewPill onSaveView={saveView} canSaveView />
                 </span>

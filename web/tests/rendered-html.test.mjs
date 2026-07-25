@@ -41,14 +41,14 @@ function stubD1() {
   };
 }
 
-async function render() {
+async function render(search = "") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   globalThis.__CLOUDFLARE_TEST_ENV__ = { DB: stubD1() };
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost/${search}`, { headers: { accept: "text/html" } }),
     {
       DB: stubD1(),
       ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
@@ -102,6 +102,26 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   // reach the watchlist star, the company and the location and had no way at all to reach the job,
   // which is WCAG 2.1.1 at level A. It also meant 1.24M postings carried no href.
   assert.match(html, /<a[^>]+href="https:\/\/job-boards\.greenhouse\.io\/acme\/jobs\/1"[^>]*>Staff Platform Engineer</);
+});
+
+testWithBuild("Clear all appears only once there is more than one thing to clear", async () => {
+  // With a single filter its own chip already carries an X that does exactly what Clear all does,
+  // so the two sat side by side offering the same action twice.
+  const one = await (await render("?workplace=Remote")).text();
+  assert.match(one, /Remote/, "the workplace chip should be on the page");
+  assert.doesNotMatch(one, />Clear all</);
+
+  const two = await (await render("?workplace=Remote&country=de")).text();
+  assert.match(two, />Clear all</);
+
+  // The date filter has no chip of its own -- the date pill shows its own selection -- but Clear all
+  // resets it too, so one chip plus a date really is two filters.
+  const chipPlusDate = await (await render("?workplace=Remote&postedWithin=7")).text();
+  assert.match(chipPlusDate, />Clear all</);
+
+  // No filters at all: the whole strip is collapsed, so neither appears.
+  const none = await (await render()).text();
+  assert.doesNotMatch(none, />Clear all</);
 });
 
 testWithBuild("keeps HeroUI controls and table-first filters", async () => {
