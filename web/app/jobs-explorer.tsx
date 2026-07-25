@@ -746,19 +746,20 @@ export function JobsExplorer({
           tight for that reason. */}
       <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-6 pt-8 sm:px-8 sm:pt-10">
         <div className="mb-8 text-center">
+          {/* The description IS the headline now -- "Join a high-growth startup" said nothing this
+              does not, and said it without the live count, which is the one number that tells a
+              reader whether the page is worth their time.
+              Smaller than the slogan it replaced (58px -> 40px cap) because a sentence set in a
+              pixel display face at slogan size wraps to three lines and stops being readable; the
+              max-width holds it to two. */}
           <h1
-            className="mx-auto text-[clamp(38px,6vw,58px)] leading-[1.02] tracking-[-0.01em] text-balance"
+            className="mx-auto max-w-[16ch] text-[clamp(26px,3.6vw,40px)] leading-[1.12] tracking-[-0.01em] text-balance sm:max-w-[24ch]"
             style={{ fontFamily: "var(--font-pixel), var(--font-inter), sans-serif", fontWeight: 500 }}
           >
-            Join a high-growth startup
-          </h1>
-          {/* Part of the headline now rather than a separate stanza under it: 18px apart they read
-              as two blocks, and this sentence is what actually says what the page is. */}
-          <p className="mx-auto mt-2 max-w-[620px] text-[16px] leading-relaxed text-[var(--muted)]">
             Find{" "}
-            <span className="font-semibold tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
-            open roles at today&rsquo;s top startups. Updated daily.
-          </p>
+            <span className="tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
+            open roles at today&rsquo;s top startups
+          </h1>
         </div>
 
         {/* No panel chrome behind the filter row — the pills carry their own hairline shadow. */}
