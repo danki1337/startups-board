@@ -979,7 +979,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="dash-4 inline-flex min-h-9 items-center gap-1.5 rounded-full bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
       <span className="text-[var(--muted)]">is</span>

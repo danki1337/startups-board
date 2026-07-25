@@ -261,12 +261,6 @@ button:disabled,
   --pulse-count: infinite;
 }
 
-/* A 4px dash. CSS border-style: dashed leaves the dash length to the browser, so the chip's
-   outline is an SVG stroke, which does expose it. rx=999 clamps to a pill at any height. */
-.dash-4 {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='999' ry='999' fill='none' stroke='%23d9dade' stroke-width='1' stroke-dasharray='4 4'/%3E%3C/svg%3E");
-}
-
 .skeleton {
   background-color: #f1f1f5;
 }

@@ -113,9 +113,7 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(explorer, /FilterCheckbox/);
   // Selected filters are dashed "[icon] is [value]" chips.
   assert.match(explorer, /<FilterChip/);
-  // The dashed outline is an SVG stroke, not border-style: dashed, so the dash length is settable.
-  assert.match(explorer, /dash-4/);
-  assert.match(styles, /stroke-dasharray=/);
+  assert.match(explorer, /border-dashed/);
   // Date posted is a FilterDropdown like every other pill, not a HeroUI Select.
   assert.match(explorer, /<DateDropdown/);
   assert.doesNotMatch(explorer, /<Select\.Trigger/);
