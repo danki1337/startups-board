@@ -196,10 +196,13 @@ async function resolveLogoIfStale(env, board, result) {
     WHERE b.key = ?
   `).bind(board.key).first();
 
-  if (company?.logoUrl) return { url: company.logoUrl, checked: false };
-  if (company?.checkedAt && Date.parse(company.checkedAt) > Date.now() - LOGO_RECHECK_MS) {
-    return { url: null, checked: false };
-  }
+  // Both branches now hang off the same staleness gate. Previously a stored logo returned
+  // immediately whatever its age, so a company that once resolved to a banner could never be
+  // re-examined -- the recheck window only ever applied to companies that had NO logo. Gating both
+  // on freshness means a bad stored logo gets another look on the normal monthly cycle, and
+  // clearing logo_checked_at is enough to force one without destroying good values.
+  const fresh = company?.checkedAt && Date.parse(company.checkedAt) > Date.now() - LOGO_RECHECK_MS;
+  if (fresh) return { url: company?.logoUrl ?? null, checked: false };
 
   const fetchImage = (target) =>
     requestWithRetry(target, {
