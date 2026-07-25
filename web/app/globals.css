@@ -450,6 +450,11 @@ button:disabled,
     width var(--resize-dur) var(--resize-ease),
     height var(--resize-dur) var(--resize-ease);
   will-change: width, height;
+  /* The panel's own height must be its content's, or there is nothing for the transition to read.
+     It sits on the dropdown PANEL rather than on the scroller inside it: the scroller is capped by
+     max-height, so past the cap its height stops changing and the transition had nothing to animate
+     -- the element that could tween was the one that had stopped moving. */
+  height: auto;
   /* A height transition does nothing between two `auto` values, and the dropdowns are sized by
      their content. This opts those keywords into interpolation so filtering a list tweens the panel
      instead of snapping it. Browsers without it simply resize instantly, which is today's behaviour. */
@@ -591,4 +596,8 @@ button:disabled,
 @keyframes reduced-fade-out {
   from { opacity: 1; }
   to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-resize { transition: none; }
 }

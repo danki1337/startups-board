@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { getDatabaseStats, queryActiveJobs, queryTitleSuggestions } from "./database.mjs";
+import { getDatabaseStats, queryActiveJobs, queryCompanySuggestions, queryTitleSuggestions } from "./database.mjs";
 import { countryFlag } from "./locations.mjs";
 
 const COMPANY_COLORS = [
@@ -47,6 +47,16 @@ export function startApiServer(options = {}) {
           Number.isFinite(requestedLimit) ? requestedLimit : 8,
         );
         sendJson(response, 200, { titles });
+        return;
+      }
+      if (url.pathname === "/api/companies") {
+        const requestedLimit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+        const companies = await queryCompanySuggestions(
+          url.searchParams.get("q"),
+          databasePath,
+          Number.isFinite(requestedLimit) ? requestedLimit : 50,
+        );
+        sendJson(response, 200, { companies });
         return;
       }
       if (url.pathname === "/api/jobs") {

@@ -28,6 +28,59 @@ const titlesUrl = typeof window !== "undefined" && window.location.hostname === 
 const companiesUrl = typeof window !== "undefined" && window.location.hostname === "localhost"
   ? "http://localhost:3002/api/companies"
   : "/api/companies";
+
+// Suggestion responses, kept for the session and keyed by request URL.
+//
+// Without this every open of a dropdown started from nothing: an empty list, a debounce, a fetch,
+// and only then the rows -- so the panel opened short and grew a moment later, which is the jump.
+// The list for a given query cannot change between two opens (the aggregates behind it are rebuilt
+// once a day), so re-fetching it was pure latency. A cache hit renders the full list in the first
+// paint, and prefetchSuggestions() below warms the default query before the panel is ever opened.
+// Holds the PROMISE, not the resolved value. Caching the value only helps once the response has
+// landed, so a warm started on pointerdown and a read started on click raced: the read found
+// nothing, issued its own identical request, and the panel still opened empty and grew. Caching the
+// promise means the second caller joins the first request instead of starting a second one.
+const suggestionCache = new Map<string, Promise<unknown>>();
+// What has actually resolved, for the synchronous read that seeds the first render.
+const suggestionResults = new Map<string, unknown>();
+
+function fetchSuggestions<T>(url: string): Promise<T> {
+  let pending = suggestionCache.get(url) as Promise<T> | undefined;
+  if (!pending) {
+    // No signal: the request is shared, so one component unmounting must not abort it for another.
+    // Callers guard against their own staleness instead.
+    pending = fetch(url)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Suggestions API returned ${response.status}`);
+        return response.json() as Promise<T>;
+      })
+      .then((payload) => {
+        suggestionResults.set(url, payload);
+        return payload;
+      })
+      .catch((error) => {
+        // A failed request must not be cached, or one blip poisons the dropdown for the session.
+        suggestionCache.delete(url);
+        throw error;
+      });
+    suggestionCache.set(url, pending);
+  }
+  return pending;
+}
+
+function cachedSuggestions<T>(url: string): T | undefined {
+  return suggestionResults.get(url) as T | undefined;
+}
+
+// Warmed on pointer-down of the pill rather than on mount: it costs one request per dropdown and
+// only for the dropdowns actually reached for, and a pointerdown lands well before the click that
+// opens the panel -- so by the time it renders, the list is usually already in the cache.
+export function prefetchSuggestions(url: string) {
+  if (!suggestionCache.has(url)) void fetchSuggestions(url).catch(() => {});
+}
+
+// A cached list is applied without waiting for the debounce -- the debounce exists to avoid a
+// request per keystroke, and there is no request to avoid.
 const pageSize = 100;
 // Shared by the results table and the skeleton stacked behind it, so the two layers are the same
 // size and the cross-fade between them moves nothing.
@@ -1102,7 +1155,7 @@ function SearchCheckList({
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} label={searchLabel} />
-      <ScrollShadow className="mt-1 max-h-64 t-resize">
+      <ScrollShadow className="mt-1 max-h-64">
         {shown.map((option) => {
           const checked = selectedSet.has(option.value);
           return (
@@ -1189,8 +1242,12 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
 
 function CompanyCheckList({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<{ company: string; jobCount: number; logoUrl: string | null }[]>([]);
-  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  // Seeded from the cache so a warmed list is present in the FIRST render -- rendering empty and
+  // filling in a moment later is exactly the jump this is here to remove.
+  const initial = cachedSuggestions<{ companies: { company: string; jobCount: number; logoUrl: string | null }[] }>(
+    `${companiesUrl}?q=&limit=100`);
+  const [rows, setRows] = useState<{ company: string; jobCount: number; logoUrl: string | null }[]>(initial?.companies ?? []);
+  const [state, setState] = useState<"loading" | "ready" | "failed">(initial ? "ready" : "loading");
 
   useEffect(() => {
     const term = query.trim();
@@ -1200,9 +1257,9 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
     setState("loading");
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`${companiesUrl}?q=${encodeURIComponent(term)}&limit=100`, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Companies API returned ${response.status}`);
-        const payload = (await response.json()) as { companies: { company: string; jobCount: number; logoUrl: string | null }[] };
+        const payload = await fetchSuggestions<{ companies: { company: string; jobCount: number; logoUrl: string | null }[] }>(
+          `${companiesUrl}?q=${encodeURIComponent(term)}&limit=100`);
+        if (controller.signal.aborted) return;
         setRows(payload.companies ?? []);
         setState("ready");
       } catch (caught) {
@@ -1226,7 +1283,7 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
   return (
     <div>
       <SearchBox full focusOnMount value={query} onChange={setQuery} label="Search companies" />
-      <ScrollShadow className="mt-1 max-h-80 t-resize">
+      <ScrollShadow className="mt-1 max-h-80">
         {shown.map((row) => {
           const checked = row.company === value;
           return (
@@ -1250,7 +1307,7 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
             </button>
           );
         })}
-        {shown.length === 0 && state === "loading" && <ListSkeleton />}
+        {shown.length === 0 && state === "loading" && <ListSkeleton rows={12} />}
         {shown.length === 0 && state !== "loading" && (
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
             {state === "failed"
@@ -1283,9 +1340,9 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
     // An empty query fetches the most common titles, so the dropdown opens on a starting list.
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`${titlesUrl}?q=${encodeURIComponent(term)}&limit=${TITLE_SUGGESTION_LIMIT}`, { signal: controller.signal });
-        if (!response.ok) throw new Error(`Titles API returned ${response.status}`);
-        const payload = (await response.json()) as { titles: { title: string; jobCount: number }[] };
+        const payload = await fetchSuggestions<{ titles: { title: string; jobCount: number }[] }>(
+          `${titlesUrl}?q=${encodeURIComponent(term)}&limit=${TITLE_SUGGESTION_LIMIT}`);
+        if (controller.signal.aborted) return;
         setSuggestions(payload.titles ?? []);
         setState("ready");
       } catch (caught) {
@@ -1333,7 +1390,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
             </button>
           );
         })}
-        {rows.length === 0 && state === "loading" && <ListSkeleton />}
+        {rows.length === 0 && state === "loading" && <ListSkeleton rows={12} />}
         {rows.length === 0 && state !== "loading" && (
           <p className="px-2 py-3 text-[13px] text-[var(--muted)]">
             {state === "failed"
@@ -1706,11 +1763,15 @@ function FilterDropdown({
   label,
   width = "w-64",
   align = "start",
+  // The suggestion URL this dropdown will need, warmed on pointerdown so the list is already in the
+  // cache by the time the panel renders. Dropdowns with no remote list leave it unset.
+  prefetch,
   children,
 }: {
   Icon: () => React.ReactElement;
   label: string;
   width?: string;
+  prefetch?: string;
   // "end" hangs the panel off the trigger's right edge instead of its left, for pills near the end
   // of the row whose panel is wider than they are and would otherwise run off the viewport.
   align?: "start" | "end";
@@ -1724,6 +1785,7 @@ function FilterDropdown({
   const open = phase !== "closed";
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const warm = useCallback(() => { if (prefetch) prefetchSuggestions(prefetch); }, [prefetch]);
 
   const close = useCallback(() => setPhase((current) => (current === "open" ? "closing" : current)), []);
 
@@ -1753,6 +1815,10 @@ function FilterDropdown({
       <button
         ref={triggerRef}
         type="button"
+        // pointerdown, not click: it fires on press, which buys the fetch the whole press-to-release
+        // window before the panel renders. Focus covers keyboard users, who never send a pointer.
+        onPointerDown={warm}
+        onFocus={warm}
         onClick={() => setPhase((current) => (current === "open" ? "closing" : "open"))}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -1800,10 +1866,10 @@ function FilterDropdownBar({
     // the search side keeps its place on the right.
     <div className="flex items-start justify-between gap-[10px]">
       <div className="flex min-w-0 flex-wrap items-center gap-[10px]">
-      <FilterDropdown Icon={IconTitleF} label="Title" width="w-72">
+      <FilterDropdown Icon={IconTitleF} label="Title" width="w-72" prefetch={`${titlesUrl}?q=&limit=${TITLE_SUGGESTION_LIMIT}`}>
         <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
       </FilterDropdown>
-      <FilterDropdown Icon={IconUser} label="Company" width="w-72">
+      <FilterDropdown Icon={IconUser} label="Company" width="w-72" prefetch={`${companiesUrl}?q=&limit=100`}>
         <CompanyCheckList value={filters.company} onChange={(value) => update({ company: value })} />
       </FilterDropdown>
       <FilterDropdown Icon={IconJobTypeF} label="Job type" width="w-72">

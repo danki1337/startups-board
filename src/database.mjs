@@ -602,3 +602,31 @@ function addSetCondition(conditions, column, value, normalize = (input) => input
   if (!values.length) return;
   conditions.push(`${column} IN (${values.map((entry) => sqlString(entry)).join(", ")})`);
 }
+
+// Mirrors queryCompanySuggestions in web/app/jobs-query.ts. D1 has a job_companies aggregate
+// rebuilt daily; the local snapshot has no such table, so this groups the jobs table live -- fine
+// on a dev-sized database and the same shape of answer.
+export async function queryCompanySuggestions(query, databasePath = "data/jobs.db", limit = 50) {
+  const term = String(query ?? "").trim().toLowerCase().slice(0, 60);
+  const cap = clampInteger(limit, 50, 1, 1000);
+  // The display name, matching what the D1 aggregate groups on: the provider's name when there is
+  // one, otherwise the tenant segment of a piped Workday identifier.
+  const display = `coalesce(nullif(company_name, ''), CASE WHEN instr(company_identifier, '|') > 0
+      THEN substr(company_identifier, 1, instr(company_identifier, '|') - 1) ELSE company_identifier END)`;
+  const where = term.length >= 2 ? `AND lower(${display}) LIKE ${sqlLike(term)} ESCAPE '\\'` : "";
+  const rows = await querySqlite(resolve(databasePath), `
+    SELECT ${display} AS company, count(*) AS jobCount, max(company_logo_url) AS logoUrl
+    FROM jobs
+    WHERE is_active = 1 AND ${display} IS NOT NULL ${where}
+    GROUP BY company
+    ORDER BY jobCount DESC
+    LIMIT ${cap};
+  `);
+  return rows.map((row) => ({
+    company: /[a-z]/.test(row.company) && !/\s/.test(row.company)
+      ? String(row.company).replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+      : row.company,
+    jobCount: Number(row.jobCount),
+    logoUrl: row.logoUrl ?? null,
+  }));
+}
