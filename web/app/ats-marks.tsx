@@ -37,6 +37,20 @@ const FALLBACKS: Record<string, { short: string; className: string }> = {
   Workday: { short: "Wd", className: "bg-[#e6f2fb] text-[#0b5c8a]" },
 };
 
+// Pulls the twelve marks into the browser cache once, so the ATS dropdown -- which renders all of
+// them at the same instant -- does not fire twelve first-time requests as it opens. Cheap enough to
+// do unconditionally: 56KB total, and they never change.
+let warmed = false;
+export function warmAtsIcons() {
+  if (warmed || typeof window === "undefined") return;
+  warmed = true;
+  for (const src of Object.values(ICONS)) {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = src;
+  }
+}
+
 export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; size?: 4 | 5 }) {
   const [failed, setFailed] = useState(false);
   const icon = ICONS[source];
@@ -49,8 +63,13 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
         src={icon}
         alt=""
         aria-hidden="true"
-        loading="lazy"
+        // Not lazy. These are 20px marks that are on screen the moment they render -- in every
+        // table row, and twelve at once when the ATS filter opens -- so deferring them bought
+        // nothing and cost a visible pop-in per icon. The whole set is 56KB and cached after first
+        // paint; warmAtsIcons() below fetches it once so the filter panel never opens empty.
+        loading="eager"
         decoding="async"
+        fetchPriority="low"
         className={`${dimension} shrink-0 rounded-[4px] object-contain`}
         onError={() => setFailed(true)}
       />

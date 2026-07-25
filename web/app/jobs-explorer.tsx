@@ -11,7 +11,7 @@ import {
 } from "./jobs";
 import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
 import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
-import { AtsMark } from "./ats-marks";
+import { AtsMark, warmAtsIcons } from "./ats-marks";
 // Shared with the ingestion worker, which decides whether to STORE a logo using exactly these
 // numbers. They used to be written out here and agree with the server by coincidence; the cost of
 // that coincidence was 324,728 stored Workday URLs the server had no idea this file would reject.
@@ -412,6 +412,7 @@ export function JobsExplorer({
     // Not a setState -- it fills the module-level logo cache, and must run before the first rows
     // mount so recycled rows can read it.
     hydrateLogoOutcomes();
+    warmAtsIcons();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setWatchlist(readStored<string[]>(WATCHLIST_KEY, []));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, []));
@@ -751,7 +752,9 @@ export function JobsExplorer({
           >
             Join a high-growth startup
           </h1>
-          <p className="mx-auto mt-[18px] max-w-[620px] text-[16px] leading-relaxed text-[var(--muted)]">
+          {/* Part of the headline now rather than a separate stanza under it: 18px apart they read
+              as two blocks, and this sentence is what actually says what the page is. */}
+          <p className="mx-auto mt-2 max-w-[620px] text-[16px] leading-relaxed text-[var(--muted)]">
             Find{" "}
             <span className="font-semibold tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
             open roles at today&rsquo;s top startups. Updated daily.
@@ -1233,7 +1236,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
     <span
       aria-hidden="true"
       className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
-      style={{ background: "linear-gradient(150deg, #ff8ee4 0%, #d426b0 100%)" }}
+      style={{ background: "linear-gradient(150deg, #ff5c9f 0%, #c2005d 100%)" }}
     >
       {initialsOf(name)}
     </span>
@@ -1475,7 +1478,6 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       {chip.kind === "company"
         ? <CompanyMark name={value} logoUrl={chip.logoUrl ?? null} />
         : Icon && <span className="inline-flex [&>svg]:size-5">{<Icon />}</span>}
-      <span className="text-[var(--muted)]">is</span>
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
@@ -2401,7 +2403,7 @@ function CompanyLogo({ job }: { job: Job }) {
   return (
     <span
       className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
-      style={{ background: "linear-gradient(150deg, #ff8ee4 0%, #d426b0 100%)" }}
+      style={{ background: "linear-gradient(150deg, #ff5c9f 0%, #c2005d 100%)" }}
       aria-hidden="true"
     >
       {job.companyMark}

@@ -181,8 +181,11 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // The dropdown popover still plays its one-shot enter.
   assert.match(styles, /@keyframes dropdown-in/);
   assert.match(explorer, /dropdown-in/);
-  // Pink is the primary.
-  assert.match(styles, /--accent: #ff73e5/);
+  // Pink is the primary, at the brand hue. --accent-strong is the text-safe partner: the brand
+  // colour is 3.80:1 on white, which clears the 3:1 a focus ring needs but not the 4.5:1 body text
+  // does, so the two are deliberately different values and both are asserted.
+  assert.match(styles, /--accent: #ff007a/);
+  assert.match(styles, /--accent-strong: #b00055/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Startups\.board/);
   assert.match(packageJson, /"@heroui\/react"/);

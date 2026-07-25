@@ -16,13 +16,16 @@
   /* Pink is the primary. --accent is the brand hue (decorative surfaces, focus ring);
      --accent-strong is the text-safe shade — it carries ~4.9:1 on --accent-wash, which the brand
      pink itself does not. */
-  --accent: #ff73e5;
-  --accent-strong: #c2189e;
-  --accent-wash: #ffecf9;
+  --accent: #ff007a;
+  /* 3.80:1 on white -- enough for the focus ring (WCAG 1.4.11 wants 3:1) and for decorative fills,
+     but short of the 4.5:1 body text needs, which is why --accent-strong exists. */
+  --accent-strong: #b00055;
+  /* 7.05:1 on white, 6.07:1 on --accent-wash. Measured, not guessed. */
+  --accent-wash: #ffe8f1;
   --success: #2f9b65;
-  /* The brand pink is only ~2.4:1 on white, and a focus indicator needs 3:1 (WCAG 1.4.11) or a
-     keyboard user cannot see where they are. The ring uses the deeper shade, which clears it. */
-  --focus: #c2189e;
+  /* #ff007a clears 3:1 on its own, but the ring uses the deeper shade anyway: it also has to read
+     against --accent-wash, where the brand hue drops to 3.26:1. */
+  --focus: #b00055;
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);
@@ -95,8 +98,8 @@ a {
 }
 
 ::selection {
-  background: #ffd9f5;
-  color: #3a1030;
+  background: #ffd0e4;
+  color: #3a0d22;
 }
 
 .brand-mark {
