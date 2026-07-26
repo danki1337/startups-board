@@ -613,7 +613,7 @@ export function JobsExplorer({
     <div className={`row-collapse ${correctedTo ? "is-open" : ""}`}>
       <div>
         <p className="mb-2 px-1 text-[13px] text-[var(--muted-strong)]">
-          Showing results for <span className="font-semibold text-[var(--ink)]">{correctedTo}</span>
+          Showing results for <span className="font-bold text-[var(--ink)]">{correctedTo}</span>
         </p>
       </div>
     </div>
@@ -633,7 +633,7 @@ export function JobsExplorer({
           <button
             type="button"
             onClick={() => setRetryToken((token) => token + 1)}
-            className="rounded font-semibold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+            className="rounded font-bold underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
           >
             Try again
           </button>
@@ -735,13 +735,13 @@ export function JobsExplorer({
           <p aria-live="polite" className="jobs-count-badge">
             <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
             {total === 1 ? "job" : "jobs"}
-            {isLoading && <span className="ms-1.5 font-normal">Updating…</span>}
+            {isLoading && <span className="ms-1.5 font-medium">Updating…</span>}
           </p>
         </div>
       </div>
     ) : error ? (
       <div role="alert" className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
-        <p className="text-base font-semibold">Couldn&rsquo;t load jobs</p>
+        <p className="text-base font-bold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
           The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
         </p>
@@ -751,7 +751,7 @@ export function JobsExplorer({
       </div>
   ) : (
     <div className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
-      <p className="text-base font-semibold">No matching jobs</p>
+      <p className="text-base font-bold">No matching jobs</p>
       <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
       <div className="mt-5 flex justify-center">
         <PillButton onClick={() => setFilters(emptyFilters)}>Clear filters</PillButton>
@@ -770,7 +770,7 @@ export function JobsExplorer({
           setPagingError(false);
           void loadMore();
         }}
-        className="rounded font-semibold text-[var(--accent-strong)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+        className="rounded font-bold text-[var(--accent-strong)] underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
       >
         Retry
       </button>
@@ -800,7 +800,7 @@ export function JobsExplorer({
               sentence rather than breaking it. Inter, not the pixel face -- a display face is for
               three or four words, and this is a sentence with a number in it. */}
           <h1
-            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-semibold leading-[1.15] tracking-[-0.02em]"
+            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
             <span className="tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
@@ -1326,7 +1326,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   return (
     <span
       aria-hidden="true"
-      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
+      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-extrabold leading-none text-white"
       style={{ background: "var(--accent)" }}
     >
       {initialsOf(name)}
@@ -1528,7 +1528,7 @@ function SidebarPills({
             type="button"
             onClick={() => onToggle(option.value)}
             aria-pressed={checked}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
               checked
                 ? "border-[var(--accent)]/30 bg-[var(--accent)]/15 text-[var(--accent-strong)]"
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
@@ -1564,7 +1564,7 @@ function ClearAllChip({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       Clear all
     </button>
@@ -1580,7 +1580,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-medium text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-semibold text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {/* No leading category glyph. It named the FILTER ("this is a country filter") while the mark
           beside the value already names the VALUE (a flag, a globe, an ATS logo) -- two icons for one
@@ -1723,7 +1723,7 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 // actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
 // value -- below 0.95 it reads as the button flinching.
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-semibold text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // A scrollable box that fades its own content at whichever edge still has more to scroll, so a long
 // option list reads as continuing rather than ending. Driven off scroll position rather than a
@@ -2110,7 +2110,7 @@ function TableHeading({
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 ${align === "end" ? "text-end" : "text-start"} text-[12px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
+      className={`px-5 pb-3 ${align === "end" ? "text-end" : "text-start"} text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -2261,7 +2261,7 @@ function JobCells({
               href={job.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="job-role-line block truncate rounded-sm text-sm font-semibold tracking-[-0.01em] text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+              className="job-role-line block truncate rounded-sm text-sm font-bold tracking-[-0.01em] text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
             >
               {job.title}
             </a>
@@ -2338,7 +2338,7 @@ function JobCells({
                   <span
                     {...extraTip.tipProps}
                     tabIndex={0}
-                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-medium tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-semibold tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
                   >
                     +{places.extra}
                   </span>
@@ -2384,7 +2384,7 @@ function JobCells({
           which read as a second, different destination inside a row that already opens the posting
           on click -- two affordances for one action. The whole row is the link now. */}
       <td className="whitespace-nowrap px-5 py-3 text-end">
-        <span className="inline-flex items-center justify-end gap-2 text-sm font-medium text-[var(--muted-strong)]">
+        <span className="inline-flex items-center justify-end gap-2 text-sm font-semibold text-[var(--muted-strong)]">
           <AtsMark source={job.source} />
           {job.source}
         </span>
@@ -2516,7 +2516,7 @@ function CompanyLogo({ job }: { job: Job }) {
   // design's app-icon style logos.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-extrabold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
       style={{ background: "var(--accent)" }}
       aria-hidden="true"
     >

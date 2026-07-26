@@ -84,7 +84,7 @@
 @theme inline {
   --color-background: var(--canvas);
   --color-foreground: var(--ink);
-  --font-sans: var(--font-inter);
+  --font-sans: var(--font-nunito);
   --font-mono: ui-monospace, monospace;
 }
 
@@ -96,8 +96,8 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  font-weight: 500;
+  font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
   font-synthesis: none;
 }
 
@@ -497,7 +497,7 @@ button:disabled,
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-lift);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--muted-strong);
   white-space: nowrap;
 }
@@ -512,7 +512,7 @@ button:disabled,
   background: #16161a;
   color: #ffffff;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.35;
   pointer-events: none;
   box-shadow: var(--shadow-lift);

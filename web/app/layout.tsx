@@ -1,24 +1,25 @@
 import type { Metadata } from "next";
-import { Inter, Pixelify_Sans } from "next/font/google";
+import { Nunito } from "next/font/google";
 import "./globals.css";
 
-// Weights start at 500: the design brief calls for medium as the lightest weight on the page, so
-// 400 is deliberately not loaded and cannot be used by accident.
-const inter = Inter({
-  variable: "--font-inter",
+// Every weight on the page moved up one step, so the loaded set moved with it: body copy at 600,
+// headings and emphasis at 700, the heaviest marks at 800. 500 stays for the single modifier that
+// has to read LIGHTER than what surrounds it -- "Updating…" beside the count -- and it now has a
+// real face to do that with. It previously asked for 400, found nothing loaded, and rendered
+// identical to its neighbours because font-synthesis is off.
+//
+// The explicit list is what keeps 400 off the page. Nunito is a variable font, so omitting `weight`
+// would ship the whole 200-1000 range and put it silently back within reach.
+const nunito = Nunito({
+  variable: "--font-nunito",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["500", "600", "700", "800"],
   display: "swap",
 });
 
-// Pixel display face for the hero heading only. The redesign used Alpha Lyrae (a paid font);
-// Pixelify Sans is the closest open substitute and is loaded via next/font so it self-hosts.
-const pixelify = Pixelify_Sans({
-  variable: "--font-pixel",
-  subsets: ["latin"],
-  weight: ["500"],
-  display: "swap",
-});
+// Pixelify Sans used to sit here as the hero's display face. It was dropped from the markup when the
+// headline became a sentence with a live number in it -- a display face is for three or four words --
+// but the loader stayed, so every visitor was still downloading a webfont that no rule referenced.
 
 const TITLE = "Startup jobs — Aboard";
 const DESCRIPTION =
@@ -57,7 +58,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${pixelify.variable} font-medium antialiased`}>{children}</body>
+      <body className={`${nunito.variable} font-semibold antialiased`}>{children}</body>
     </html>
   );
 }
