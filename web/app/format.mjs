@@ -90,6 +90,49 @@ export function tidyLocation(value) {
   return text.replace(/\s+/g, " ").replace(/\s*,\s*$/, "");
 }
 
+// "Remote" is not a place, and the row already says so.
+//
+// Workplace is its own column, populated for the same postings, so "Europe, Remote" spends a third
+// of the location cell repeating the cell two columns to its right -- and the location column is the
+// one that crops. 599 European postings alone carry it.
+//
+// Conservative on purpose. Only a whole segment that says nothing but "remote" is dropped, plus the
+// two prefix forms the ATSs actually write ("Remote in Europe", "Remote-WesternEurope") and the
+// trailing form ("US Remote"). A segment is bounded by a comma, a pipe, a slash or a SPACED hyphen
+// -- spaced, so that Winston-Salem and Baden-Baden survive.
+// Anything it does not recognise is returned untouched: a location it fails to strip still reads as
+// a place, whereas one it mangles does not.
+const REMOTE_ONLY = /^(?:fully\s+|100%\s+|is\s+|entirely\s+)?remote(?:\s+(?:work|only|first|position|role|job))?$/i;
+const SEGMENT = /\s*(?:[,|/]|\s[-–—]\s)\s*/;
+
+// Per SEGMENT, not over the whole string, and that ordering is the whole correctness of it. Doing
+// the trailing "... Remote" strip first turned "Europe, Remote" into "Europe," (a dangling comma)
+// and "Fully Remote" into "Fully" -- both cases where the word is the segment rather than a suffix
+// of one. Dropping whole segments first leaves the suffix rule with only real suffixes to see.
+function stripRemoteSegment(part) {
+  const lead = part
+    .replace(/^remote\s+(?:in|from|within|across)\s+/i, "")
+    .replace(/^remote\s*[-–—]\s*/i, "")
+    .trim();
+  if (!lead || REMOTE_ONLY.test(lead)) return "";
+  const trailing = lead.replace(/\s+remote$/i, "").trim();
+  return trailing || lead;
+}
+
+export function stripRemote(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return text;
+  const parts = text.split(SEGMENT).map((part) => part.trim()).filter(Boolean);
+  const kept = parts.map(stripRemoteSegment).filter(Boolean);
+  // Every segment said remote: there is no place here at all, and an empty cell beside a Remote
+  // workplace says more than the word repeated does.
+  if (!kept.length) return "";
+  // Untouched when nothing was removed, so a location this does not recognise keeps its own
+  // punctuation rather than being rewritten with commas.
+  if (kept.length === parts.length && kept.every((part, i) => part === parts[i])) return text;
+  return kept.join(", ");
+}
+
 /* ------------------------------------------------------- multi-location splitting */
 
 // Two shapes of multi-location arrive from the ATSs.
@@ -110,14 +153,15 @@ const LOCATION_COUNT = /^(?:(\d+)\s+locations?|multiple\s+locations?)$/i;
  *   `count` is set only for the degenerate case where there is no place to show at all.
  */
 export function splitLocations(location) {
-  const value = tidyLocation(location);
+  const value = stripRemote(tidyLocation(location));
+  if (!value) return { primary: "", extra: 0, all: "", count: null };
   const counted = LOCATION_COUNT.exec(value);
   if (counted) {
     // "Multiple locations" states no number; treat it as unknown rather than inventing one.
     return { primary: "", extra: 0, all: value, count: counted[1] ? Number(counted[1]) : 0 };
   }
 
-  const parts = value.split(/\s*[;·•]\s*|\s+·\s+/).map((part) => tidyLocation(part)).filter(Boolean);
+  const parts = value.split(/\s*[;·•]\s*|\s+·\s+/).map((part) => stripRemote(tidyLocation(part))).filter(Boolean);
   if (parts.length <= 1) return { primary: value, extra: 0, all: value, count: null };
 
   // A count riding along with named places is Workday's shape: the count is the TOTAL, so what is

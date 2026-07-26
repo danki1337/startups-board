@@ -8,6 +8,25 @@
   "rules": [
     { "type": "ESModule", "globs": ["**/*.js", "**/*.mjs"] }
   ],
+  // The custom domain. COMMENTED until aboard.cc is an active zone on Cloudflare -- a custom_domain
+  // route against a zone Cloudflare does not host makes `wrangler deploy` fail outright, which would
+  // take the working workers.dev deploy down with it. Uncomment once the nameserver move below has
+  // gone through; wrangler then creates the DNS record and the certificate itself.
+  //
+  //   1. Cloudflare dashboard -> Add a site -> aboard.cc (Free plan is enough).
+  //   2. Cloudflare shows two nameservers. In Namecheap: Domain List -> Manage -> Nameservers ->
+  //      Custom DNS, paste both, save. Propagation is usually minutes, occasionally hours.
+  //   3. Wait for the zone to read "Active" in the Cloudflare dashboard.
+  //   4. Uncomment the block below and run `npm run cloudflare:deploy`.
+  //
+  // The APEX only. www is deliberately not a custom domain: two custom domains serve the same app on
+  // two hostnames, which is two URLs for every page. The canonical tags now emitted point at
+  // aboard.cc, so a crawler resolves it -- but a Cloudflare Redirect Rule (www.aboard.cc/* ->
+  // https://aboard.cc/$1, 301) is one rule and removes the ambiguity instead of explaining it.
+  //
+  // "routes": [
+  //   { "pattern": "aboard.cc", "custom_domain": true }
+  // ],
   "assets": {
     "directory": "../web/dist/client",
     "binding": "ASSETS",

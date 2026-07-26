@@ -88,12 +88,37 @@ test("a bare count is still labelled as a count, not dressed up as a place", () 
   assert.equal(splitLocations("Multiple locations").count, 0);
 });
 
-test("a real list of places is unchanged", () => {
+test("a real list of places keeps its places and drops Remote", () => {
+  // Remote is not a place, and the row states it two columns to the right in Workplace. Dropping it
+  // also corrects the count: "Berlin · Munich · Remote" is two places and one more, not three.
   const list = splitLocations("Berlin · Munich · Remote");
   assert.equal(list.primary, "Berlin");
-  assert.equal(list.extra, 2);
-  assert.equal(list.all, "Berlin · Munich · Remote");
+  assert.equal(list.extra, 1);
+  assert.equal(list.all, "Berlin · Munich");
   assert.equal(list.count, null);
+});
+
+test("Remote is dropped from a location without mangling the rest", () => {
+  // Segment-first, suffix-second. Doing it the other way round turned "Europe, Remote" into
+  // "Europe," and "Fully Remote" into "Fully".
+  assert.equal(splitLocations("Europe, Remote").primary, "Europe");
+  assert.equal(splitLocations("Remote - Europe").primary, "Europe");
+  assert.equal(splitLocations("Remote in Europe").primary, "Europe");
+  assert.equal(splitLocations("Remote-WesternEurope").primary, "WesternEurope");
+  assert.equal(splitLocations("US Remote").primary, "US");
+  assert.equal(splitLocations("Remote, San Francisco").primary, "San Francisco");
+  assert.equal(splitLocations("Fully Remote").primary, "");
+  // Nothing but Remote leaves nothing: an empty cell beside a Remote workplace says more than the
+  // word repeated does.
+  assert.equal(splitLocations("Remote").primary, "");
+});
+
+test("a hyphenated place is not a separator", () => {
+  // The segment rule only splits on a SPACED hyphen, which is what keeps these whole.
+  assert.equal(splitLocations("Winston-Salem, NC").primary, "Winston-Salem, NC");
+  assert.equal(splitLocations("Baden-Baden").primary, "Baden-Baden");
+  // And a location with no Remote in it is returned byte-for-byte, punctuation included.
+  assert.equal(splitLocations("UK/Europe | Portugal").primary, "UK/Europe | Portugal");
 });
 
 test("a single location has nothing hidden", () => {

@@ -21,15 +21,23 @@
      state. There used to be four (--muted-strong at 0.88 and --glyph #868990 as well), which with a
      single 700 weight left colour as the ONLY hierarchy signal and then spent it on distinctions
      nobody could name.
-     0.74 is the one kept rather than 0.88 for that reason: with everything at 700 a darker secondary
-     makes the page heavy and flattens the gap to --ink. Measured against the darkest ground either
-     sits on (--control-hover #f7f7fb, the table header):
-       --ink   #16161a          16.9:1
-       --muted rgb(109,109,115)  4.84:1
-     Both pass AA for body text, and they are far enough apart to read as two levels.
+     A low alpha is the point rather than a darker step: with everything at 700 a heavy secondary
+     flattens the gap to --ink and makes the page dense.
+     65% is BELOW the AA threshold for body text, and that is the trade being made here. Measured on
+     each ground it sits on, across the two steps it has come down through:
+                              74%      70%      65%
+       surface   #ffffff     5.02:1   4.49:1   3.92:1
+       canvas    #fcfcfd     4.95:1   4.43:1   3.88:1
+       hover     #f7f7fb     4.84:1   4.34:1   3.80:1
+     WCAG 1.4.3 asks 4.5:1 of normal-size text and this is 14px, so every one of those fails -- and
+     3.80:1 is no longer the near-miss 70% was, it is a clear miss on every ground. 74% cleared it
+     everywhere. --ink is unaffected at 16.9:1.
+     This is the whole secondary tier: column headers, the company under each title, location, job
+     type, workplace, posted, source, and the empty state -- most of the text on the page. Raising
+     the alpha is the one-line reversal; 74% is the last value that passed.
      The accent and the danger ink are NOT part of this scale -- they are semantic (this is your
      filter / this failed), not a step in a neutral ramp. */
-  --muted: rgba(60, 60, 67, 0.74);
+  --muted: rgb(60 60 67 / 65%);
   /* Pink is the primary, and it is now the WORDMARK's pink: the logo above the headline is drawn in
      #FF73E5, and an accent a shade off the logo it sits under reads as a mistake rather than as a
      palette.
@@ -52,6 +60,24 @@
   /* Stays a pale tint, and is the one pink that cannot become #FF73E5: text is drawn ON it, so
      matching the two would leave the label invisible against its own fill. */
   --accent-wash: #ffe8f6;
+  /* The fallback avatar, for a company with no usable logo: a 15% fill inside a 30% ring, both the
+     accent, carrying an accent monogram. One colour at three strengths rather than pink-and-white.
+     ALPHA, not pre-mixed hexes, and that is the whole reason these are separate tokens from
+     --accent-wash: the tile sits on a row that changes underneath it (white, --canvas, and the
+     hover tint), and a solid pale pink would punch an opaque square through a hovered row. They are
+     also not interchangeable numerically -- --accent-wash is #ffe8f6, the fill composites to
+     #ffeafb on white and the ring to #ffd5f7.
+     The lighter 15% fill is what makes the letter readable AT ALL: the accent measures 2.08:1 on it
+     against 1.82:1 on the 30% it replaced, because a paler ground moves away from the text instead
+     of toward it. Still low, knowingly -- both monograms are aria-hidden and the company name sits
+     beside them as real text, so the letter is decoration and not content.
+     The ring is faint by construction, 1.30:1 against the page. That is roughly what the grey
+     hairline it replaces already measures (--border is 1.24:1), so this is the same weight of line
+     in a different hue, not a heavier one. It is deliberately NOT used on the tiles that hold a real
+     logo: those keep --border, because a coloured ring around someone else's mark reads as part of
+     their mark. The ring is what says "this square is ours, and the company had no logo". */
+  --monogram-wash: color-mix(in srgb, var(--accent) 15%, transparent);
+  --monogram-stroke: color-mix(in srgb, var(--accent) 30%, transparent);
   --success: #2f9b65;
   /* The ring is the brand colour. See the note above: at 2.38:1 it no longer clears the 3:1 WCAG
      1.4.11 asks of a focus indicator, and this is the one line to change if that matters more than
@@ -106,6 +132,43 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The search field's focus ring grows into place.
+   Separate from the :focus-visible rule below because it is a different thing on a different
+   trigger: that one is the keyboard-only outline every control gets on Tab, this is the inset ring
+   the search field draws on focus-WITHIN, including a mouse click into the box. A click into a
+   search field is a deliberate act a few times a session, not a hundred-a-day traversal, so it can
+   afford 140ms where the Tab ring gets 120ms and one property.
+   box-shadow rather than transform, so this is paint rather than compositing -- acceptable on one
+   element, on focus, and there is no transform that can draw a 1.5px inset ring.
+   The ring is only ever added, so this animates in and snaps out. Exits get out of the way. */
+.search-shell {
+  transition: box-shadow 140ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-shell { transition: none; }
+}
+
+/* The focus ring settles rather than snapping into existence.
+   Deliberately the lightest thing in this file. A keyboard user sees this on every Tab -- Emil's
+   frequency table puts anything at that rate in "remove or drastically reduce" -- so it is 120ms on
+   one property and nothing else. Long enough to read as an arrival, too short to sit between the
+   key press and the answer.
+   outline-OFFSET, not outline-color. Two reasons: the colour switch is what makes the ring legible
+   and delaying it by even 120ms would be a real accessibility cost, and a transition naming `color`
+   is what the design linter forbids across this file, correctly -- hover feedback here is instant.
+   The offset animates from its resting 0 out to the utility's 2px, so the ring appears at the edge
+   and settles just outside it. Declared ON the :focus-visible rule: a transition is read from the
+   state being entered, so this animates in and snaps back out, which is the right asymmetry.
+   Exits should get out of the way. */
+:focus-visible {
+  transition: outline-offset 120ms var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :focus-visible { transition: none; }
+}
+
 button {
   user-select: none;
 }
@@ -150,6 +213,382 @@ a {
   border-radius: 2px;
   background: #ffffff;
   opacity: 0.92;
+}
+
+/* The rule between the filter pills and the selected-filter chips.
+   Not border-top: dashed. CSS gives no control at all over a dashed border's dash length or the gap
+   between dashes -- the browser picks both from the border width, and at 1px that is a tight 3-and-3
+   that reads as a broken line rather than a deliberate one. A repeating gradient is the only way to
+   say 4px of ink and 7px of air.
+   background-size pins it to 1px tall at the top edge, so it occupies no layout of its own and the
+   spacing above and below stays whatever the padding says. */
+.rule-dashed {
+  /* A shade darker than --border, derived from it rather than written as its own hex so a palette
+     change still reaches it. Some correction is needed rather than optional: --border is a
+     CONTINUOUS hairline everywhere else, and broken into 4px dashes with 7px gaps the same colour
+     puts under 40% as much ink on the row, so it reads fainter than the line it replaced.
+     92% is the settled value, between plain --border at 1.21:1 against the canvas and the 88% first
+     tried at 1.54:1, which overshot. This is 1.42:1 -- present as a divider, quiet as a rule. */
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--border) 92%, var(--ink)) 0 4px,
+    transparent 4px 11px
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  background-position: top left;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   transitions.dev snippets (.claude/skills/transitions-dev), pasted verbatim
+   apart from the token values noted below.
+
+   DELIBERATELY NOT the skill's _root.css. That file defines `--ease-out: ease-out`,
+   and this project's --ease-out is cubic-bezier(0.23, 1, 0.32, 1) -- importing the
+   block wholesale would silently retime every transition already in this file
+   while looking like a purely additive change. Only the per-snippet tokens each
+   installed transition actually reads are declared, right above it.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Icon swap (09-icon-swap.md). Two icons share one grid cell and cross-fade with
+   blur and scale rather than being swapped out of the DOM.
+   250ms is the snippet's own value and is kept: this is a swap between two states,
+   not hover feedback, so the "hover is instant" rule above does not govern it. */
+:root {
+  --icon-swap-dur: 250ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
+}
+
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity   var(--icon-swap-dur) var(--icon-swap-ease),
+    filter    var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="a"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="b"] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="b"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="a"] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+  /* Not in the snippet, and required the moment either side of the swap is a CONTROL. Both children
+     share one grid cell, so the hidden one is stacked ON TOP of the visible one (it comes later in
+     the DOM) and swallowed every click aimed at it -- the search field's clear button stopped
+     working the moment it was wrapped in this. opacity:0 hides a thing; it does not get it out of
+     the way. */
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-icon-swap .t-icon { transition: none !important; }
+}
+
+/* Refetching with rows already on screen.
+   The skeleton only covers the FIRST load -- once there are rows, changing a filter used to replace
+   them between one frame and the next with nothing said in between. Emil's "preventing jarring
+   changes": elements appearing or disappearing without transition feel broken.
+   A second skeleton pass would be worse, not better. Most of these queries answer in well under
+   200ms, so re-showing placeholders would flash a full screen of grey bars and take LONGER to read
+   than the swap it was hiding.
+   So the rows are dimmed and very slightly blurred instead: the table says "this is stale, the
+   answer is coming" and then resolves. The blur is doing the same job it does in a crossfade --
+   without it, dimming alone reads as the table being disabled rather than as it being refreshed.
+   Asymmetric on purpose. Going out is 90ms so the stale state is acknowledged almost immediately;
+   coming back is 220ms so the new rows settle rather than snap. Both ease-out, both transitions
+   rather than keyframes, so a second filter picked mid-flight retargets from where it was.
+   1.5px, and only while a query is in flight -- a filter on a full-height scroller is not free, and
+   this one is measured in tens of milliseconds a few times per session. */
+/* Scoped through .t-skel.is-revealed on purpose. That selector already sets opacity and filter on
+   this exact element to reveal it after the skeleton, at specificity (0,3,0) -- a bare
+   `.jobs-refreshing` is (0,1,0) and loses to it silently, which is exactly what happened first: the
+   class applied, the computed opacity stayed 1, and nothing moved. */
+.t-skel.is-revealed .t-skel-content.jobs-refreshing {
+  opacity: 0.45;
+  filter: blur(1.5px);
+  transition:
+    opacity 90ms var(--ease-out),
+    filter 90ms var(--ease-out);
+}
+
+.t-skel.is-revealed .t-skel-content.jobs-settled {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity 220ms var(--ease-out),
+    filter 220ms var(--ease-out);
+}
+
+/* Dimming is the whole message for anyone who has asked for less motion; the blur is the part that
+   is decoration, so only it goes. */
+@media (prefers-reduced-motion: reduce) {
+  .t-skel-content.jobs-refreshing,
+  .t-skel-content.jobs-settled {
+    filter: none !important;
+    transition: opacity 90ms linear !important;
+  }
+}
+
+/* The row's Source -> Apply swap, lifted from the portfolio's "View on LinkedIn" hover
+   (portfolio/src/app/globals.css, .arrow-icon / .arrow-icon-out).
+   Same construction as icon-swap above -- two children stacked in one grid cell, cross-fading with
+   scale and blur -- but driven by HOVER rather than by a state attribute, which is why it is its own
+   pair of classes rather than a data-state on .t-icon-swap.
+   Two things carried over from the original verbatim, both of which matter:
+   - `@media (hover: hover) and (pointer: fine)`. Without it a touch device fires :hover on tap and
+     the label flips to Apply just as the finger leaves, so the last thing seen is the wrong state.
+   - 180ms ease-out, and blur(2px) at scale 0.92. Slower and the row feels sticky under a moving
+     cursor; faster and the blur never resolves.
+   One thing deliberately NOT carried over: the original's `will-change`. It is right for a handful
+   of rows on a portfolio page and wrong here, where ~34 rows are on screen inside a virtualized
+   scroller -- 68 compositor layers held permanently to serve a transition that runs for whichever
+   single row the cursor is over. Same reasoning as the watchlist star below. */
+.row-swap {
+  display: inline-grid;
+}
+.row-swap > * {
+  grid-area: 1 / 1;
+}
+
+.row-swap-in {
+  opacity: 0;
+  transform: scale(0.92);
+  filter: blur(2px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out, filter 180ms ease-out;
+}
+
+.row-swap-out {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out, filter 180ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .jobs-table tbody tr:hover .row-swap-in {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  .jobs-table tbody tr:hover .row-swap-out {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-swap-in,
+  .row-swap-out { transition: none !important; }
+}
+
+/* One documented deviation from the snippet, and only inside the table.
+   will-change is a PERMANENT compositor-layer hint, and 09-icon-swap.md is written for a swap or
+   two on a page. The watchlist star puts one in every row: ~34 on screen at once, two children
+   each, so 68 promoted layers held for the life of the scroll -- to serve a transition that runs
+   only when somebody clicks a star. The hint is dropped here and kept everywhere else, where the
+   count is one. */
+.jobs-table .t-icon-swap .t-icon { will-change: auto; }
+
+/* Shimmer text (15-shimmer-text.md), for the "Updating…" label beside the count.
+   The two colour tokens are the ONLY change from the snippet: its defaults are
+   #7c7c7c and #0d0d0d, which happen to be near this page's two text colours by
+   value rather than by reference -- pointing them at --muted and --ink is what
+   keeps the label inside the type system when the palette moves. */
+:root {
+  --shimmer-dur: 2000ms;
+  --shimmer-base: var(--muted);
+  --shimmer-highlight: var(--ink);
+  --shimmer-band: 400%;
+  --shimmer-ease: linear;
+}
+
+.t-shimmer {
+  position: relative;
+  display: inline-block;
+  color: var(--shimmer-base);
+}
+.t-shimmer::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent          0%,
+    transparent         40%,
+    var(--shimmer-highlight) 50%,
+    transparent         60%,
+    transparent        100%
+  );
+  background-size: var(--shimmer-band) 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-shimmer var(--shimmer-dur) var(--shimmer-ease) infinite;
+}
+@keyframes t-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-shimmer::before { animation: none !important; }
+}
+
+/* Texts reveal (18-texts-reveal.md), for the empty state's stacked lines. Values
+   are the snippet's own; lines 3 and 4 extend the documented --N pattern.
+   .is-hiding is installed but not wired: React unmounts the empty state when rows
+   arrive rather than fading it out in place, so there is no moment at which the
+   exit half could run. Kept so the snippet stays whole and recognisable. */
+:root {
+  --stagger-dur: 500ms;
+  --stagger-distance: 12px;
+  --stagger-stagger: 40ms;
+  --stagger-blur: 3px;
+  --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.t-stagger-line {
+  display: block;
+  opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity   var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter    var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 { transition-delay: var(--stagger-stagger); }
+.t-stagger-line--3 { transition-delay: calc(var(--stagger-stagger) * 2); }
+.t-stagger-line--4 { transition-delay: calc(var(--stagger-stagger) * 3); }
+
+.t-stagger.is-shown .t-stagger-line {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+.t-stagger.is-hiding .t-stagger-line {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity 200ms ease,
+    transform 0s linear,
+    filter 0s linear;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line { transition: none !important; }
+}
+
+/* The wordmark shimmers on click.
+   The one place on this page where "it looks cool" is a legitimate answer. The click is already
+   doing something useful -- it resets the filters -- so this is a flourish ON an action rather than
+   an animation that exists for its own sake, which is what keeps it inside Emil's frequency rule
+   despite being decoration.
+   A band swept across the mark rather than the text-clip shimmer used for "Updating…": that one
+   masks a gradient onto GLYPHS via background-clip:text, and this is an <img>.
+   mix-blend-mode: overlay is what makes it read on the letters and not on the ground. The wordmark
+   is opaque -- pink letters on white, no alpha -- so a plain white band would sweep across the whole
+   rectangle and be invisible against the near-white page. Overlay lightens the pink and leaves the
+   white alone, so what appears to move is the lettering.
+   1400ms, well past the 300ms UI budget and deliberately so: this is not UI feedback, it is the one
+   piece of pure decoration on the page. Slow enough that the band reads as a sweep rather than a
+   flash, which is the whole point of a shimmer. */
+.wordmark-link {
+  position: relative;
+}
+
+.wordmark-shimmer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.wordmark-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgb(255 255 255 / 0.9) 50%,
+    transparent 65%
+  );
+  mix-blend-mode: overlay;
+  translate: -100% 0;
+  /* linear, and starting flush against the left edge rather than 130% out.
+     Both are about the delay before anything happens. ease-in-out spends its first frames barely
+     moving, and a band parked 30% beyond the edge has to cross that gap before it is even visible --
+     together that was roughly a third of a second of nothing after the click. A shimmer is constant
+     motion, which is what linear is for; -100% puts the band's trailing edge exactly on the leading
+     edge of the mark, so the first frame already shows light on the first letter. */
+  animation: wordmark-shimmer 1400ms linear both;
+}
+
+@keyframes wordmark-shimmer {
+  from { translate: -100% 0; }
+  to   { translate: 100% 0; }
+}
+
+/* Removed entirely rather than shortened. It is decoration with no information in it, so for
+   someone who has asked for less motion the correct amount is none. */
+@media (prefers-reduced-motion: reduce) {
+  .wordmark-shimmer { display: none; }
+}
+
+/* The wordmark, which is now the page's "start over" control.
+   A sticker is what the logo is drawn as -- a thick white outline with a drop shadow -- so it moves
+   like one: it lifts off the page and tips slightly rather than merely growing. A plain scale on a
+   sticker reads as a zoom on an image; the tilt is what makes it read as an object being picked up.
+   Transform only. The design rule is that hover FEEDBACK is instant, which is about colour: a
+   colour transition on a dense table makes every row you sweep past animate. This is one element
+   you point at deliberately, and a transform is composited on the GPU rather than repainting.
+   180ms out, and a shorter 90ms back on press -- taking something is quicker than reaching for it.
+   Pivots about its own centre, so the tilt and the press-scale share one anchor and the wordmark
+   turns in place rather than swinging from a corner. */
+.wordmark-link {
+  transform-origin: 50% 50%;
+  transition: transform 180ms var(--ease-out);
+}
+
+.wordmark-link:hover {
+  transform: scale(1.04) rotate(1.6deg);
+}
+
+.wordmark-link:active {
+  transform: scale(0.98) rotate(0deg);
+  transition-duration: 90ms;
+}
+
+/* The whole effect is decoration -- the link works identically without it -- so it is dropped
+   entirely rather than merely shortened when motion is unwelcome. */
+@media (prefers-reduced-motion: reduce) {
+  .wordmark-link,
+  .wordmark-link:hover,
+  .wordmark-link:active {
+    transform: none;
+    transition: none;
+  }
 }
 
 /* Tailwind v4's reset drops the UA default of cursor:pointer on buttons, so every interactive
@@ -280,8 +719,16 @@ button:disabled,
   line-height: 18px;
 }
 
+/* 18 + 2 + 16 = 36px, which is exactly the avatar beside it. The gap goes here rather than into
+   either line-height because both of those are load-bearing: the note above is about a row that
+   measured 68px on a browser with a larger default font, and the fix was pinning the two lines in
+   px so the logo governs the row height. A margin adds the air without unpinning either line.
+   2px and not 3: the stack now MEETS the avatar's 36px rather than clearing it, so anything more
+   makes the text block the tallest thing in the cell -- and the row is fixedItemHeight={60} to the
+   virtualizer, which positions every row from that number and would drift a pixel per row. */
 .jobs-table .job-meta-line {
   line-height: 16px;
+  margin-top: 2px;
 }
 
 .jobs-table tbody tr:hover td {
@@ -475,6 +922,66 @@ button:disabled,
   }
 }
 
+/* A container that morphs between two or more states in place: they are overlaid in one grid cell,
+   cross-faded, and the container's WIDTH is tweened between them.
+   Used by the count badge ("157,212 jobs" <-> "Updating…") and by Save view (pill <-> name field
+   <-> saved).
+   The active child is the one carrying data-active; everything else fades out and stops taking
+   pointer events. An attribute rather than nth-child selectors, so a third state costs nothing.
+   Two earlier attempts at the width are worth recording, because both look right in the CSS and
+   neither works:
+   - Overlaying them and letting the box shrink-to-fit makes the container as wide as the WIDEST
+     state permanently, so "Updating…" sat in a pill sized for "157,212 jobs" and nothing moved.
+   - Two grid tracks at 1fr/0fr -- the .row-collapse trick on its side -- tweens the TRACKS but not
+     the box: fr units distribute free space, and in a shrink-to-fit container that space comes from
+     the content, so 78.55px+0 simply becomes 14.47px+64.09px and the total is identical. Measured,
+     both states 109px wide throughout.
+   width does not interpolate between two `auto`s, so the width has to be a number, so something has
+   to measure it -- useSwapWidth. transitions.dev's card-resize says the same in its own words: the
+   snippet is pure CSS on the condition that you hand it two concrete sizes. */
+.t-morph {
+  display: inline-grid;
+  /* Clips the ACTIVE child while the container is mid-tween and briefly narrower than it. The
+     inactive ones are already invisible at opacity 0, so this is not what hides them. */
+  overflow: hidden;
+  transition: width 200ms var(--ease-out);
+}
+
+/* For a .t-morph whose states are PILLS. A pill's shadow (--shadow-control) is a hairline ring plus
+   a soft lift that lands ~6px past its own edges, and overflow:hidden above cropped it flat -- the
+   Save view pill looked sliced along its bottom and right. The padding is the room that shadow
+   lands in and the negative margin puts the box back where it was, which is the same fix
+   .row-collapse already carries for the same reason.
+   useSwapWidth adds this padding to the width it measures; the two numbers have to agree or the
+   pill is clipped by exactly 16px instead. */
+.t-morph-pill {
+  padding: 8px;
+  margin: -8px;
+}
+.t-morph > * {
+  grid-area: 1 / 1;
+  /* start, not the default stretch. A stretched grid item fills the cell, so every child measures
+     the width of the widest one and there is nothing to tell them apart -- which is what made the
+     first measurement return the same number for both states. */
+  justify-self: start;
+  white-space: nowrap;
+  transition:
+    opacity 180ms var(--ease-out),
+    filter 180ms var(--ease-out);
+}
+.t-morph > *:not([data-active]) {
+  opacity: 0;
+  filter: blur(2px);
+  /* An invisible child still sits ON TOP of the visible one -- they share a cell -- and swallowed
+     clicks aimed at it. This is the same bug that broke the search field's clear button. */
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-morph,
+  .t-morph > * { transition: none !important; }
+}
+
 /* The result count, floated over the foot of the results card instead of parked in a band above it.
    Absolute, so it costs the table no height at all -- the band it replaced was ~48px with the
    spacing, which is most of a row.
@@ -482,10 +989,19 @@ button:disabled,
    would be a dead patch in the middle of the one thing every row is for. */
 .jobs-count-badge {
   position: absolute;
-  bottom: 14px;
+  /* top + translate in BOTH states rather than bottom in one and top in the other: `bottom` and
+     `top` are different properties, so a browser has nothing to interpolate between them and the
+     badge would teleport. Anchoring on top means one property animates and the move is a move.
+     top:100% with a translate of its own height + 14px is exactly where bottom:14px put it. */
+  top: 100%;
   left: 50%;
-  translate: -50% 0;
-  z-index: 3;
+  translate: -50% calc(-100% - 14px);
+  /* Above .t-skel-content (z-index 2), which it is now a sibling of rather than a child. */
+  z-index: 4;
+  /* No transition, because the badge no longer moves. The count disappears and "Updating…" appears
+     in its place, at the foot, where the pill always is -- one change to follow rather than two at
+     once. That also settles the standard-7 argument from the last pass by removing its subject:
+     with nothing animating `top`, no layout property is animated here at all. */
   pointer-events: none;
   padding: 5px 14px;
   border-radius: 999px;
@@ -570,20 +1086,28 @@ button:disabled,
 }
 
 /* A chip enters when a filter is applied. Deliberately the lightest entrance here: chips appear
-   several at a time and are read at a glance, so this is a settle, not a performance. */
-@keyframes chip-in {
-  from {
+   several at a time and are read at a glance, so this is a settle, not a performance.
+   A TRANSITION driven by @starting-style, not the keyframe animation this used to be. Emil's rule
+   for anything that can be triggered rapidly: a keyframe restarts from zero and cannot be
+   retargeted, so picking a second filter while the first chip was still arriving snapped that chip
+   back to 0.96 and replayed it. A transition interpolates from wherever it had got to.
+   @starting-style is what gives a transition something to animate FROM on first paint. Browsers
+   without it (Firefox < 129) simply get the chip at its resting state with no entrance -- the
+   correct degradation, since the chip is legible either way.
+   scale(0.96), not scale(0): nothing in the real world appears from nothing. */
+.chip-in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 140ms var(--ease-out),
+    transform 140ms var(--ease-out);
+}
+
+@starting-style {
+  .chip-in {
     opacity: 0;
     transform: scale(0.96);
   }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.chip-in {
-  animation: chip-in 140ms var(--ease-out) both;
 }
 
 @keyframes panel-in {
@@ -646,7 +1170,22 @@ button:disabled,
   overflow: hidden;
   min-height: 0;
   opacity: 0;
-  transition: opacity 100ms var(--ease-out);
+  /* The inner block slides its own height down as the track opens, and is very slightly blurred on
+     the way. Both are Emil's points rather than decoration:
+     - The track alone only UNCOVERS the row -- a hard clip edge travelling down over static
+       content, which reads as a mask rather than as something arriving. Translating the content by
+       a few pixels in the same beat means the row moves WITH the space being made for it.
+     - blur(2px) exists to mask the crossfade. Without it you see the clip edge and the fading
+       content as two separate things; the blur blends them into one event. Well under the 20px
+       ceiling, on a 40px-tall strip.
+     translateY is in px, not %, because the block's height is what is being animated -- a
+     percentage of a collapsing height is a moving target. */
+  transform: translateY(-6px);
+  filter: blur(2px);
+  transition:
+    opacity 100ms var(--ease-out),
+    transform 160ms var(--ease-out),
+    filter 120ms var(--ease-out);
   /* The pills inside cast a shadow ~6px past their own edges, and overflow:hidden cropped it flat
      -- buttons looked sliced along the bottom, and the last one in the row along its right side.
      The padding is the room that shadow lands in; the negative margin keeps the content aligned
@@ -658,6 +1197,10 @@ button:disabled,
   grid-template-rows: 1fr;
   /* Enter is the slower half: the exit should get out of the way, not perform. */
   transition-duration: 200ms;
+}
+.row-collapse.is-open > * {
+  transform: translateY(0);
+  filter: blur(0);
 }
 .row-collapse.is-open > * {
   opacity: 1;

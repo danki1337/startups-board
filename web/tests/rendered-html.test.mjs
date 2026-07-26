@@ -63,7 +63,9 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Startup jobs — Aboard/);
+  // The index's title is its live count, not a fixed phrase. The stub D1 answers with one row, so
+  // this also pins the singular -- "1 jobs" is the kind of thing only a fixture ever surfaces.
+  assert.match(html, /<title>1 job — Aboard/);
   assert.match(html, /<table/);
   assert.match(html, /Workplace/);
   // The first column and its filter pill call the same field the same name.
@@ -72,7 +74,10 @@ testWithBuild("server-renders the Startups.board jobs table", async () => {
   assert.match(html, /placeholder="Search"/);
   assert.match(html, />Title</);
   assert.match(html, />Job type</);
-  assert.match(html, />Country</);
+  // The pill reads "Location", not "Country": it filters the column the table heads LOCATION, and a
+  // control naming the column it acts on differently is the mismatch the Title rename already fixed.
+  assert.match(html, />Location</);
+  assert.doesNotMatch(html, />Country</);
   assert.match(html, />ATS</);
   // The date pill shows the cropped label ("All", "24h", "7d"); the menu below it spells each one
   // out, but that only exists once the popover is opened.
@@ -125,11 +130,13 @@ testWithBuild("Clear all appears only once there is more than one thing to clear
 });
 
 testWithBuild("keeps HeroUI controls and table-first filters", async () => {
-  const [explorer, styles, layout, packageJson] = await Promise.all([
+  const [explorer, styles, layout, packageJson, siteMeta, page] = await Promise.all([
     readFile(new URL("../app/jobs-explorer.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/site-meta.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(explorer, /from "@heroui\/react"/);
@@ -218,15 +225,18 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // The wash is the one pink that must NOT match -- text is drawn on it.
   assert.doesNotMatch(styles, /--accent-wash: #FF73E5/);
   assert.match(styles, /@import "@heroui\/styles"/);
-  assert.match(layout, /Startup jobs — Aboard/);
+  assert.match(layout, /Every open job, from the source — Aboard/);
   assert.match(packageJson, /"@heroui\/react"/);
   assert.match(packageJson, /"react-virtuoso"/);
   // TWO text colours, and only two. --ink is what you read, --muted is everything supporting it.
   // There used to be four (--muted-strong at 0.88 and --glyph #868990 as well), which with a single
   // 700 weight left colour as the ONLY hierarchy signal and then spent it on distinctions nobody
-  // could name. Both survivors clear 4.5:1 on the darkest ground either sits on.
+  // could name.
+  // --muted is deliberately BELOW 4.5:1 now (3.80:1 on the table header, 3.92:1 on white) -- the
+  // alpha has come down from 0.74 to 0.70 to 0.65 as design calls. Pinned so a further drop has to
+  // be a decision rather than a drift, since nothing else on the page fails visibly when it happens.
   assert.match(styles, /--ink: #16161a/);
-  assert.match(styles, /--muted: rgba\(60, 60, 67, 0\.74\)/);
+  assert.match(styles, /--muted: rgb\(60 60 67 \/ 65%\)/);
   // The retired pair must not come back as tokens -- the comment explaining them may mention the
   // names, so this checks for a DEFINITION rather than a mention.
   assert.doesNotMatch(styles, /^\s*--muted-strong:/m);
@@ -239,14 +249,54 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // shadow-[...] arbitrary value, which the colour rule's regex did not reach into. Both the rule
   // and the rings are fixed; this pins the rings.
   assert.doesNotMatch(explorer, /#FF73E5/i);
+  // The avatar's two states must not converge. A company with no usable logo gets OUR square -- a
+  // 15% accent fill inside a 30% accent ring -- and a company with a real logo keeps the neutral
+  // hairline, because a coloured ring around someone else's mark reads as part of that mark.
+  // Pinned in source rather than measured in the browser on purpose: the local dev dataset carries
+  // no company_logo_url at all, so every tile renders as a monogram there and the logo branch is
+  // unreachable without production data. This is the only check that covers it.
+  assert.match(styles, /--monogram-wash: color-mix\(in srgb, var\(--accent\) 15%, transparent\)/);
+  assert.match(styles, /--monogram-stroke: color-mix\(in srgb, var\(--accent\) 30%, transparent\)/);
+  // Exactly two tiles wear the accent ring (the table's monogram and the dropdown's) and exactly two
+  // wear the neutral one (their logo-bearing counterparts).
+  assert.equal(explorer.match(/outline-\[var\(--monogram-stroke\)\]/g)?.length, 2);
+  assert.equal(explorer.match(/outline-\[var\(--border\)\]/g)?.length, 2);
   // A social card at last: the image had been sitting unreferenced in public/, so every link to the
   // site anywhere unfurled as a bare URL.
   assert.match(layout, /openGraph/);
-  assert.match(layout, /startups-board-og\.png/);
+  // The card lives in ONE place because Next replaces `openGraph` wholesale rather than merging it:
+  // a page exporting `openGraph: { title }` drops the layout's image entirely, which is exactly what
+  // every filtered URL was doing. Both files must go through site-meta.
+  assert.match(siteMeta, /aboard-og\.webp/);
+  assert.match(layout, /images: OG_IMAGES/);
+  assert.equal(page.match(/images: OG_IMAGES/g)?.length, 2, "both metadata branches carry the card");
+  // The old-brand card is gone from public/ entirely, so a stale reference would 404 rather than
+  // merely look wrong.
+  assert.doesNotMatch(layout, /startups-board-og/);
+  // The index's own title is its live count, built in page.tsx, not the layout's fallback.
+  assert.doesNotMatch(layout, /Startup jobs/);
   // The wordmark above the headline, served as a cacheable asset rather than inlined path data, and
   // named for screen readers -- a wordmark that reads as nothing is a wordmark that is not there.
   assert.match(explorer, /aboard-wordmark\.webp/);
   assert.match(explorer, /alt="Aboard"/);
+  // The label is just the brand now. It used to read "Aboard — clear all filters", which was correct
+  // while the click cleared them and would be a lie now that it only shimmers.
+  assert.match(explorer, /aria-label="Aboard"/);
+  // The wordmark is also the page's "start over": a real href to "/" so it works before hydration
+  // and on middle-click, with the click intercepted to run the same in-place reset the Clear all
+  // chip does. The aria-label is what makes it a LINK with a purpose rather than a picture -- the
+  // img's alt names the brand, which is not what activating it does.
+  // The wordmark is a BUTTON, not a link, and no longer clears the filters -- its click only
+  // shimmers. An href here would be a claim the control does not honour: it would promise the
+  // unfiltered view to a middle-click, a copied link and a crawler, and deliver a shimmer.
+  const wordmark = explorer.slice(explorer.indexOf('aria-label="Aboard"'), explorer.indexOf("</button>", explorer.indexOf('aria-label="Aboard"')));
+  assert.match(wordmark, /aboard-wordmark\.webp/);
+  assert.match(wordmark, /setShimmer/);
+  assert.doesNotMatch(wordmark, /href=/);
+  assert.doesNotMatch(wordmark, /setFilters/);
+  // Rows, "no matching jobs" and the error card share one slot, so all three have to hold the same
+  // height -- otherwise emptying the results collapses the page to a strip.
+  assert.equal(explorer.match(/minHeight: TABLE_MIN_HEIGHT/g)?.length, 3);
 });
 
 testWithBuild("ranks text search by relevance with a bounded count", async () => {

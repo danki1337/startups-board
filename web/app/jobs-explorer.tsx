@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { Input, TextField } from "@heroui/react";
 import { TableVirtuoso, type TableComponents, type VirtuosoHandle } from "react-virtuoso";
+import { TextMorph } from "torph/react";
 import {
   sourceOptions,
   workplaceOptions,
@@ -20,6 +21,7 @@ import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 import { placeTip } from "./place-tip.mjs";
 // Display normalisation for the free text a dozen ATSs return -- see the note in that file.
 import { splitLocations, tidyEmploymentType, normalizeEmploymentKey } from "./format.mjs";
+import { columnWidths } from "./column-widths.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -153,30 +155,64 @@ const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
   code: entry.code,
 }));
 
-// A crisp SVG national flag from flagcdn (a free, public-domain flag CDN) keyed by ISO alpha-2 code,
-// replacing the emoji flags that don't render on every platform. A subtle 1px outline gives the same
-// edge definition as the company logos; if the image can't load it falls back to the emoji flag.
+// A national flag, served from our own origin.
+//
+// It used to be `https://flagcdn.com/{cc}.svg`, and that was slow for two compounding reasons. The
+// first is the third party: a cross-origin DNS lookup and TLS handshake before the first flag byte
+// arrives, on a host nothing else on the page uses. The second is the format, and it is the bigger
+// one -- an SVG flag is vector artwork drawn at full detail regardless of the 18x13 box it lands in.
+// Mexico's is 143,318 bytes. The same flag as a 40px PNG is 328. All 63 together are 13,606 bytes,
+// which is a tenth of that ONE file.
+//
+// 40px wide for an 18px box, so it stays crisp on a 2x display. Vendored like the ATS marks above,
+// for the same reasons stated there: no cross-origin request per row, and nothing breaks when a CDN
+// rotates its paths.
+// loading="lazy" is gone with them. It was deferring 300-byte same-origin images that are already on
+// screen, which only ever added a visibility check between the row appearing and its flag doing so.
 function Flag({ code }: { code?: string | null }) {
   const cc = (code ?? "").trim().toLowerCase();
   const [failed, setFailed] = useState(false);
   // Two ASCII letters, not merely two characters. `code` is job.country, ingested from a dozen ATS
-  // payloads, and it goes straight into a remote URL below -- so what it is allowed to contain has
-  // to be stated here rather than assumed of every upstream normalizer forever.
+  // payloads, and it goes straight into a URL below -- so what it is allowed to contain has to be
+  // stated here rather than assumed of every upstream normalizer forever.
   if (!/^[a-z]{2}$/.test(cc)) return null;
   if (failed) {
     return <span aria-hidden="true" className="text-[13px] leading-none">{countryFlag(cc) ?? ""}</span>;
   }
   return (
-    // Remote flag asset, like the ATS company logos, so it can't use a fixed Next image host.
-    // eslint-disable-next-line @next/next/no-img-element
+    /* eslint-disable-next-line @next/next/no-img-element */
     <img
-      src={`https://flagcdn.com/${cc}.svg`}
+      src={`/flags/${cc}.png`}
       alt=""
-      loading="lazy"
+      width={18}
+      height={13}
+      decoding="async"
       onError={() => setFailed(true)}
       className="inline-block h-[13px] w-[18px] shrink-0 rounded-[3px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10"
     />
   );
+}
+
+// Locations that are a REGION rather than a country. These arrive with country = null, because
+// there is no ISO code for a continent -- which is why "Europe" drew a globe emoji where every row
+// around it drew a flag.
+// The EU flag standing in for Europe is a deliberate approximation and not a correct one: the UK,
+// Norway and Switzerland are all in the index and none of them are in the EU. It is used because at
+// 18x13 it reads as "somewhere in Europe" faster than a globe does, and because the alternative --
+// no mark at all -- leaves the column visibly ragged. The text beside it still says Europe.
+// A CONTAINS check rather than an exact match, because the data does not write it one way: the
+// index holds "Europe", "Remote - Europe", "Europe, Remote", "Remote-WesternEurope" and "UK/Europe |
+// Portugal", and an exact map covered the first of those and left the rest with a globe.
+// Safe as a last resort specifically because it IS last: a posting that carries a real country code,
+// or a city that resolves to one, has already been answered before this runs -- so "Europe, France,
+// Paris" flies the French flag, and only the ones with no country at all reach here.
+const REGION_FLAGS: [RegExp, string][] = [[/\beurope\b|europe$|emea\b/i, "eu"]];
+
+export function regionFlagCode(location?: string | null) {
+  const text = (location ?? "").trim();
+  if (!text) return null;
+  for (const [pattern, code] of REGION_FLAGS) if (pattern.test(text)) return code;
+  return null;
 }
 
 // Every filter lives in one object so URL sync, reset, and the active-chip row all read from a
@@ -201,6 +237,34 @@ type Filters = {
   // localStorage (device-local), so only this on/off intent lives in the filter state and URL.
   watchlistOnly: boolean;
 };
+
+// The order chips are shown in: first applied, first in the row.
+//
+// A module-level array rather than a ref or a piece of state. A ref cannot be read during render
+// (the hooks lint forbids it, correctly), and state would need an effect to update -- which means
+// the first paint after applying a filter shows the OLD order and then reshuffles, a visible flick
+// on exactly the element that just changed. Same reasoning as widthCache further down.
+// Reconciled rather than appended blindly: ids that no longer exist are dropped, so removing a chip
+// and re-adding it puts it at the end again, which is what "when it was applied" means.
+let chipOrder: string[] = [];
+
+function chipId(chip: ActiveChip) {
+  return `${chip.kind}:${chip.label}`;
+}
+
+export function orderChips(chips: ActiveChip[]) {
+  const ids = chips.map(chipId);
+  const present = new Set(ids);
+  const known = new Set(chipOrder);
+  chipOrder = [
+    ...chipOrder.filter((id) => present.has(id)),
+    ...ids.filter((id) => !known.has(id)),
+  ];
+  const rank = new Map(chipOrder.map((id, index) => [id, index]));
+  // Stable by construction: every id is in `rank`, because chipOrder was just rebuilt from these
+  // exact chips.
+  return [...chips].sort((left, right) => rank.get(chipId(left))! - rank.get(chipId(right))!);
+}
 
 const emptyFilters: Filters = {
   search: "",
@@ -306,6 +370,84 @@ function readStored<T>(key: string, fallback: T, legacyKey?: string): T {
   }
 }
 
+// The empty state, with transitions.dev texts-reveal (18-texts-reveal.md) on its four lines.
+//
+// This is the one place on the page where a stack of copy ENTERS as its own event: everywhere else
+// content either was already there or arrives as table rows. Four lines rising 12px out of a 3px
+// blur, 40ms apart, gives the reader's eye somewhere to land -- previously the whole card faded in
+// as one flat block via .panel-in.
+// .panel-in is GONE from this card on purpose. It scaled the whole 420px panel from 0.97, which
+// under the stagger became two motions competing on one event -- the card growing while its own
+// contents rose out of it. The background is now simply there, and only the content arrives.
+// The icon and the button are lines 1 and 4 rather than being left static, because a stagger that
+// skips the two most visible elements reads as a glitch rather than as rhythm.
+function EmptyState({ onClear }: { onClear: () => void }) {
+  const shown = useRevealed();
+  return (
+    <div
+      className={`t-stagger flex min-h-0 flex-1 flex-col items-center justify-center rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)] ${shown ? "is-shown" : ""}`}
+      style={{ minHeight: TABLE_MIN_HEIGHT }}
+    >
+      <span className="t-stagger-line t-stagger-line--1"><IconNoResults /></span>
+      <p className="t-stagger-line t-stagger-line--2 mt-3 text-base font-bold">No matching jobs</p>
+      {/* No full stop. It is a fragment offering two options, not a sentence, and the heading above
+          it does not carry one either -- one of the pair had to give. */}
+      <p className="t-stagger-line t-stagger-line--3 mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter</p>
+      <div className="t-stagger-line t-stagger-line--4 mt-5 flex justify-center">
+        {/* The same dashed pill the filter row uses, not a second kind of button that does the same
+            thing under a different name. Two controls for one action, worded differently, is the
+            kind of thing that makes a reader stop and work out whether they differ. */}
+        <ClearAllChip onClick={onClear} />
+      </div>
+    </div>
+  );
+}
+
+// The width of a .t-morph container, measured so it can be tweened.
+//
+// Every state is in the DOM, overlaid in one grid cell, so each can be measured at any time. The
+// container is then given the active one's width outright, which is the only way a width transition
+// has two numbers to interpolate between; `auto` to `auto` animates nothing.
+// useLayoutEffect, not useEffect: this runs before paint, so the width is already correct on the
+// frame the state flips and the tween starts from the right place rather than snapping first.
+// `key` is whatever else changes the measurement -- the count's own digits, for one. "1,204 jobs"
+// and "157,212 jobs" are different widths, and a container that kept the old one would clip the
+// number it exists to show.
+function useSwapWidth(active: number, key: string) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const child = el?.children[active] as HTMLElement | undefined;
+    if (!el || !child) return;
+    // Cleared BEFORE reading. The container clips (overflow: hidden), so with last frame's width
+    // still set, the child about to become active reports the OLD width and nothing ever resizes --
+    // measured at 79px for both states before this line existed. Clearing lets the grid size to
+    // max-content for one read; the write on the next line puts it straight back, inside the same
+    // layout pass, so nothing paints in between.
+    el.style.width = "";
+    // box-sizing is border-box globally, so `width` includes any padding the container carries --
+    // and .t-morph-pill carries 8px a side to keep a pill's shadow from being cropped. Measuring the
+    // child alone and writing that would clip the pill by exactly that padding.
+    const style = getComputedStyle(el);
+    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    el.style.width = `${child.offsetWidth + padding}px`;
+  }, [active, key]);
+  return ref;
+}
+
+// transitions.dev texts-reveal (18) needs .is-shown added AFTER the element has painted once at
+// its starting values -- applied during the same render, the browser has no previous frame to
+// transition FROM and the lines simply appear. A state flip inside an effect, one frame late, is
+// the React equivalent of the snippet's `void block.offsetHeight` reflow.
+function useRevealed() {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  return shown;
+}
+
 export function JobsExplorer({
   initialJobs = [],
   initialTotal = 0,
@@ -378,7 +520,10 @@ export function JobsExplorer({
   // The results scroller, captured from virtuoso so the overlay scrollbar can measure it.
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
 
-  const watchlistSet = useMemo(() => new Set(watchlist), [watchlist]);
+  // watchlistSet and toggleWatch were the row star's two consumers. Kept out of the render for now
+  // rather than deleted -- see the note where the star used to be. eslint would flag them as unused,
+  // and a void reference is a clearer marker than a disable comment that says nothing.
+  void watchlist;
 
   // The URL carries the on/off intent (watchlist=1); the fetch expands it into the actual company
   // list so "only jobs from the list" is complete across pagination, not just the current page.
@@ -403,17 +548,17 @@ export function JobsExplorer({
     setFilters((current) => ({ ...current, ...patch }));
   }
 
-  const toggleWatch = useCallback((company: string) => {
-    setWatchlist((current) =>
-      current.includes(company) ? current.filter((name) => name !== company) : [...current, company]);
-  }, []);
 
+  // Parked with the control it fed -- see the note where SaveViewPill used to render. void rather
+  // than a disable comment: it names what is happening instead of silencing the rule.
+  void SaveViewPill;
   const saveView = useCallback((name: string) => {
     const trimmed = name.trim().slice(0, 40);
     if (!trimmed) return;
     const query = filtersToSearchParams(filters).toString();
     setSavedViews((current) => [...current.filter((view) => view.name !== trimmed), { name: trimmed, query }]);
   }, [filters]);
+  void saveView;
 
   function toggle(key: FilterCategoryKey, value: string) {
     setFilters((current) => {
@@ -487,6 +632,16 @@ export function JobsExplorer({
       setCorrectedTo(null); // re-established by the refresh fetch below
       setCursor(cached.cursor);
     }
+
+    // Busy is owned by THIS effect, not by the input's onChange.
+    //
+    // It used to be set from onSearchInput, which fires on every keystroke -- including keystrokes
+    // that leave the query unchanged, like retyping the same word or typing a character and deleting
+    // it. This effect is keyed on queryString, so in exactly those cases it never ran, and nothing
+    // ever put busy back to false: the spinner stayed, the badge stayed on "Updating…", and the
+    // table stayed dimmed for the rest of the session. Setting it where it is cleared makes the two
+    // impossible to separate.
+    setSearchBusy(true);
 
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -572,7 +727,9 @@ export function JobsExplorer({
   const activeChips = useMemo(() => {
     const chips: ActiveChip[] = [];
     if (filters.search.trim()) chips.push({ kind: "search", label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
-    if (filters.location.trim()) chips.push({ kind: "location", label: `Location: ${filters.location.trim()}`, value: filters.location.trim(), clear: () => update({ location: "" }) });
+    // code so a region filter wears the same flag its rows do. Without it the "Europe" chip was the
+    // one place on the page where that value had no mark beside it.
+    if (filters.location.trim()) chips.push({ kind: "location", label: `Location: ${filters.location.trim()}`, value: filters.location.trim(), code: regionFlagCode(filters.location.trim()) ?? undefined, clear: () => update({ location: "" }) });
     if (filters.title.trim()) chips.push({ kind: "title", label: `Role: ${filters.title.trim()}`, value: filters.title.trim(), clear: () => update({ title: "" }) });
     if (filters.company.trim()) {
       // Taken from the rows already on screen rather than fetched: they are, by definition, this
@@ -599,7 +756,13 @@ export function JobsExplorer({
     // postedWithin deliberately gets no chip: the date pill already displays its own selection
     // ("Last 7 days"), so a chip would double it. "Any time" in the same dropdown clears it.
     if (watchlistActive) chips.push({ kind: "watchlist", label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
-    return chips;
+    // Ordered by WHEN each filter was applied, not by the order the branches above happen to run in.
+    // The list above is a fixed sequence -- search, location, title, company, country, … -- so
+    // picking a country after a source pushed the country chip in front of the source that was
+    // already there, and the chip you just added appeared somewhere in the middle of a row you were
+    // not looking at. Appending keeps the newest at the end, where the eye already is because that
+    // is where the previous one landed.
+    return orderChips(chips);
   }, [filters, watchlistActive, jobs]);
 
   // How many things "Clear all" would actually clear. Not simply activeChips.length: the date filter
@@ -607,6 +770,19 @@ export function JobsExplorer({
   // would double it), but Clear all resets it too -- so with one chip AND a date set there really
   // are two filters and the control earns its place.
   const clearableCount = activeChips.length + (filters.postedWithin ? 1 : 0);
+
+  // Column widths measured from the rows rather than guessed once at design time -- see
+  // useColumnWidths. The skeleton takes the same object, so the placeholder columns land exactly
+  // where the real ones will and the cross-fade between them moves nothing.
+  // The wordmark shimmers on click. See .wordmark-shimmer.
+  const [shimmer, setShimmer] = useState(0);
+
+  const widths = columnWidthsFor(jobs);
+  // The badge tweens its width between "157,212 jobs" and "Updating…"; both need measuring.
+  const countSwapRef = useSwapWidth(isLoading ? 1 : 0, `${formatTotal(total, totalCapped)} ${total === 1 ? "job" : "jobs"}`);
+  // Memoised because Virtuoso re-renders its header whenever this identity changes, and an inline
+  // arrow here would hand it a new function on every parent render.
+  const renderHeader = useCallback(() => <TableHeader widths={widths} />, [widths]);
 
   // A small "Showing results for X" note when a typo'd search was auto-corrected.
   const correctionNote = (
@@ -650,9 +826,13 @@ export function JobsExplorer({
         style={{ minHeight: TABLE_MIN_HEIGHT }}
       >
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
-          <JobsSkeleton />
+          <JobsSkeleton widths={widths} />
         </div>
-        <div className="t-skel-content relative">
+        {/* isLoading with rows already present means a REFETCH, not a first load -- the skeleton
+            layer behind this one covers that case and is already faded out by now. See
+            .jobs-refreshing: the rows dim and blur while the answer is in flight rather than being
+            replaced between frames with nothing said in between. */}
+        <div className={`t-skel-content relative ${isLoading && jobs.length > 0 ? "jobs-refreshing" : "jobs-settled"}`}>
           <TableVirtuoso
             ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
@@ -695,13 +875,11 @@ export function JobsExplorer({
             data={jobs}
             components={virtuosoComponents}
             computeItemKey={(_index, job) => job.id}
-            fixedHeaderContent={TableHeader}
+            fixedHeaderContent={renderHeader}
             itemContent={(_index, job) => (
               <JobCells
                 job={job}
                 onFilter={update}
-                isWatched={watchlistSet.has(job.company)}
-                onToggleWatch={toggleWatch}
                 now={now}
               />
             )}
@@ -729,18 +907,53 @@ export function JobsExplorer({
               children too, so a top fade there would wash out the column header. */}
           <div className="jobs-table-top-fade" aria-hidden="true" />
           <OverlayScrollbar target={scroller} />
-          {/* The count, floating over the foot of the table. It lands in the same 64px the bottom
-              fade already dims, so it reads over emptying rows rather than over live ones, and
-              pointer-events:none keeps the row underneath clickable through it. */}
-          <p aria-live="polite" className="jobs-count-badge">
-            <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
-            {total === 1 ? "job" : "jobs"}
-            {isLoading && <span className="ms-1.5 font-bold">Updating…</span>}
-          </p>
         </div>
+      {/* OUTSIDE .t-skel-content, and that is the whole reason this moved. The badge used to be a
+          child of the element that dims and blurs during a refetch, so the one thing that is
+          supposed to stay readable was dimmed to 0.45 and blurred with everything else -- and
+          z-index could not save it, because an element with a `filter` becomes a containing block
+          and its children are rendered INTO the filtered surface. As a sibling it stays crisp.
+          While the table is dimmed it also moves to the middle of it: at the foot it was reading
+          as a caption on rows nobody can read, and the centre is where the eye already is. */}
+      {/* Resting, it floats over the foot of the card. It lands in the same 64px the bottom fade
+          already dims, so it reads over emptying rows rather than over live ones, and
+          pointer-events:none keeps the row underneath clickable through it. */}
+        {/* Two states in one badge, not a label bolted onto a count. "Updating…" used to sit
+            BESIDE the number, which said two things at once -- here is the total, and also the
+            total is currently wrong. While a query is in flight the count is stale by definition,
+            so it steps aside entirely and the badge says only what it can stand behind.
+            Same grid-cell cross-fade as the row's Apply swap, so the two read as one idea. The
+            badge is therefore always as wide as the wider of the two states, which is the point:
+            nothing resizes as it flips.
+            aria-live on the wrapper rather than on either state, so a screen reader is told the
+            new text once when it settles instead of twice as the pair cross-fades. */}
+        <p aria-live="polite" className={`jobs-count-badge ${isLoading && jobs.length > 0 ? "is-centred" : ""}`}>
+          <span ref={countSwapRef} className="t-morph">
+            <span data-active={isLoading ? undefined : ""}>
+              <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
+              {total === 1 ? "job" : "jobs"}
+            </span>
+            {/* transitions.dev shimmer-text (15). A status label claiming work is happening should
+                look like it. data-text duplicates the string because ::before masks the gradient
+                onto the same glyphs -- keep the two in step if the copy ever changes. */}
+            <span data-active={isLoading ? "" : undefined}>
+              <span className="t-shimmer" data-text="Updating…">Updating…</span>
+            </span>
+          </span>
+        </p>
       </div>
     ) : error ? (
-      <div role="alert" className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
+      // Same box the table fills, not a card that shrinks to its message. Three states share this
+      // slot -- rows, "no matching jobs", and this -- and only one of them used to hold the space,
+      // so clearing a filter that emptied the results collapsed the page to a strip and left the
+      // footer floating in the middle of the viewport. min-h-0 + flex-1 + the table's own
+      // TABLE_MIN_HEIGHT floor make all three exactly the same size, and centring the message
+      // inside means the height costs nothing visually.
+      <div
+        role="alert"
+        className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]"
+        style={{ minHeight: TABLE_MIN_HEIGHT }}
+      >
         <p className="text-base font-bold">Couldn&rsquo;t load jobs</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[var(--muted)]">
           The job index didn&rsquo;t respond. Your filters are still set &mdash; retrying will run the same search.
@@ -750,13 +963,7 @@ export function JobsExplorer({
         </div>
       </div>
   ) : (
-    <div className="panel-in rounded-[24px] bg-white px-6 py-16 text-center shadow-[var(--shadow-table)]">
-      <p className="text-base font-bold">No matching jobs</p>
-      <p className="mt-1 text-sm text-[var(--muted)]">Try a broader search or clear a filter.</p>
-      <div className="mt-5 flex justify-center">
-        <PillButton onClick={() => setFilters(emptyFilters)}>Clear filters</PillButton>
-      </div>
-    </div>
+    <EmptyState onClear={() => setFilters(emptyFilters)} />
     )}
     </>
   );
@@ -814,20 +1021,67 @@ export function JobsExplorer({
               reserves the right box from the ratio and the headline beneath never jumps.
               alt is the brand name, not empty: this is the only place the product names itself on
               screen, and a wordmark that reads as nothing is a wordmark that is not there. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/aboard-wordmark.webp"
-            alt="Aboard"
-            width={707}
-            height={303}
-            className="mx-auto mb-5 block h-[51px] w-auto"
-          />
+          {/* A button, not a link, and that changed when the click stopped resetting the filters.
+              It was a <Link href="/"> whose click was intercepted to clear them -- the href carried
+              real weight there: middle-click, copy-link and crawlers all got the unfiltered view,
+              and with JS off the link still did what it promised.
+              Now the click only shimmers, so an href would be a claim the control does not honour.
+              What that costs, stated rather than buried: the wordmark no longer links home. If it
+              should, the honest shape is a link that navigates AND shimmers, not one that swallows
+              its own navigation. */}
+          <button
+            type="button"
+            aria-label="Aboard"
+            onClick={() => {
+              // Every click shimmers the mark. The counter is what makes it REPLAY: a CSS animation
+              // on an element that never unmounts fires once and never again, so the span below is
+              // keyed on this number and React remounts it each time.
+              setShimmer((run) => run + 1);
+            }}
+            className="wordmark-link mx-auto mb-5 block w-fit rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--focus)]"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/aboard-wordmark.webp"
+              alt="Aboard"
+              width={707}
+              height={303}
+              className="block h-[51px] w-auto"
+            />
+            {/* Keyed on the run counter so every click replays it: a CSS animation on an element
+                that never unmounts fires once and never again, and React reuses the node unless the
+                key changes. */}
+            {shimmer > 0 && <span key={shimmer} className="wordmark-shimmer" aria-hidden="true" />}
+          </button>
           <h1
             className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
-            <span className="tabular-nums text-[var(--accent-strong)]">{formatTotal(total, totalCapped)}</span>{" "}
-            open roles at today&rsquo;s top startups
+            {/* The one number on the page that changes under the reader's eyes -- every filter, every
+                keystroke in the search box, rewrites it. Swapping the string outright made the count
+                the one thing on screen that moved without explaining itself; morphing the digits that
+                actually differ shows the change as a change.
+                as="span" keeps the element the h1 already had, so nothing about the layout moves.
+                tabular-nums matters MORE here than it did for a static number: torph animates each
+                digit in place, and with proportional figures a 1 becoming an 8 would shift every
+                digit to its right mid-flight.
+                Torph renders the plain text on first paint (dangerouslySetInnerHTML seeded from a
+                ref captured at first render) and only takes over the DOM in an effect, so the server
+                still emits "Find 157,212 open roles" -- no hydration mismatch, and the number is
+                there for a crawler and for anyone with JS off.
+                --ease-out is the page's own curve rather than the library's default expo, and 320ms
+                sits between the 160ms of a hover and the 400ms default: this is a number settling,
+                not a control responding to a press.
+                respectReducedMotion defaults to true; it is written out because it is the reason
+                this is safe to put on the busiest-updating element on the page. */}
+            <TextMorph
+              as="span"
+              className="tabular-nums text-[var(--accent-strong)]"
+              duration={320}
+              ease="cubic-bezier(0.23, 1, 0.32, 1)"
+              respectReducedMotion
+            >{formatTotal(total, totalCapped)}</TextMorph>{" "}
+            open roles, straight from the source
           </h1>
         </div>
 
@@ -838,7 +1092,6 @@ export function JobsExplorer({
             update={update}
             toggle={toggle}
             searchBusy={searchBusy}
-            onSearchInput={() => setSearchBusy(true)}
           />
 
           {/* Selected filters as dashed "[icon] is [value]" chips, with Save view and Clear all
@@ -848,7 +1101,7 @@ export function JobsExplorer({
               rows are changing. `inert` keeps the clipped controls out of the tab order. */}
           <div className={`row-collapse ${activeChips.length > 0 ? "is-open" : ""}`}>
             <div inert={activeChips.length === 0 ? true : undefined}>
-              <div className="mt-3 flex flex-wrap items-center gap-[10px] border-t border-[var(--border)] pt-3">
+              <div className="rule-dashed mt-3 flex flex-wrap items-center gap-[10px] pt-3">
                 {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
                 {/* Last in the row and wearing the chip's own dashed pill, because it belongs to the
                     filters rather than to the page -- it is the "and clear all of these" at the end
@@ -859,9 +1112,14 @@ export function JobsExplorer({
                     by side offering the same action twice -- and the reader has to work out whether
                     the second one means something different. */}
                 {clearableCount > 1 && <ClearAllChip onClick={() => setFilters(emptyFilters)} />}
-                <span className="ms-auto flex items-center gap-[10px]">
-                  <SaveViewPill onSaveView={saveView} canSaveView />
-                </span>
+                {/* Save view is HIDDEN, not deleted. Everything behind it survives -- saveView, the
+                    savedViews list, its localStorage round-trip, and the SaveViewPill component with
+                    its three morphing states -- so bringing it back is putting this line back.
+                    It goes for the same reason the watchlist star did: it saves a named filter set to
+                    this browser and nowhere else. No sync, no way to reach a saved view from another
+                    device, and nothing on the page that lists them back to you. A control that looks
+                    like it remembers something for you and only remembers it here is a promise the
+                    product has not made good on yet. */}
               </div>
             </div>
           </div>
@@ -872,7 +1130,7 @@ export function JobsExplorer({
             pixel it stops occupying above the card becomes another row inside it.
             The wrapper inherits the column layout the band's siblings used to get directly from the
             section, so the table still takes whatever height is left rather than its content's. */}
-        <div className="mt-5 flex min-h-0 flex-1 flex-col">{jobsTable}</div>
+        <div className="mt-3 flex min-h-0 flex-1 flex-col">{jobsTable}</div>
 
         {resultsFooter}
       </section>
@@ -899,8 +1157,13 @@ function LineIcon({ children }: { children: React.ReactNode }) {
   );
 }
 const IconPlus = () => <LineIcon><path d="M8 3.5v9M3.5 8h9" /></LineIcon>;
+// The check that confirms a saved view. On the shared LineIcon like IconPlus beside it, rather
+// than a second stroked-glyph convention.
+// No stroke-draw: the check arrives as part of a cross-fade that is already carrying the moment, and
+// drawing the stroke on top would be two animations for one event. transitions.dev's success-check
+// is for the case where the check IS the whole moment.
+const IconCheck = () => <LineIcon><path d="M3.5 8.5l3 3 6-6.5" /></LineIcon>;
 const IconUpDown = () => <LineIcon><path d="M5.5 6.5 8 4l2.5 2.5M5.5 9.5 8 12l2.5-2.5" /></LineIcon>;
-const IconUser = () => <LineIcon><circle cx="8" cy="5.3" r="2.4" /><path d="M3.5 13.5c0-2.4 2-3.9 4.5-3.9s4.5 1.5 4.5 3.9" /></LineIcon>;
 
 // ---- Overlay scrollbar -----------------------------------------------------------------------
 // Every scroll box here sits inside a rounded, clipped container, and a native scrollbar cannot live
@@ -1196,7 +1459,7 @@ function CheckOption({
       onClick={() => onToggle(option.value)}
       aria-pressed={checked}
       disabled={disabled}
-      className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)] disabled:pointer-events-none disabled:opacity-40"
+      className={`${PRESSABLE} flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)] disabled:pointer-events-none disabled:opacity-40`}
     >
       <span className="flex min-w-0 items-center gap-2 text-sm text-[var(--ink)]">
         <Flag code={option.code} />
@@ -1349,8 +1612,12 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   return (
     <span
       aria-hidden="true"
-      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
-      style={{ background: "var(--accent)" }}
+      // The ring is new here. The logo-bearing tile beside it in the same list has always had one,
+      // so a bare monogram was the only mark in the dropdown without an edge -- it read as a
+      // floating blob among framed tiles. Same hairline, in the accent rather than grey, matching
+      // the table.
+      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[12px] font-bold leading-none text-[var(--accent)] outline outline-1 outline-offset-0 outline-[var(--monogram-stroke)]"
+      style={{ background: "var(--monogram-wash)" }}
     >
       {initialsOf(name)}
     </span>
@@ -1391,11 +1658,28 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
     };
   }, [query]);
 
+  // What to draw RIGHT NOW, which is not the same as what the server last sent.
+  //
+  // /api/companies answers in 420-520ms, so between a keystroke and the reply there was half a
+  // second of a spinner over a list the reader could already see the answer in. The rows in hand are
+  // narrowed locally and shown immediately; the request still runs and replaces them, because 100
+  // rows out of 50,964 companies is a sample and only the server can widen it.
+  // This is Emil's perceived-performance point rather than an optimisation: the request has not got
+  // faster, but the list stops being blank while it happens.
+  const narrowed = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term || state !== "loading") return rows;
+    const local = rows.filter((entry) => entry.company.toLowerCase().includes(term));
+    // Nothing local matching does not mean nothing matches -- it means this page of 100 has none.
+    // Falling back to the full list would be a lie; an empty list until the server answers is not.
+    return local;
+  }, [rows, query, state]);
+
   // The current selection is pinned at the top even when the search has moved elsewhere, so it can
   // always be unpicked without clearing the box first.
-  const shown = value && !rows.some((row) => row.company === value)
-    ? [{ company: value, jobCount: 0, logoUrl: null }, ...rows]
-    : rows;
+  const shown = value && !narrowed.some((row) => row.company === value)
+    ? [{ company: value, jobCount: 0, logoUrl: null }, ...narrowed]
+    : narrowed;
 
   return (
     <div>
@@ -1412,7 +1696,7 @@ function CompanyCheckList({ value, onChange }: { value: string; onChange: (value
               type="button"
               onClick={() => onChange(checked ? "" : row.company)}
               aria-pressed={checked}
-              className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
+             className={`${PRESSABLE} flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]`}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <CompanyMark name={row.company} logoUrl={row.logoUrl} />
@@ -1476,13 +1760,22 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
     };
   }, [query]);
 
+  // Narrowed locally while the request is out, same as the company list. /api/titles answers in
+  // 0.41-1.80s -- the slowest lookup on the page -- and 200 titles is a big enough sample that the
+  // row being typed towards is usually already in it. See the note in CompanyCheckList.
+  const narrowed = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term || state !== "loading") return suggestions;
+    return suggestions.filter((entry) => entry.title.toLowerCase().includes(term));
+  }, [suggestions, query, state]);
+
   // The current selection is always the first row, so what is filtered is visible the moment the
   // panel opens rather than buried a hundred rows down the list. It keeps its real count when the
   // suggestions include it, which they usually do.
-  const selected = value ? suggestions.find((row) => row.title === value) ?? { title: value, jobCount: 0 } : null;
+  const selected = value ? narrowed.find((row) => row.title === value) ?? { title: value, jobCount: 0 } : null;
   const rows = selected
-    ? [selected, ...suggestions.filter((row) => row.title !== value)]
-    : suggestions;
+    ? [selected, ...narrowed.filter((row) => row.title !== value)]
+    : narrowed;
 
   return (
     <div>
@@ -1498,7 +1791,7 @@ function TitleCheckList({ value, onChange }: { value: string; onChange: (value: 
               type="button"
               onClick={() => onChange(checked ? "" : row.title)}
               aria-pressed={checked}
-              className="flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]"
+            className={`${PRESSABLE} flex w-full items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start hover:bg-[var(--control-hover)]`}
             >
               <span className="min-w-0 truncate text-sm text-[var(--ink)]">{row.title}</span>
               <span className="flex shrink-0 items-center gap-2">
@@ -1551,7 +1844,7 @@ function SidebarPills({
             type="button"
             onClick={() => onToggle(option.value)}
             aria-pressed={checked}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+            className={`${PRESSABLE} inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
               checked
                 ? "border-[var(--accent)]/30 bg-[var(--accent)]/15 text-[var(--accent-strong)]"
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
@@ -1614,6 +1907,16 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
         {chip.code && <Flag code={chip.code} />}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
           <span className="inline-flex [&>svg]:size-5 text-[var(--muted)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
+        )}
+        {/* Job type carries its glyph here too. It had one in the dropdown you pick it from and one in
+            every row it filters to, and none on the chip in between -- the only place in that chain
+            where the value appeared bare.
+            Looked up through the same normalisation the table uses, not the raw label: keyed on the
+            raw text, "Full-time Tier 2" reads as an unknown type and silently loses its clock. */}
+        {chip.kind === "employmentType" && JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(value))] && (
+          <span className="inline-flex text-[var(--muted)] [&>svg]:size-5">
+            {(() => { const Glyph = JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(value))]; return <Glyph />; })()}
+          </span>
         )}
         {chip.kind === "source" && (
           <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
@@ -1681,12 +1984,29 @@ const IconAtsF = () => (
     <path d="M10.0529 15.7998C10.5005 15.7663 10.8958 16.0237 10.943 16.4782C10.9871 16.902 11.1076 17.2426 11.5769 17.3483C11.7917 17.3968 12.0063 17.3787 12.2028 17.5211C12.7847 17.9434 12.5736 18.8211 11.8581 18.9516C11.3879 19.0034 10.8229 18.8194 10.433 18.5594C9.90839 18.2112 9.54413 17.6684 9.42073 17.051C9.30733 16.4797 9.39177 15.9304 10.0529 15.7998Z" fill="#868990" />
   </svg>
 );
+// The empty state's mark: a board with a magnifier over it, at 32px in --muted so it reads as part
+// of the sentence beneath rather than as an illustration above it. currentColor rather than the
+// #868990 the filter pills bake in, because this one belongs to the empty state's own text colour
+// and should move with it.
+const IconNoResults = () => (
+  <svg width="32" height="32" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0 text-[var(--muted)]">
+    <path d="M8.02508 1.56908C8.88002 1.56077 9.735 1.55853 10.59 1.56236C11.9503 1.56624 13.4942 1.55332 14.8083 1.90853C15.391 2.06604 15.9488 2.36261 16.3963 2.76884C17.5914 3.85388 17.7226 5.53889 17.7836 7.05352C17.8127 7.77969 17.8122 8.53305 17.814 9.26164C17.8146 9.49448 17.8286 10.0821 17.7933 10.2741C17.7668 10.4255 17.697 10.566 17.5923 10.6786C17.4466 10.836 17.2442 10.9288 17.0298 10.9364C16.8126 10.9448 16.6011 10.8651 16.4433 10.7156C16.1314 10.4194 16.1864 10.0635 16.1871 9.67086L16.187 8.66044C16.1819 8.11344 16.1709 7.56651 16.1539 7.01974C16.1457 6.8003 16.1263 6.58146 16.1191 6.36434C14.9897 6.3431 13.8264 6.35813 12.6932 6.35824L6.61563 6.35823L4.31921 6.35844C3.99112 6.35853 3.57103 6.37356 3.25253 6.36155C3.15862 8.49915 3.15371 10.6397 3.23784 12.7778C3.23817 12.7915 3.23878 12.8052 3.23969 12.819C3.3484 14.4299 3.60146 15.6947 5.42451 16.0001C6.29649 16.1464 7.05835 16.165 7.93798 16.1743L9.15771 16.1855C9.41033 16.1859 10.0898 16.1661 10.3007 16.2118C10.4378 16.2415 10.5645 16.307 10.6679 16.4018C10.8309 16.5475 10.9274 16.7535 10.9351 16.9721C10.9426 17.1689 10.8601 17.406 10.7246 17.5464C10.5209 17.7572 10.3323 17.8139 10.0476 17.8155C9.35213 17.8191 8.64848 17.8174 7.95401 17.8086C6.68373 17.7926 5.05179 17.7638 3.89021 17.2177C3.52783 17.0473 3.19594 16.8185 2.90783 16.5404C1.71002 15.3906 1.60728 13.5083 1.57828 11.9402C1.56314 10.9482 1.55808 9.95603 1.56309 8.96393C1.56351 8.52108 1.56795 8.08229 1.57464 7.63731C1.60459 5.6483 1.725 3.23143 3.75801 2.22102C5.02718 1.59024 6.62843 1.59012 8.02508 1.56908Z" fill="currentColor" />
+    <path d="M14.7617 11.9847C15.2713 11.9605 15.7782 12.0709 16.2315 12.3048C16.9195 12.6601 17.4381 13.274 17.6735 14.0117C17.9195 14.7887 17.8329 15.562 17.4607 16.2808C17.7163 16.5411 17.9799 16.7949 18.2368 17.0541C18.3487 17.1669 18.4587 17.2692 18.5393 17.4088C18.6067 17.5282 18.6422 17.6628 18.6423 17.7999C18.6463 18.0265 18.557 18.2447 18.3953 18.4033C18.1536 18.6434 17.7551 18.7279 17.4578 18.5663C17.2008 18.4264 16.9009 18.0837 16.6885 17.8691C16.5544 17.7352 16.4186 17.5967 16.2806 17.4674C15.8898 17.6523 15.5588 17.7782 15.1203 17.8072C14.3345 17.8646 13.5584 17.604 12.9668 17.0837C12.3896 16.5765 12.0374 15.8609 11.9876 15.0941C11.9351 14.3159 12.1949 13.549 12.7094 12.9629C13.2508 12.3517 13.9526 12.034 14.7617 11.9847ZM15.0457 16.1339C15.7289 16.0503 16.2152 15.4291 16.1323 14.7458C16.0492 14.0624 15.4284 13.5756 14.745 13.658C14.0608 13.7404 13.5732 14.3623 13.6564 15.0464C13.7394 15.7305 14.3617 16.2176 15.0457 16.1339Z" fill="currentColor" />
+    <path d="M9.67429 8.76901L12.5285 8.76824L13.3935 8.76813C13.7156 8.76773 14.0614 8.72835 14.335 8.92467C14.5164 9.05317 14.6385 9.24918 14.6741 9.46865C14.7578 9.99679 14.3919 10.3676 13.8893 10.4418C13.5849 10.4562 13.2353 10.4478 12.9263 10.4479L11.2501 10.448L10.2352 10.4482C10.0322 10.4482 9.78221 10.4593 9.5845 10.4286C8.57915 10.2726 8.61767 8.83776 9.67429 8.76901Z" fill="currentColor" />
+    <path d="M5.50777 8.76947C5.72527 8.76855 6.35079 8.7527 6.53453 8.79289C6.64437 8.81695 6.74815 8.8632 6.83949 8.92879C7.02036 9.05689 7.14143 9.25298 7.17493 9.47208C7.2094 9.6919 7.15426 9.91635 7.02185 10.0952C6.85234 10.323 6.65784 10.4022 6.38945 10.4423C6.22482 10.4478 6.06009 10.4501 5.89538 10.4491C5.55663 10.4503 5.25086 10.4675 4.97509 10.233C4.80797 10.0934 4.70548 9.89134 4.69161 9.67402C4.65657 9.16523 5.0082 8.8027 5.50777 8.76947Z" fill="currentColor" />
+    <path d="M5.50748 12.1025C5.72498 12.1016 6.35076 12.0857 6.53453 12.1259C6.64439 12.15 6.74817 12.1962 6.83951 12.2618C7.02037 12.3899 7.14144 12.586 7.17494 12.8051C7.2094 13.0248 7.15426 13.2493 7.02186 13.4282C6.85252 13.6558 6.65801 13.7353 6.38981 13.7752C6.22505 13.7808 6.06021 13.783 5.89537 13.7821C5.55644 13.7833 5.25089 13.8006 4.97503 13.566C4.80797 13.4264 4.70551 13.2243 4.69162 13.0071C4.65655 12.4985 5.00805 12.1358 5.50748 12.1025Z" fill="currentColor" />
+    <path d="M9.67419 12.1025C9.89168 12.1016 10.5174 12.0857 10.7012 12.1259C10.811 12.1499 10.9148 12.1962 11.0061 12.2618C11.187 12.3899 11.3081 12.586 11.3416 12.8051C11.376 13.025 11.3209 13.2493 11.1885 13.4282C11.0192 13.6557 10.8247 13.7353 10.5565 13.7752C10.3917 13.7808 10.2268 13.7832 10.062 13.7821C9.72306 13.7833 9.41758 13.8006 9.14172 13.566C8.97462 13.4264 8.87213 13.2243 8.85824 13.0071C8.8232 12.4984 9.1747 12.1357 9.67419 12.1025Z" fill="currentColor" />
+  </svg>
+);
+
 const IconDateF = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0" stroke="#868990" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M13.3333 1.6665V4.99984M6.66666 1.6665V4.99984" />
-    <path d="M10.8333 3.3335H9.16667C6.02397 3.3335 4.45262 3.3335 3.47631 4.3098C2.5 5.28612 2.5 6.85746 2.5 10.0002V11.6668C2.5 14.8095 2.5 16.3809 3.47631 17.3572C4.45262 18.3335 6.02397 18.3335 9.16667 18.3335H10.8333C13.976 18.3335 15.5474 18.3335 16.5237 17.3572C17.5 16.3809 17.5 14.8095 17.5 11.6668V10.0002C17.5 6.85746 17.5 5.28612 16.5237 4.3098C15.5474 3.3335 13.976 3.3335 10.8333 3.3335Z" />
-    <path d="M2.5 8.3335H17.5" />
-    <path d="M8.33333 15.4168L8.33333 11.5395C8.33333 11.3797 8.21938 11.2502 8.07882 11.2502H7.5M11.6667 15.4153L12.9046 11.5769C12.9126 11.5522 12.9167 11.5263 12.9167 11.5002C12.9167 11.3622 12.8047 11.2502 12.6667 11.2502L10.8333 11.25" />
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
+    <path d="M6.6787 1.04614C6.92157 1.0295 7.15139 1.10757 7.3242 1.28202C7.57669 1.53689 7.56356 1.82584 7.56277 2.15877L7.55847 2.66959C8.10797 2.68322 8.68675 2.6699 9.23985 2.66951L12.4399 2.67554C12.4337 2.46861 12.4509 2.22766 12.4367 2.02516C12.4016 1.5224 12.677 1.05075 13.2355 1.04455C13.4539 1.04166 13.6643 1.12582 13.8206 1.27845C14.0928 1.54725 14.0655 1.8581 14.0642 2.2083L14.0643 2.74878C14.9103 2.83761 15.6941 2.97259 16.422 3.44485C18.0379 4.49328 18.0807 6.52469 18.1142 8.25925C18.1272 9.13065 18.131 10.0022 18.1255 10.8736C18.131 11.7356 18.1269 12.5976 18.1131 13.4594C18.0556 16.0932 17.7881 18.1917 14.8169 18.785C14.573 18.8258 14.3278 18.8586 14.0817 18.8833C13.4725 18.9421 12.8603 18.9507 12.2493 18.9572L10.059 18.963C9.2779 18.9658 8.49682 18.9633 7.71577 18.9556C6.76693 18.9452 5.96415 18.9241 5.04257 18.7541C2.98645 18.3746 2.08209 16.8772 1.95366 14.8934C1.91709 14.3283 1.88965 13.7732 1.88182 13.1938C1.87493 12.4135 1.87281 11.6332 1.87546 10.853C1.87209 10.0229 1.87441 9.19283 1.8824 8.3628C1.90426 6.92991 1.92127 5.2258 2.87577 4.06469C3.64531 3.1286 4.77794 2.86291 5.9321 2.75214C5.97547 2.07978 5.73068 1.17846 6.6787 1.04614ZM3.50993 8.13173L3.499 12.2234C3.50063 13.3276 3.48428 14.4738 3.69481 15.5599C3.85731 16.3983 4.3529 16.9314 5.19348 17.1159C6.18902 17.3344 7.20902 17.3132 8.22226 17.3231L11.6565 17.3248C12.7434 17.315 14.7554 17.3948 15.6242 16.7475C15.9855 16.4664 16.176 16.0902 16.2804 15.6546C16.479 14.8259 16.4741 13.9518 16.4902 13.1055C16.5048 11.8704 16.5083 10.6351 16.5008 9.39991C16.5004 9.01298 16.4746 8.5037 16.487 8.13447C15.6239 8.1275 14.7609 8.12556 13.898 8.12866L9.51813 8.12863L5.74223 8.12886C5.09523 8.12892 4.41269 8.11787 3.76994 8.13104C3.67877 8.13413 3.6015 8.13735 3.50993 8.13173Z" fill="#868990" />
+    <path d="M13.5957 10.2405C14.0505 10.1538 14.489 10.4537 14.5733 10.9089C14.6576 11.3641 14.3555 11.801 13.8999 11.883C13.4476 11.9644 13.0145 11.665 12.9308 11.2131C12.8471 10.7611 13.1443 10.3265 13.5957 10.2405Z" fill="#868990" />
+    <path d="M9.84269 10.2413C10.2967 10.1552 10.7343 10.4541 10.8193 10.9083C10.9043 11.3625 10.6043 11.7993 10.1499 11.8832C9.6971 11.9667 9.2621 11.6681 9.17742 11.2155C9.09273 10.7629 9.39033 10.3272 9.84269 10.2413Z" fill="#868990" />
+    <path d="M9.84269 13.5744C10.2967 13.4882 10.7343 13.7871 10.8193 14.2413C10.9043 14.6955 10.6043 15.1323 10.1499 15.2162C9.6971 15.2998 9.2621 15.0011 9.17742 14.5485C9.09273 14.0959 9.39033 13.6602 9.84269 13.5744Z" fill="#868990" />
+    <path d="M6.08945 13.5742C6.543 13.4886 6.97994 13.7872 7.06507 14.2409C7.15018 14.6944 6.85121 15.1311 6.39751 15.2159C5.9444 15.3004 5.50843 15.0019 5.42341 14.5488C5.3384 14.0958 5.6365 13.6596 6.08945 13.5742Z" fill="#868990" />
+    <path d="M6.0898 10.2411C6.54331 10.1558 6.98011 10.4544 7.06514 10.908C7.15018 11.3616 6.85122 11.7981 6.39757 11.8828C5.94441 11.9674 5.50839 11.6688 5.42344 11.2157C5.33851 10.7627 5.63676 10.3264 6.0898 10.2411Z" fill="#868990" />
   </svg>
 );
 
@@ -1711,6 +2031,16 @@ const IconInternship = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-5 shrink-0">
     <path d="M7.9062 1.50426C8.04231 1.49858 8.17867 1.50621 8.3133 1.52706C9.75837 1.73723 14.1124 3.62862 14.9626 4.78354C15.1074 4.98021 15.193 5.21052 15.153 5.45653C15.0736 5.94527 14.5439 6.31592 14.1726 6.58624C14.1567 6.7754 14.1672 7.1058 14.1672 7.30746L14.1676 8.66559L14.167 10.1285C14.1667 10.3431 14.1528 10.7282 14.1844 10.925C14.195 10.9911 14.4058 11.3692 14.4547 11.4639C14.7711 12.0767 15.1221 12.7791 15.1643 13.4793C15.1793 13.7278 15.0959 14.0028 14.9193 14.1799C14.6358 14.4638 14.2539 14.5046 13.8718 14.5023C13.385 14.4993 12.8011 14.5596 12.4221 14.1908C11.8122 13.5976 12.4675 12.2933 12.7667 11.6785C12.88 11.4458 13.068 11.147 13.1502 10.9097C13.1769 10.8327 13.1681 10.4747 13.168 10.3695L13.1672 9.49487L13.1671 7.20155C12.8553 7.36235 12.5624 7.52176 12.2462 7.67752C11.3376 8.12699 10.4009 8.51752 9.44214 8.84671C9.03112 8.98351 8.59624 9.12598 8.16249 9.16095C6.88733 9.26375 3.51197 7.61752 2.34263 6.91674C2.01332 6.71939 1.68925 6.50463 1.39682 6.25545C1.13683 6.0339 0.863157 5.74824 0.837825 5.38997C0.818679 5.11919 0.947497 4.87828 1.11973 4.67892C2.08722 3.55899 6.43179 1.61421 7.9062 1.50426Z" fill="currentColor" />
     <path d="M3.90919 8.89844C4.06774 8.91064 4.33947 9.05067 4.49629 9.1188C4.6581 9.18939 4.82079 9.25795 4.98431 9.3245C5.34723 9.47371 5.71464 9.61175 6.08604 9.73843C6.60852 9.91472 7.34906 10.1488 7.89649 10.1619C8.80148 10.1836 10.0379 9.71618 10.8763 9.38038C11.0971 9.29232 11.3162 9.20022 11.5336 9.10409C11.6428 9.05593 11.8991 8.93583 12.0038 8.91125C12.0938 8.89043 12.1885 8.9068 12.2662 8.95666C12.3944 9.03782 12.428 9.20026 12.4169 9.34134C12.3704 9.93839 12.3805 10.5493 12.3331 11.1448C12.3277 11.2174 12.3177 11.2896 12.3033 11.3609C12.2626 11.5559 12.1825 11.7238 12.0782 11.8907C12.0697 11.9031 12.0613 11.9154 12.0528 11.9277C11.5999 12.5748 10.4353 12.8931 9.70211 13.0281C8.15998 13.312 5.6201 13.2137 4.31409 12.2946C3.98237 12.0622 3.75662 11.7075 3.68652 11.3085C3.66495 11.1809 3.65931 11.0064 3.65281 10.8747L3.6211 10.0983L3.59533 9.56279C3.58014 9.25422 3.52454 8.96214 3.90919 8.89844Z" fill="currentColor" />
+  </svg>
+);
+
+// The Company pill's mark. A filled building glyph rather than the stroke-based person outline it
+// replaces: the pill filters by EMPLOYER, and a person icon read as "candidate" beside a row of
+// filled category glyphs it also did not match.
+const IconCompanyF = () => (
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
+    <path d="M9.19008 1.77707C9.56556 1.773 9.94107 1.77163 10.3166 1.77294C11.2611 1.77396 12.1666 1.73686 12.8739 2.4513C13.4934 3.07694 13.5408 3.84735 13.5368 4.68733C14.2611 4.69893 14.9988 4.68707 15.7227 4.68947C16.6827 4.69264 17.4191 4.5869 18.1952 5.2775C19.4796 6.42043 18.9618 8.4989 17.9408 9.62431C17.2805 10.3626 16.3676 10.8268 15.382 10.9254C15.0311 10.9573 14.7111 10.9298 14.373 10.9466L14.3734 10.9349C14.379 10.6958 14.3993 10.2192 14.332 9.99945C14.204 9.58205 13.6174 9.4574 13.3049 9.77335C13.2332 9.84585 13.1812 9.9355 13.1539 10.0338C13.1078 10.1976 13.1243 10.7367 13.1254 10.9413C12.3803 10.9612 11.5643 10.9446 10.8138 10.9446L8.2004 10.9447C7.79891 10.9447 7.26004 10.9276 6.87307 10.9466L6.87342 10.9349C6.87909 10.6958 6.89936 10.2192 6.83202 9.99944C6.70418 9.58219 6.11728 9.45736 5.80487 9.77318C5.73307 9.84569 5.68109 9.93542 5.65388 10.0338C5.60789 10.1974 5.62432 10.7369 5.62533 10.9413C5.57398 10.9429 5.52262 10.9438 5.47125 10.944C5.17125 10.946 4.83766 10.9497 4.54081 10.9157C3.65975 10.8135 2.83905 10.4167 2.21177 9.78956C1.47229 9.06326 1.0517 8.07289 1.04256 7.03643C1.03903 5.99796 1.65254 5.09613 2.66466 4.78975C3.02607 4.68035 3.31335 4.68955 3.68659 4.68927L4.49991 4.68917L6.45982 4.69083C6.46068 3.88586 6.49684 3.1068 7.07479 2.49724C7.69341 1.84479 8.34682 1.80241 9.19008 1.77707ZM7.70855 4.68896L10.9961 4.68972L12.2896 4.69013C12.2644 3.90669 12.3076 3.11261 11.2928 3.05977C10.5726 3.02227 9.80917 3.00486 9.08827 3.03511C9.06915 3.0359 9.05006 3.0372 9.03101 3.03902C8.94889 3.04455 8.85342 3.05449 8.77227 3.05741C7.6987 3.09598 7.73283 3.8333 7.70855 4.68896Z" fill="#868990" />
+    <path d="M14.3767 11.9796C14.8764 11.979 15.3436 11.9867 15.8359 11.9046C16.7897 11.7455 17.6761 11.3002 18.3845 10.6442C18.5629 10.4789 18.8177 10.2204 18.9575 10.0234C18.9528 11.1568 18.9674 12.2791 18.9424 13.4142C18.9041 14.872 18.7902 16.5621 17.3996 17.3886C16.254 18.0696 14.6377 18.0147 13.3394 18.0222L10.3221 18.0251L7.11544 18.0237C5.95164 18.0204 4.76889 18.0492 3.62987 17.8013C2.37635 17.5285 1.52373 16.6636 1.25439 15.4136C1.08323 14.6192 1.05829 13.8619 1.04735 13.0513C1.04147 12.3948 1.03948 11.7384 1.04137 11.082C1.04118 10.9073 1.03137 10.1657 1.05697 10.0599C1.04984 10.0569 1.40841 10.453 1.43737 10.4825C2.22748 11.2897 3.26936 11.8031 4.39081 11.9378C4.79703 11.9853 5.21501 11.9778 5.62452 11.9818L5.62358 12.4189C5.62334 12.6818 5.6013 12.9356 5.79919 13.1416C5.91304 13.2602 6.07603 13.3263 6.23983 13.3285C6.40726 13.3312 6.56868 13.2661 6.68739 13.148C6.9454 12.8912 6.87264 12.354 6.87669 11.9795L10.3338 11.9781C11.2548 11.978 12.2059 11.9665 13.1246 11.9818L13.1235 12.4189C13.1234 12.682 13.1014 12.9352 13.2995 13.1416C13.4133 13.2601 13.576 13.3261 13.7398 13.3285C13.9073 13.3313 14.0687 13.2661 14.1875 13.148C14.4454 12.891 14.3726 12.3541 14.3767 11.9796Z" fill="#868990" />
   </svg>
 );
 
@@ -1745,6 +2075,15 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 // The press-scale is a transition, not a hover one: hover stays instant, but a control the user is
 // actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
 // value -- below 0.95 it reads as the button flinching.
+// Press feedback for a row or pill inside a dropdown panel.
+//
+// The pill that OPENS a dropdown already has active:scale-[0.97]; the options inside it had nothing,
+// so the trigger answered a press and its own contents did not. 0.98 rather than 0.97 because these
+// sit in a dense list and a 3% squeeze on a full-width row reads as the whole panel flinching.
+// 120ms: the low end of the 100-160ms press budget, since picking from a list is a fast action.
+const PRESSABLE =
+  "transition-transform duration-[120ms] ease-[var(--ease-out)] active:scale-[0.98]";
+
 const V4_PILL =
   "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-bold text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
@@ -1848,7 +2187,7 @@ function SearchBox({
     ? "w-full bg-[var(--control-hover)] hover:bg-[var(--control-active)] focus-within:bg-[var(--control-hover)] focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]"
     : "w-[231px] bg-white shadow-[var(--shadow-control)] hover:bg-[var(--control-hover)] focus-within:bg-[var(--control-hover)] focus-within:shadow-[var(--shadow-control),inset_0_0_0_1.5px_var(--accent)]";
   return (
-    <label className={`flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
+    <label className={`search-shell flex h-9 shrink-0 cursor-text items-center gap-2 rounded-[14px] px-2 ${shell}`}>
       <IconSearchGlyph />
       <input
         ref={inputRef}
@@ -1859,19 +2198,36 @@ function SearchBox({
         className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]"
       />
       {/* The spinner takes the clear button's place rather than sitting beside it: the slot is 20px
-          wide and adding a second glyph would shift the input's text on every keystroke burst. Both
-          are the same size, so the swap moves nothing. */}
-      {value && loading ? (
-        <span className="search-spinner" role="status" aria-label="Searching" />
-      ) : value ? (
-        <button
-          type="button"
-          aria-label={`Clear ${label.toLowerCase()}`}
-          onClick={() => onChange("")}
-          className="flex shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+          wide and adding a second glyph would shift the input's text on every keystroke burst.
+          transitions.dev icon-swap (09-icon-swap.md): both glyphs now share one grid cell and
+          cross-fade with blur and scale instead of one being torn out of the DOM. That matters more
+          here than it looks -- `loading` flips on every debounce cycle, so the hard swap flickered a
+          spinner in and out through a burst of typing. A cross-fade cannot flicker: a state that
+          reverts mid-transition eases back from wherever it had got to.
+          The grid cell is the 36px hit area, with -m-2 keeping it at 20px of layout, so the swap
+          wrapper and the enlarged target are the same box rather than two nested ones.
+          The button is DISABLED while the spinner shows rather than merely faded out: an invisible
+          control that still takes focus and clicks is worse than a visible one. */}
+      {value ? (
+        <span
+          className="t-icon-swap -m-2 size-9 shrink-0 place-items-center"
+          data-state={loading ? "b" : "a"}
         >
-          <IconClearGlyph />
-        </button>
+          <button
+            type="button"
+            className="t-icon flex size-9 items-center justify-center rounded-full text-[var(--muted)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+            data-icon="a"
+            disabled={loading}
+            aria-hidden={loading || undefined}
+            aria-label={`Clear ${label.toLowerCase()}`}
+            onClick={() => onChange("")}
+          >
+            <IconClearGlyph />
+          </button>
+          <span className="t-icon flex size-9 items-center justify-center" data-icon="b" aria-hidden={!loading || undefined}>
+            <span className="search-spinner" role={loading ? "status" : undefined} aria-label={loading ? "Searching" : undefined} />
+          </span>
+        </span>
       ) : null}
     </label>
   );
@@ -1974,7 +2330,6 @@ function FilterDropdownBar({
   update,
   toggle,
   searchBusy,
-  onSearchInput,
 }: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
@@ -1983,7 +2338,6 @@ function FilterDropdownBar({
   // deriving it in the effect keeps it out of a setState-in-effect, and means it goes up on the
   // keystroke itself instead of 250ms later when the debounce finally fires.
   searchBusy: boolean;
-  onSearchInput: () => void;
 }) {
   const options = (key: (typeof FILTER_CATEGORIES)[number]["key"]) =>
     FILTER_CATEGORIES.find((entry) => entry.key === key)!.options;
@@ -1997,7 +2351,7 @@ function FilterDropdownBar({
       <FilterDropdown Icon={IconTitleF} label="Title" width="w-72" prefetch={`${titlesUrl}?q=&limit=${TITLE_SUGGESTION_LIMIT}`}>
         <TitleCheckList value={filters.title} onChange={(value) => update({ title: value })} />
       </FilterDropdown>
-      <FilterDropdown Icon={IconUser} label="Company" width="w-72" prefetch={`${companiesUrl}?q=&limit=100`}>
+      <FilterDropdown Icon={IconCompanyF} label="Company" width="w-72" prefetch={`${companiesUrl}?q=&limit=100`}>
         <CompanyCheckList value={filters.company} onChange={(value) => update({ company: value })} />
       </FilterDropdown>
       <FilterDropdown Icon={IconJobTypeF} label="Job type" width="w-72">
@@ -2006,7 +2360,12 @@ function FilterDropdownBar({
       <FilterDropdown Icon={IconWorkplaceF} label="Workplace" width="w-72">
         <SidebarPills options={options("workplace")} selected={filters.workplace} onToggle={(value) => toggle("workplace", value)} glyph="globe" />
       </FilterDropdown>
-      <FilterDropdown Icon={IconCountryF} label="Country">
+      {/* "Location", not "Country". The column it filters is headed LOCATION, and a control
+            and the column it acts on calling one thing two names is the kind of mismatch that makes
+            people wonder whether they are in fact two different things -- the same reason the first
+            column and its pill were both renamed to Title. The free-text `location` filter has no
+            pill of its own (it is reachable from a row or a URL), so there is no collision. */}
+          <FilterDropdown Icon={IconCountryF} label="Location">
         <SearchCheckList options={countryOptions} selected={filters.country} onToggle={(value) => toggle("country", value)} searchLabel="Search countries" />
       </FilterDropdown>
       {/* Industry is hidden for now. The filter itself still works -- the URL parameter, the chip
@@ -2030,8 +2389,7 @@ function FilterDropdownBar({
             // character, leaves queryString identical, so the effect never re-runs and never reaches
             // the `finally` that would put the field back to idle: the spinner would stay up over
             // results that had already arrived.
-            if (value.trim() !== filters.search.trim()) onSearchInput();
-            update({ search: value });
+                update({ search: value });
           }}
         />
         <DateDropdown value={filters.postedWithin} onChange={(value) => update({ postedWithin: value })} />
@@ -2058,7 +2416,7 @@ function DateDropdown({ value, onChange }: { value: string; onChange: (value: st
                 onChange(option.value);
                 close();
               }}
-              className="flex items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start text-sm text-[var(--ink)] hover:bg-[var(--control-hover)]"
+              className={`${PRESSABLE} flex items-center justify-between gap-2 rounded-[10px] px-2 py-1.5 text-start text-sm text-[var(--ink)] hover:bg-[var(--control-hover)]`}
             >
               {option.label}
               {option.value === current.value && (
@@ -2074,6 +2432,16 @@ function DateDropdown({ value, onChange }: { value: string; onChange: (value: st
 
 // The "Save view" control with its inline naming flow, sitting in the selected-filters row beside
 // the chips.
+// Save view: one control that morphs through three states rather than three controls that replace
+// each other.
+//
+// Two gaps this closes, both found by the find-animation-opportunities sweep:
+//   - Pressing Enter used to write the view to localStorage and say NOTHING. The form closed and
+//     the pill came back looking exactly as it had. That is a functional gap wearing an animation
+//     costume: the bug was silence, and the fix happens to be motion.
+//   - The pill was replaced by a 144px input between one frame and the next.
+// Both are rare, deliberate acts -- the tier where a longer beat is welcome -- so the confirmation
+// holds for 1,200ms before returning. Long enough to be read, short enough not to be in the way.
 function SaveViewPill({
   onSaveView,
   canSaveView,
@@ -2081,43 +2449,68 @@ function SaveViewPill({
   onSaveView: (name: string) => void;
   canSaveView: boolean;
 }) {
-  const [naming, setNaming] = useState(false);
+  const [mode, setMode] = useState<"idle" | "naming" | "saved">("idle");
   const [viewName, setViewName] = useState("");
+  const morphRef = useSwapWidth(mode === "idle" ? 0 : mode === "naming" ? 1 : 2, mode);
+
+  // Cleared on unmount so a pill dismounted mid-confirmation cannot set state on a dead component.
+  useEffect(() => {
+    if (mode !== "saved") return;
+    const timer = window.setTimeout(() => setMode("idle"), 1_200);
+    return () => window.clearTimeout(timer);
+  }, [mode]);
 
   function commitSave() {
-    onSaveView(viewName);
+    const name = viewName.trim();
+    if (!name) { setMode("idle"); return; }
+    onSaveView(name);
     setViewName("");
-    setNaming(false);
-  }
-
-  if (naming) {
-    return (
-      <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
-        <TextField aria-label="Name this view" autoFocus>
-          <Input
-            value={viewName}
-            onChange={(event) => setViewName(event.target.value)}
-            onBlur={() => (viewName.trim() ? commitSave() : setNaming(false))}
-            onKeyDown={(event) => event.key === "Escape" && setNaming(false)}
-            placeholder="View name"
-            maxLength={40}
-            className="h-9 w-36 rounded-[14px] bg-white px-3 text-sm text-[var(--ink)] shadow-[var(--shadow-control)] outline-none placeholder:text-[var(--muted)]"
-          />
-        </TextField>
-      </form>
-    );
+    setMode("saved");
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setNaming(true)}
-      disabled={!canSaveView}
-      title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
-      className={`${V4_PILL} px-3 disabled:cursor-not-allowed disabled:opacity-55`}
-    >
-      <IconPlus /> Save view
-    </button>
+    <span ref={morphRef} className="t-morph t-morph-pill align-middle">
+      <span data-active={mode === "idle" ? "" : undefined}>
+        <button
+          type="button"
+          onClick={() => setMode("naming")}
+          disabled={!canSaveView || mode !== "idle"}
+          title={canSaveView ? "Save the current filters as a view" : "Apply a filter first, then save it as a view"}
+          className={`${V4_PILL} px-3 disabled:cursor-not-allowed disabled:opacity-55`}
+        >
+          <IconPlus />
+          Save view
+        </button>
+      </span>
+
+      <span data-active={mode === "naming" ? "" : undefined}>
+        <form onSubmit={(event) => { event.preventDefault(); commitSave(); }} className="inline-flex">
+          <TextField aria-label="Name this view">
+            <Input
+              value={viewName}
+              // autoFocus on the element itself would fire on every render of a control that is
+              // always mounted now. Focused from the effect below the state instead.
+              ref={(node) => { if (node && mode === "naming" && document.activeElement !== node) node.focus(); }}
+              onChange={(event) => setViewName(event.target.value)}
+              onBlur={() => (viewName.trim() ? commitSave() : setMode("idle"))}
+              onKeyDown={(event) => event.key === "Escape" && setMode("idle")}
+              placeholder="View name"
+              maxLength={40}
+              className="search-shell h-9 w-36 rounded-[14px] bg-white px-3 text-sm text-[var(--ink)] shadow-[var(--shadow-control)] outline-none placeholder:text-[var(--muted)]"
+            />
+          </TextField>
+        </form>
+      </span>
+
+      {/* The confirmation. aria-live so it is announced rather than only drawn -- the whole point is
+          that saving used to be invisible, and invisible to a screen reader is the same failure. */}
+      <span data-active={mode === "saved" ? "" : undefined}>
+        <span role="status" aria-live="polite" className={`${V4_PILL} px-3 text-[var(--accent-strong)]`}>
+          <IconCheck />
+          Saved
+        </span>
+      </span>
+    </span>
   );
 }
 
@@ -2129,11 +2522,16 @@ function TableHeading({
   children,
   className = "",
   align = "start",
-}: { children: React.ReactNode; className?: string; align?: "start" | "end" }) {
+  style,
+}: { children: React.ReactNode; className?: string; align?: "start" | "end"; style?: React.CSSProperties }) {
   return (
     <th
       scope="col"
-      className={`px-5 pb-3 ${align === "end" ? "text-end" : "text-start"} text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
+      style={style}
+      // whitespace-nowrap because a heading that wraps to two lines does not merely look wrong: it
+      // changes the header's height, and the virtualizer has already computed every row offset
+      // against the old one. columnWidths keeps each column wide enough that this never has to bite.
+      className={`whitespace-nowrap px-5 pb-3 ${align === "end" ? "text-end" : "text-start"} text-[12px] font-bold uppercase tracking-[0.05em] text-[var(--muted)] ${className}`}
     >
       {children}
     </th>
@@ -2174,7 +2572,54 @@ const virtuosoComponents = {
   TableRow: VirtuosoRow,
 } satisfies TableComponents<Job>;
 
-function TableHeader() {
+// The six widths used to be hard-coded percentages -- 30/20/12/11/12/15 -- chosen once against an
+// imagined result set. They were right for some queries and wrong for most: three quarters of the
+// index has no employment type at all, so Job type sat empty at 12% while Location cropped two
+// words short beside it. These come from columnWidths() instead, which reads the rows.
+// Sized from the FIRST PAGE only, and the memo is keyed on it. Recomputing as later pages arrive
+// would relay the table out under someone mid-scroll, which is the failure this is here to avoid --
+// a column that moves while you read it is worse than one that was always slightly too narrow.
+const HEADER_PAGE = 100;
+
+// What each cell actually DRAWS, which is not the raw row: several places collapse to a count,
+// "Location not specified" draws nothing at all, and the employment type is tidied before it is
+// shown. Measuring job.location would size the column for a semicolon-joined address the cell was
+// never going to render.
+function headerRow(job: Job) {
+  const places = splitLocations(job.location);
+  return {
+    title: job.title,
+    company: job.company,
+    location: job.location === "Location not specified" ? ""
+      : places.count !== null ? (places.count > 0 ? `${places.count} locations` : "Multiple locations")
+      : places.primary,
+    jobType: tidyEmploymentType(job.employmentType) ?? "",
+    workplace: job.workplace ?? "",
+    source: job.source,
+    // A region flag takes the same 24px a country flag does, so the column has to be sized for it.
+    hasFlag: Boolean(regionFlagCode(places.primary) || job.country || cityCountry(job.city)),
+    extraPlaces: places.extra ?? 0,
+  };
+}
+
+// A module-level single-entry cache rather than a hook, for the same reason logoOutcome above is
+// one: `jobs` gets a new identity on every appended page while the first page -- the only part this
+// reads -- has not changed. A useMemo over `jobs` would recompute (harmless: the answer is
+// identical) and hand back a NEW object, which changes fixedHeaderContent's identity and makes
+// Virtuoso rebuild the sticky header while someone is scrolling under it. This returns the very
+// same object until the query itself changes.
+// Shared across SSR requests, which is safe because the key is re-checked on every call: two
+// concurrent requests with different results cost a recomputation, never a wrong answer.
+let widthCache: { key: string; widths: ReturnType<typeof columnWidths> } | null = null;
+
+function columnWidthsFor(jobs: Job[]) {
+  const firstPage = jobs.slice(0, HEADER_PAGE);
+  const key = firstPage.map((job) => job.id).join(" ");
+  if (widthCache?.key !== key) widthCache = { key, widths: columnWidths(firstPage.map(headerRow)) };
+  return widthCache.widths;
+}
+
+function TableHeader({ widths }: { widths: ReturnType<typeof columnWidths> }) {
   return (
     <tr className="bg-[var(--control-hover)]">
       {/* Role and company share one column: the title is what people scan for, so it leads and the
@@ -2182,15 +2627,12 @@ function TableHeader() {
       {/* "Title", matching the filter pill that searches it. A column and its filter calling one
           field two different names is the kind of mismatch that makes people wonder whether they
           are in fact two different things. */}
-      <TableHeading className="w-[30%]">Title</TableHeading>
-      <TableHeading className="w-[20%]">Location</TableHeading>
-      <TableHeading className="w-[12%]">Job type</TableHeading>
-      <TableHeading className="w-[11%]">Workplace</TableHeading>
-      <TableHeading className="w-[12%]">Posted</TableHeading>
-      {/* 15%. "SmartRecruiters" is the longest provider name at 15 characters -- longer than
-          Greenhouse, which is what 13% was sized for -- and it needs the mark and the gap beside it
-          too. The 2% comes off Role, which truncates gracefully and has the most to spare. */}
-      <TableHeading className="w-[15%]" align="end">Source</TableHeading>
+      <TableHeading style={{ width: `${widths.title}%` }}>Title</TableHeading>
+      <TableHeading style={{ width: `${widths.location}%` }}>Location</TableHeading>
+      <TableHeading style={{ width: `${widths.jobType}%` }}>Job type</TableHeading>
+      <TableHeading style={{ width: `${widths.workplace}%` }}>Workplace</TableHeading>
+      <TableHeading style={{ width: `${widths.posted}%` }}>Posted</TableHeading>
+      <TableHeading style={{ width: `${widths.source}%` }} align="end">Source</TableHeading>
     </tr>
   );
 }
@@ -2199,12 +2641,12 @@ function TableHeader() {
 // rows arrive. It reuses the real table's header and 72px row height so the placeholder blocks sit
 // exactly where the logo, title, company and each column will be, and nothing shifts on the swap.
 // The container chrome lives on the .t-skel wrapper, which both layers share.
-function JobsSkeleton() {
+function JobsSkeleton({ widths }: { widths: ReturnType<typeof columnWidths> }) {
   return (
     <div className="h-full overflow-hidden bg-white">
       <table className="jobs-table w-full min-w-[1050px] border-separate border-spacing-0 text-start">
         <thead>
-          <TableHeader />
+          <TableHeader widths={widths} />
         </thead>
         <tbody>
           {Array.from({ length: 8 }, (_, row) => (
@@ -2234,14 +2676,10 @@ function JobsSkeleton() {
 function JobCells({
   job,
   onFilter,
-  isWatched,
-  onToggleWatch,
   now,
 }: {
   job: Job;
   onFilter: (patch: Partial<Filters>) => void;
-  isWatched: boolean;
-  onToggleWatch: (company: string) => void;
   now: number;
 }) {
   // Roughly 7% of postings arrive with no publish date. They used to be back-dated from a module
@@ -2259,6 +2697,7 @@ function JobCells({
   const titleTip = useTruncationTip(job.title);
   const companyTip = useTruncationTip(job.company);
   const places = splitLocations(job.location);
+  const regionFlag = regionFlagCode(places.primary);
   // The badge stands for locations the cell never drew, so hovering it has to be able to show them.
   const extraTip = useHoverTip(places.all);
   // The tooltip carries the whole list, not just the entry the cell had room for.
@@ -2290,21 +2729,13 @@ function JobCells({
             </a>
             {titleTip.tip}
             <span className="job-meta-line flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
-              <button
-                type="button"
-                onClick={() => onToggleWatch(job.company)}
-                aria-pressed={isWatched}
-                aria-label={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
-                title={isWatched ? `Remove ${job.company} from watchlist` : `Add ${job.company} to watchlist`}
-                // Press-scale only, keyed on :active rather than on the starred state: rows are
-                // virtualized, so anything keyed on mount would replay every time the row scrolls
-                // back into view.
-                className={`shrink-0 rounded text-[13px] leading-none transition-transform duration-[160ms] ease-[var(--ease-out)] active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
-                  isWatched ? "text-[var(--accent-strong)]" : "text-[var(--muted)]"
-                }`}
-              >
-                {isWatched ? "★" : "☆"}
-              </button>
+              {/* The watchlist star used to sit here. HIDDEN, not deleted: everything behind it is
+                  intact -- the localStorage list, the toggle, the ?watchlist=1 filter and its chip
+                  all still work, so turning it back on is putting this button back.
+                  It went because it was the one control on the row that promised something the
+                  product does not yet do. Starring a company stored a name in this browser and
+                  nothing else: no alerts, no digest, no sync to another device. A star that appears
+                  to follow a company and does not is worse than no star. */}
               <button
                 type="button"
                 onClick={() => onFilter({ company: job.company })}
@@ -2326,13 +2757,21 @@ function JobCells({
       </td>
       <td className="px-5 py-3 text-sm text-[var(--muted)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          {job.country || cityCountry(job.city) ? (
-            <Flag code={job.country || cityCountry(job.city)} />
-          ) : (
-            <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">
-              {job.workplace === "Remote" ? "🌍" : ""}
-            </span>
-          )}
+          {/* REGION first, and that order is the fix rather than an ordering preference. job.country is
+              the posting's ingested country, which for a multi-location listing is whichever one the
+              ATS happened to resolve -- so "Europe · London · Dublin" is stamped gb, and the cell
+              drew a Union Jack next to the word Europe. The flag has to answer for the text beside
+              it, and the text beside it is places.primary. */}
+          {/* Nothing at all when there is no glyph -- not an empty span.
+              The empty span was still a flex CHILD, so the row's gap-1.5 applied on both sides of it
+              and pushed the place name 6px right. Every row without a flag therefore started 6px
+              further in than the LOCATION heading above it, and than every row that did have one. An
+              invisible element with zero width is not the same as no element. */}
+          {regionFlag || job.country || cityCountry(job.city) ? (
+            <Flag code={regionFlag || job.country || cityCountry(job.city)} />
+          ) : job.workplace === "Remote" ? (
+            <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">🌍</span>
+          ) : null}
           {job.location === "Location not specified" ? null : places.count !== null ? (
             // A bare count is not a place, so it is not made to look like one: no filter link (there
             // is nothing to filter by), no flag, and lowercase so it reads as a description of the
@@ -2373,7 +2812,11 @@ function JobCells({
           {locationTip.tip}
         </span>
       </td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+      {/* Job type and workplace read at --muted like every other column. The row has exactly one
+          primary thing in it -- the job title -- and everything else is the metadata that qualifies
+          it. These two were the only cells still at --ink, which made "Full time" and "Remote" look
+          like headings for their own row when they are the same rank as the location beside them. */}
+      <td className="px-5 py-3 text-sm text-[var(--muted)]">
         {/* Providers spell this every way there is -- "Full-Time", "full time", "Full Time" -- which
             is why the SQL filter matches on lower(replace(employment_type, '-', ' ')). The icon
             lookup has to normalise identically or the glyph appears for some spellings only. */}
@@ -2385,7 +2828,7 @@ function JobCells({
           value={tidyEmploymentType(job.employmentType)}
         />
       </td>
-      <td className="px-5 py-3 text-sm text-[var(--ink)]">
+      <td className="px-5 py-3 text-sm text-[var(--muted)]">
         <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
       </td>
       <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted)]">
@@ -2403,13 +2846,35 @@ function JobCells({
           <span className="text-[var(--muted)]" title="This posting did not include a publish date">&mdash;</span>
         )}
       </td>
-      {/* Source is a label, not a control. It was an anchor with its own hover colour and a chevron,
-          which read as a second, different destination inside a row that already opens the posting
-          on click -- two affordances for one action. The whole row is the link now. */}
+      {/* Source is a label, not a control -- it names where the posting came from. On hover it
+          becomes the row's call to action instead, using the same cross-fade the portfolio's
+          "View on LinkedIn" row uses (.row-swap, see globals.css).
+          This is what the removed chevron was reaching for and getting wrong: the chevron was a
+          second, permanently-visible affordance inside a row that already opens the posting on
+          click. A label that turns into "Apply" only while you are pointing at the row states the
+          action at the moment it is available and says nothing the rest of the time. */}
       <td className="whitespace-nowrap px-5 py-3 text-end">
-        <span className="inline-flex items-center justify-end gap-2 text-sm font-bold text-[var(--muted)]">
-          <AtsMark source={job.source} />
-          {job.source}
+        {/* flex, not inline-flex. An inline-flex sits on the cell's TEXT BASELINE rather than filling
+            the cell, so the td's vertical-align:middle never reaches it -- and because this one holds
+            a 20px mark next to 19px text, baseline alignment pushed the whole thing up. Measured: the
+            content sat at 305.7 while every other column's sat at 309.2, a 3.5px lift that read as
+            the Source column floating above its own row. Every other cell already uses plain flex;
+            this was the one that did not. */}
+        <span className="row-swap align-middle text-sm font-bold text-[var(--muted)]">
+          <span className="row-swap-out flex items-center justify-end gap-2">
+            <AtsMark source={job.source} />
+            {job.source}
+          </span>
+          {/* aria-hidden: the row already has a real anchor whose text is the job title, so a screen
+              reader gains nothing from a second "Apply" and would read every row twice. This is a
+              pointer affordance, and the media query above means it only ever exists for one. */}
+          <span className="row-swap-in flex items-center justify-end gap-2 text-[var(--accent-strong)]" aria-hidden="true">
+            Apply
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="shrink-0">
+              <circle cx="10" cy="10" r="10" fill="var(--accent)" />
+              <path d="M6 10h8M11 7l3 3-3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
         </span>
       </td>
     </>
@@ -2535,12 +3000,16 @@ function CompanyLogo({ job }: { job: Job }) {
       </span>
     );
   }
-  // Rounded-square gradient mark in the primary pink for companies without a logo, matching the
-  // design's app-icon style logos.
+  // Rounded-square mark for companies without a logo, matching the design's app-icon style logos.
+  // A pale tint of the accent carrying the accent itself, rather than solid pink carrying white:
+  // the row's real content is the job title, and a saturated 36px block in every logo-less row --
+  // which is most of them -- pulled the eye down the avatar column instead of down the titles.
+  // 13px rather than 11: on a 36px tile an 11px letter left a lot of empty fill around it, and now
+  // that the letter is the tinted tile's only strong mark it has to hold the middle of it.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
-      style={{ background: "var(--accent)" }}
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] text-[var(--accent)] outline outline-1 outline-offset-0 outline-[var(--monogram-stroke)]"
+      style={{ background: "var(--monogram-wash)" }}
       aria-hidden="true"
     >
       {job.companyMark}

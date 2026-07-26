@@ -20,7 +20,8 @@
     "next": "16.2.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "react-virtuoso": "^4.18.11"
+    "react-virtuoso": "^4.18.11",
+    "torph": "^0.0.9"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
