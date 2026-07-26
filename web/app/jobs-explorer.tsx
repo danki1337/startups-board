@@ -612,7 +612,7 @@ export function JobsExplorer({
   const correctionNote = (
     <div className={`row-collapse ${correctedTo ? "is-open" : ""}`}>
       <div>
-        <p className="mb-2 px-1 text-[13px] text-[var(--muted-strong)]">
+        <p className="mb-2 px-1 text-[13px] text-[var(--muted)]">
           Showing results for <span className="font-bold text-[var(--ink)]">{correctedTo}</span>
         </p>
       </div>
@@ -799,6 +799,21 @@ export function JobsExplorer({
               size buys: the clamp has a low floor precisely so a 390px phone can still fit the
               sentence rather than breaking it. Inter, not the pixel face -- a display face is for
               three or four words, and this is a sentence with a number in it. */}
+          {/* The wordmark. An <img> rather than inline SVG: it is 10KB of path data that never
+              changes and takes no styling from the page, so it belongs in the browser's cache
+              rather than in the JS bundle and in every server render.
+              alt is the brand name, not empty -- this is the only place the product names itself on
+              screen, and a wordmark that reads as nothing to a screen reader is a wordmark that is
+              not there. width/height are the intrinsic size, which is what stops the headline
+              beneath it jumping when the image lands. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/aboard-wordmark.svg"
+            alt="Aboard"
+            width={118}
+            height={51}
+            className="mx-auto mb-3 block"
+          />
           <h1
             className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
           >
@@ -1543,7 +1558,7 @@ function SidebarPills({
                 <AtsMark source={option.value} size={4} />
               </span>
             )}
-            {OptionIcon && <span className={checked ? "" : "text-[var(--glyph)]"}><OptionIcon /></span>}
+            {OptionIcon && <span className={checked ? "" : "text-[var(--muted)]"}><OptionIcon /></span>}
             {option.label}
           </button>
         );
@@ -1564,7 +1579,7 @@ function ClearAllChip({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-bold text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-bold text-[var(--muted)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       Clear all
     </button>
@@ -1590,7 +1605,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
-          <span className="inline-flex [&>svg]:size-5 text-[var(--glyph)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
+          <span className="inline-flex [&>svg]:size-5 text-[var(--muted)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
         )}
         {chip.kind === "source" && (
           <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
@@ -1845,7 +1860,7 @@ function SearchBox({
           type="button"
           aria-label={`Clear ${label.toLowerCase()}`}
           onClick={() => onChange("")}
-          className="flex shrink-0 items-center justify-center rounded-full text-[var(--glyph)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+          className="flex shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
         >
           <IconClearGlyph />
         </button>
@@ -2277,7 +2292,7 @@ function JobCells({
                 // virtualized, so anything keyed on mount would replay every time the row scrolls
                 // back into view.
                 className={`shrink-0 rounded text-[13px] leading-none transition-transform duration-[160ms] ease-[var(--ease-out)] active:scale-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
-                  isWatched ? "text-[var(--accent-strong)]" : "text-[var(--border)] hover:text-[var(--muted-strong)]"
+                  isWatched ? "text-[var(--accent-strong)]" : "text-[var(--muted)]"
                 }`}
               >
                 {isWatched ? "★" : "☆"}
@@ -2301,7 +2316,7 @@ function JobCells({
           </div>
         </div>
       </td>
-      <td className="px-5 py-3 text-sm text-[var(--muted-strong)]">
+      <td className="px-5 py-3 text-sm text-[var(--muted)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           {job.country || cityCountry(job.city) ? (
             <Flag code={job.country || cityCountry(job.city)} />
@@ -2338,7 +2353,7 @@ function JobCells({
                   <span
                     {...extraTip.tipProps}
                     tabIndex={0}
-                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-bold tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-bold tabular-nums text-[var(--muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
                   >
                     +{places.extra}
                   </span>
@@ -2365,7 +2380,7 @@ function JobCells({
       <td className="px-5 py-3 text-sm text-[var(--ink)]">
         <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
       </td>
-      <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted-strong)]">
+      <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
             client can legitimately render a slightly different string. title keeps the exact date. */}
         {postedDate ? (
@@ -2384,7 +2399,7 @@ function JobCells({
           which read as a second, different destination inside a row that already opens the posting
           on click -- two affordances for one action. The whole row is the link now. */}
       <td className="whitespace-nowrap px-5 py-3 text-end">
-        <span className="inline-flex items-center justify-end gap-2 text-sm font-bold text-[var(--muted-strong)]">
+        <span className="inline-flex items-center justify-end gap-2 text-sm font-bold text-[var(--muted)]">
           <AtsMark source={job.source} />
           {job.source}
         </span>
@@ -2448,7 +2463,7 @@ function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value
   if (!value) return null;
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      {Icon && <span className="inline-flex shrink-0 text-[var(--glyph)] [&>svg]:size-4"><Icon /></span>}
+      {Icon && <span className="inline-flex shrink-0 text-[var(--muted)] [&>svg]:size-4"><Icon /></span>}
       <span className="min-w-0 truncate">{value}</span>
     </span>
   );

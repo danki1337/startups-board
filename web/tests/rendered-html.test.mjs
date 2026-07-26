@@ -221,10 +221,20 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.match(layout, /Startup jobs — Aboard/);
   assert.match(packageJson, /"@heroui\/react"/);
   assert.match(packageJson, /"react-virtuoso"/);
-  // The two greys carry body copy, so they answer to 4.5:1. At 0.6 --muted composited to
-  // rgb(137,137,141) for 3.43:1 on --canvas -- a fail, on ordinary sentences.
+  // TWO text colours, and only two. --ink is what you read, --muted is everything supporting it.
+  // There used to be four (--muted-strong at 0.88 and --glyph #868990 as well), which with a single
+  // 700 weight left colour as the ONLY hierarchy signal and then spent it on distinctions nobody
+  // could name. Both survivors clear 4.5:1 on the darkest ground either sits on.
+  assert.match(styles, /--ink: #16161a/);
   assert.match(styles, /--muted: rgba\(60, 60, 67, 0\.74\)/);
-  assert.match(styles, /--muted-strong: rgba\(60, 60, 67, 0\.88\)/);
+  // The retired pair must not come back as tokens -- the comment explaining them may mention the
+  // names, so this checks for a DEFINITION rather than a mention.
+  assert.doesNotMatch(styles, /^\s*--muted-strong:/m);
+  assert.doesNotMatch(styles, /^\s*--glyph:/m);
+  // The accent and the danger ink are deliberately NOT part of that scale: they are semantic, not a
+  // step in a neutral ramp.
+  assert.match(styles, /--accent-strong: #f50fb4/);
+  assert.match(styles, /--danger-ink: #8a1f1f/);
   // The previous accent survived the palette change in three focus rings because it sat INSIDE a
   // shadow-[...] arbitrary value, which the colour rule's regex did not reach into. Both the rule
   // and the rings are fixed; this pins the rings.
@@ -233,6 +243,10 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // site anywhere unfurled as a bare URL.
   assert.match(layout, /openGraph/);
   assert.match(layout, /startups-board-og\.png/);
+  // The wordmark above the headline, served as a cacheable asset rather than inlined path data, and
+  // named for screen readers -- a wordmark that reads as nothing is a wordmark that is not there.
+  assert.match(explorer, /aboard-wordmark\.svg/);
+  assert.match(explorer, /alt="Aboard"/);
 });
 
 testWithBuild("ranks text search by relevance with a bounded count", async () => {
@@ -269,4 +283,18 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   // ~150ms in production.
   assert.match(query, /const withCount = !cursor/);
   assert.match(query, /total: number \| null/);
+});
+
+test("the wordmark is well-formed SVG", async () => {
+  // It served 200 with the right content-type and rendered as a broken image, because XML forbids a
+  // double hyphen inside a comment and the whole document fails to parse when one appears. Nothing
+  // else here catches that: the other assertions check that the markup REFERENCES the file.
+  const svg = await readFile(new URL("../public/aboard-wordmark.svg", import.meta.url), "utf8");
+  for (const comment of svg.matchAll(/<!--([\s\S]*?)-->/g)) {
+    assert.doesNotMatch(comment[1], /--/, "XML comments cannot contain a double hyphen");
+  }
+  // Tags balance, and the three layers the outline is built from are all present.
+  assert.equal((svg.match(/<path\b/g) ?? []).length, 3, "halo stroke, ring stroke, and the letters");
+  assert.match(svg, /<\/svg>\s*$/);
+  assert.doesNotMatch(svg, /<script/i);
 });
