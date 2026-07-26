@@ -22,6 +22,11 @@
   "routes": [
     { "pattern": "aboard.cc", "custom_domain": true }
   ],
+  // Explicit, because declaring a route flips wrangler's default to false -- which silently 404ed
+  // the workers.dev host the weekly registry import (ADMIN_IMPORT_URL secret) posts to. Keeping it
+  // up is safe for search: every page canonicalizes to aboard.cc, so the workers.dev copy is an
+  // ops endpoint, not a competing index entry.
+  "workers_dev": true,
   "assets": {
     "directory": "../web/dist/client",
     "binding": "ASSETS",
