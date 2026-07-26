@@ -80,7 +80,7 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[5px] text-[10px] font-extrabold tracking-[-0.02em] ${mark.className}`}
+      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[5px] text-[10px] font-bold tracking-[-0.02em] ${mark.className}`}
     >
       {mark.short}
     </span>

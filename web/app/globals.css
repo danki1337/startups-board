@@ -97,7 +97,7 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
-  font-weight: 600;
+  font-weight: 700;
   font-synthesis: none;
 }
 
@@ -497,7 +497,7 @@ button:disabled,
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-lift);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--muted-strong);
   white-space: nowrap;
 }
@@ -512,7 +512,7 @@ button:disabled,
   background: #16161a;
   color: #ffffff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.35;
   pointer-events: none;
   box-shadow: var(--shadow-lift);

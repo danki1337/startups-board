@@ -2,18 +2,24 @@ import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
 import "./globals.css";
 
-// Every weight on the page moved up one step, so the loaded set moved with it: body copy at 600,
-// headings and emphasis at 700, the heaviest marks at 800. 500 stays for the single modifier that
-// has to read LIGHTER than what surrounds it -- "Updating…" beside the count -- and it now has a
-// real face to do that with. It previously asked for 400, found nothing loaded, and rendered
-// identical to its neighbours because font-synthesis is off.
+// One weight, 700, for everything on the page.
 //
-// The explicit list is what keeps 400 off the page. Nunito is a variable font, so omitting `weight`
-// would ship the whole 200-1000 range and put it silently back within reach.
+// Loading only 700 is what ENFORCES that rather than merely expressing it. A weight utility this
+// file does not ship -- one from HeroUI's own styles, or one a future component reaches for -- has
+// no face to render with, and with font-synthesis off the browser falls back to the nearest weight
+// that IS loaded. When 700 is the only one, everything resolves to 700 whatever it asked for.
+//
+// Nunito is a variable font, so omitting `weight` would ship the whole 200-1000 range and quietly
+// undo that. The explicit list is the enforcement.
+//
+// What this trades: there is no longer a lighter step available for the one modifier that used to
+// read quieter than its surroundings -- "Updating…" beside the result count. It now sits at the same
+// weight as the number it qualifies. That is the instruction, not an oversight, and it is a one-line
+// change here plus a font-bold on that span if the distinction is ever wanted back.
 const nunito = Nunito({
   variable: "--font-nunito",
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: ["700"],
   display: "swap",
 });
 
@@ -58,7 +64,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${nunito.variable} font-semibold antialiased`}>{children}</body>
+      <body className={`${nunito.variable} font-bold antialiased`}>{children}</body>
     </html>
   );
 }

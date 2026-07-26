@@ -735,7 +735,7 @@ export function JobsExplorer({
           <p aria-live="polite" className="jobs-count-badge">
             <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
             {total === 1 ? "job" : "jobs"}
-            {isLoading && <span className="ms-1.5 font-medium">Updating…</span>}
+            {isLoading && <span className="ms-1.5 font-bold">Updating…</span>}
           </p>
         </div>
       </div>
@@ -1326,7 +1326,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   return (
     <span
       aria-hidden="true"
-      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-extrabold leading-none text-white"
+      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[11px] font-bold leading-none text-white"
       style={{ background: "var(--accent)" }}
     >
       {initialsOf(name)}
@@ -1528,7 +1528,7 @@ function SidebarPills({
             type="button"
             onClick={() => onToggle(option.value)}
             aria-pressed={checked}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] ${
               checked
                 ? "border-[var(--accent)]/30 bg-[var(--accent)]/15 text-[var(--accent-strong)]"
                 : "border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--control-hover)]"
@@ -1564,7 +1564,7 @@ function ClearAllChip({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-semibold text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-bold text-[var(--muted-strong)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] hover:text-[var(--ink)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       Clear all
     </button>
@@ -1580,7 +1580,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       type="button"
       onClick={chip.clear}
       aria-label={`Remove filter ${value}`}
-      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-semibold text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-bold text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {/* No leading category glyph. It named the FILTER ("this is a country filter") while the mark
           beside the value already names the VALUE (a flag, a globe, an ATS logo) -- two icons for one
@@ -1723,7 +1723,7 @@ const JOB_TYPE_ICONS: Record<string, () => React.ReactElement> = {
 // actively holding should acknowledge the press. 0.97 over 160ms ease-out is the standard tactile
 // value -- below 0.95 it reads as the button flinching.
 const V4_PILL =
-  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-semibold text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
+  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[14px] bg-white px-2 text-sm font-bold text-[var(--ink)] shadow-[var(--shadow-control)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]";
 
 // A scrollable box that fades its own content at whichever edge still has more to scroll, so a long
 // option list reads as continuing rather than ending. Driven off scroll position rather than a
@@ -2338,7 +2338,7 @@ function JobCells({
                   <span
                     {...extraTip.tipProps}
                     tabIndex={0}
-                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-semibold tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                    className="shrink-0 rounded-full bg-[var(--control-hover)] px-1.5 py-0.5 text-[12px] font-bold tabular-nums text-[var(--muted-strong)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
                   >
                     +{places.extra}
                   </span>
@@ -2384,7 +2384,7 @@ function JobCells({
           which read as a second, different destination inside a row that already opens the posting
           on click -- two affordances for one action. The whole row is the link now. */}
       <td className="whitespace-nowrap px-5 py-3 text-end">
-        <span className="inline-flex items-center justify-end gap-2 text-sm font-semibold text-[var(--muted-strong)]">
+        <span className="inline-flex items-center justify-end gap-2 text-sm font-bold text-[var(--muted-strong)]">
           <AtsMark source={job.source} />
           {job.source}
         </span>
@@ -2516,7 +2516,7 @@ function CompanyLogo({ job }: { job: Job }) {
   // design's app-icon style logos.
   return (
     <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-extrabold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[11px] font-bold tracking-[-0.02em] text-white outline outline-1 outline-offset-0 outline-[var(--border)]"
       style={{ background: "var(--accent)" }}
       aria-hidden="true"
     >

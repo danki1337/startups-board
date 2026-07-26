@@ -104,6 +104,17 @@ function lintSource(file, tokens) {
       }
     }
 
+    // R7 -- one weight. The page is set entirely at 700, and layout.tsx loads only that face, so a
+    // stray font-medium or font-semibold does not render lighter -- font-synthesis is off and the
+    // browser falls back to the nearest loaded weight, which is 700. It looks like a design decision
+    // in the source and is a no-op on screen, which is the worst combination: the next person
+    // "fixes" the hierarchy by adding more of them.
+    for (const match of brandAsset ? [] : text.matchAll(/\bfont-(thin|extralight|light|normal|medium|semibold|extrabold|black)\b/g)) {
+      report("error", "single-weight", file, line,
+        `font-${match[1]} has no face loaded; it renders at 700 like everything else.`,
+        "Use font-bold. To reintroduce a second weight, add it to the Nunito loader in layout.tsx first.");
+    }
+
     // R6 -- a cropped value needs the measured tooltip, not the native title attribute. title only
     // appears on hover (never on keyboard focus) and cannot know whether the text was actually cut,
     // so it fires on values that fit and stays silent for keyboard users.
@@ -138,6 +149,14 @@ function lintStyles() {
       report("error", "hover-transition", CSS, index + 1,
         "Colour transition in CSS.",
         "Hover feedback is instant. Transition transform, opacity and size instead.");
+    }
+    // R7, the CSS half. Same reason as the utility rule: only 700 is loaded, so any other value
+    // silently resolves to 700 and reads as intent that does not exist.
+    const weight = /font-weight:\s*(\d+)/.exec(text);
+    if (weight && weight[1] !== "700") {
+      report("error", "single-weight", CSS, index + 1,
+        `font-weight: ${weight[1]} has no face loaded; it renders at 700.`,
+        "Use 700, or add the weight to the Nunito loader in layout.tsx first.");
     }
   });
 }
