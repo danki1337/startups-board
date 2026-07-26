@@ -15,18 +15,21 @@ const png = (width, height) => {
 };
 
 test("reads dimensions out of each format's header", () => {
-  assert.deepEqual(imageDimensions(png(512, 512)), { width: 512, height: 512 });
+  // `type` comes from the FILE, not from any content-type header. Workday serves real PNGs
+  // announced as text/plain, and a relay that echoed that header would hand the browser
+  // text/plain + nosniff and get nothing painted.
+  assert.deepEqual(imageDimensions(png(512, 512)), { width: 512, height: 512, type: "image/png" });
 
   const gif = new Uint8Array(16);
   gif.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
   new DataView(gif.buffer).setUint16(6, 64, true);
   new DataView(gif.buffer).setUint16(8, 64, true);
-  assert.deepEqual(imageDimensions(gif), { width: 64, height: 64 });
+  assert.deepEqual(imageDimensions(gif), { width: 64, height: 64, type: "image/gif" });
 
   // viewBox wins over width/height: a logo built to scale states width="100%", which says nothing
   // about its proportions.
   const svg = new TextEncoder().encode('<svg viewBox="0 0 300 55" width="100%" height="100%"></svg>');
-  assert.deepEqual(imageDimensions(svg), { width: 300, height: 55 });
+  assert.deepEqual(imageDimensions(svg), { width: 300, height: 55, type: "image/svg+xml" });
 
   // An ICO directory entry stores 0 for 256.
   const ico = new Uint8Array(16);
@@ -34,7 +37,7 @@ test("reads dimensions out of each format's header", () => {
   new DataView(ico.buffer).setUint16(2, 1, true);
   ico[6] = 0;
   ico[7] = 0;
-  assert.deepEqual(imageDimensions(ico), { width: 256, height: 256 });
+  assert.deepEqual(imageDimensions(ico), { width: 256, height: 256, type: "image/x-icon" });
 });
 
 test("a 200 that is not an image is not an image", () => {

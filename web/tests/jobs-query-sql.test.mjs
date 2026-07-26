@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { register } from "node:module";
 import test from "node:test";
 
@@ -129,4 +129,31 @@ testWithBuild("the company filter compares against the shared display expression
     rows.bindings.includes("vhchealth"),
     `expected the normalized company value, got ${JSON.stringify(rows.bindings)}`,
   );
+});
+
+testWithBuild("a logo request never carries a URL the caller chose", async () => {
+  // The endpoint is a proxy, and a proxy that fetches a caller-supplied URL is an open relay: free
+  // bandwidth on our worker quota and arbitrary bytes in our CDN cache. It takes a BOARD KEY and
+  // looks the URL up in our own database, so there is no ?url= to review, rate-limit or escape.
+  const statements = await capture("limit=1");
+  const rows = rowQuery(statements);
+  // The URL is resolved server-side and never selected into the response.
+  assert.doesNotMatch(rows.sql, /coalesce\(base\.logoRaw, c\.logo_url\) AS companyLogoUrl/);
+  assert.match(rows.sql, /AS hasLogo/, "the row says only WHETHER there is a logo");
+  assert.match(rows.sql, /base\.boardKey/, "and which board to ask for it");
+});
+
+testWithBuild("the logo route refuses anything it cannot resolve to one of two columns", async () => {
+  const route = await readFile(new URL("../app/api/logo/route.ts", import.meta.url), "utf8");
+  // No caller-supplied URL reaches fetch().
+  assert.doesNotMatch(route, /searchParams\.get\(["'](?:url|u|src)["']\)/);
+  assert.match(route, /searchParams\.get\("b"\)/);
+  // https only, as the last gate before fetch -- a stored value is only as trustworthy as the ATS
+  // page it was scraped from.
+  assert.match(route, /startsWith\("https:\/\/"\)/);
+  // The shape check runs here so it runs once for everyone, not on every visitor's device.
+  assert.match(route, /imageDimensions/);
+  assert.match(route, /isUsableLogoRatio/);
+  // And the whole point: a response the browser can actually reuse.
+  assert.match(route, /max-age=31536000, immutable/);
 });

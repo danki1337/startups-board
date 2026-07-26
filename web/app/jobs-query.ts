@@ -104,7 +104,11 @@ type JobRow = {
   title: string;
   companyIdentifier: string;
   companyName: string | null;
-  companyLogoUrl: string | null;
+  // 1 when the board resolves to a logo. The URL stays server-side; the client is handed a
+  // /api/logo path keyed on the board, which is what makes the bytes cacheable (and what stops
+  // this endpoint from ever accepting a caller-supplied URL to fetch).
+  hasLogo: number;
+  boardKey: string;
   location: string | null;
   country: string | null;
   city: string | null;
@@ -333,7 +337,12 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       base.title,
       base.companyIdentifier,
       base.companyName,
-      coalesce(base.logoRaw, c.logo_url) AS companyLogoUrl,
+      -- Whether there is a logo AT ALL. The URL itself no longer travels to the client: the row
+      -- carries the board key and the client asks /api/logo for it, so the bytes come from our
+      -- origin with cache headers the browser can actually use. See web/app/api/logo/route.ts.
+      CASE WHEN coalesce(base.logoRaw, c.logo_url) IS NOT NULL
+            AND coalesce(base.logoRaw, c.logo_url) <> '' THEN 1 ELSE 0 END AS hasLogo,
+      base.boardKey,
       base.location,
       base.country,
       base.city,
@@ -616,7 +625,7 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
 
   if (term.length < 2) {
     const rows = await getD1().prepare(`
-      SELECT company, job_count AS jobCount, logo_url AS logoUrl FROM job_companies ORDER BY job_count DESC LIMIT ?
+      SELECT company, job_count AS jobCount, logo_board_key AS logoBoardKey FROM job_companies ORDER BY job_count DESC LIMIT ?
     `).bind(cap).all();
     return prettyCompanies(rows.results ?? []);
   }
@@ -625,7 +634,7 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
   // wildcard -- the same guard queryTitleSuggestions uses.
   const escaped = term.replace(/[\\%_]/g, (character) => `\\${character}`);
   const rows = await getD1().prepare(`
-    SELECT company, job_count AS jobCount, logo_url AS logoUrl
+    SELECT company, job_count AS jobCount, logo_board_key AS logoBoardKey
     FROM job_companies
     WHERE lower(company) LIKE ? ESCAPE '\\'
     ORDER BY CASE WHEN lower(company) LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, job_count DESC
@@ -638,7 +647,7 @@ export async function queryCompanySuggestions(query: string, limit = 50) {
 // or "acme-corp", which the table renders titlecased -- so the dropdown must too, or picking a row
 // looks like it filtered to something else.
 function prettyCompanies(rows: unknown[]) {
-  return (rows as { company: string; jobCount: number; logoUrl: string | null }[]).map((row) => ({
+  return (rows as { company: string; jobCount: number; logoBoardKey: string | null }[]).map((row) => ({
     // Through the shared humanizer, and with no provider: the aggregate's own SQL has already
     // stripped the provider-specific packaging (the Workday tenant pipe, the iCIMS careers prefix),
     // so all that is left here is reading separators as spaces -- and reading them the same way the
@@ -647,7 +656,10 @@ function prettyCompanies(rows: unknown[]) {
       ? humanizeIdentifier(row.company, "")
       : row.company,
     jobCount: row.jobCount,
-    logoUrl: row.logoUrl ?? null,
+    // The same proxy path the job rows use, so a company's logo is ONE cache entry whether it was
+    // first seen in the table or in this dropdown. Null until the daily aggregate has rebuilt with
+    // logo_board_key, which simply means no mark rather than a broken one.
+    logoUrl: row.logoBoardKey ? logoProxyUrl(row.logoBoardKey) : null,
   }));
 }
 
@@ -935,7 +947,10 @@ function toPublicJob(job: JobRow): PublicJob {
     title: job.title,
     company,
     companyMark: initials(company),
-    companyLogoUrl: job.companyLogoUrl,
+    // Our own origin, so the response carries cache-control the browser can use. The ATS hosts send
+    // none -- a Workday logo has no cache-control, no etag and no last-modified -- so every scroll
+    // back into a virtualized row and every re-open of the Company dropdown re-downloaded it.
+    companyLogoUrl: job.hasLogo ? logoProxyUrl(job.boardKey) : null,
     companyColor: companyColor(company),
     location: job.location || "Location not specified",
     country: job.country ?? null,
@@ -952,6 +967,12 @@ function toPublicJob(job: JobRow): PublicJob {
     skills: [],
     url: job.url,
   };
+}
+
+// One place that knows the shape of the proxy path, shared by the jobs rows and the Company
+// dropdown so the two can never drift into requesting different URLs for the same logo.
+export function logoProxyUrl(boardKey: string) {
+  return `/api/logo?b=${encodeURIComponent(boardKey)}`;
 }
 
 function initials(value: string) {

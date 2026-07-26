@@ -420,7 +420,7 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
   const [, result] = await db.batch([
     db.prepare("DELETE FROM job_companies"),
     db.prepare(`
-      INSERT INTO job_companies (company, job_count, logo_url, updated_at)
+      INSERT INTO job_companies (company, job_count, logo_url, logo_board_key, updated_at)
       SELECT
         -- The shared expression, not a local copy of it. This used to be written out here AND in
         -- jobs-query.ts, and the two drifted: this one handled the Workday tenant pipe but not the
@@ -431,6 +431,10 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
         -- One logo per company: max() over the group picks any non-null one, and every board of a
         -- company resolves to the same employer logo anyway.
         max(company_logo_url) AS logo_url,
+        -- The board that logo belongs to, so the dropdown can request it through /api/logo. Scoped
+        -- to rows that actually HAVE a logo, or max() would happily return a board with none and
+        -- the proxy would answer 404 for a company whose logo we hold.
+        max(CASE WHEN company_logo_url IS NOT NULL AND company_logo_url <> '' THEN board_key END) AS logo_board_key,
         ?
       FROM jobs
       WHERE is_active = 1 AND coalesce(nullif(company_name, ''), company_identifier) IS NOT NULL

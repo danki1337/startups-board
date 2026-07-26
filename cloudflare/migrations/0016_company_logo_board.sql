@@ -1,0 +1,13 @@
+-- The board whose logo this company row is showing, so the Company dropdown can ask /api/logo for
+-- it exactly as the job rows do.
+--
+-- The dropdown was the worse of the two surfaces. Job rows at least remembered a verdict per URL in
+-- localStorage, so a logo already known to be a banner was never requested twice; the dropdown's
+-- mark kept its state in a plain useState and threw it away on every close, so re-opening re-fetched
+-- every logo, re-decoded it and re-ran the shape check from scratch.
+--
+-- Neither surface could cache the BYTES, because the ATS hosts send nothing cacheable -- a Workday
+-- logo comes back with no cache-control, no etag and no last-modified. Routing both through our own
+-- origin is what fixes that, and this column is what lets the dropdown join in: it has a company
+-- name and a URL, and the proxy deliberately refuses to take a URL from the caller.
+ALTER TABLE job_companies ADD COLUMN logo_board_key TEXT;

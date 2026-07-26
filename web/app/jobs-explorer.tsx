@@ -1272,23 +1272,52 @@ function initialsOf(name: string) {
   return name.split(/[\s|_-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase() ?? "").join("");
 }
 
+// What a logo URL turned out to be, for this session and the next. Shared by the table's rows and
+// the Company dropdown's marks, which is the point: a company seen in one is already settled in the
+// other. Seeded synchronously from the module-level map so a remounting row or a re-opened panel
+// renders its answer in the first paint rather than starting over at the placeholder.
+function useLogoOutcome(url: string | null) {
+  const key = url ?? "";
+  const [outcome, setOutcome] = useState<"pending" | "ok" | "bad">(() => logoOutcome.get(key) ?? "pending");
+
+  const settle = useCallback((result: "ok" | "bad") => {
+    logoOutcome.set(key, result);
+    persistLogoOutcomes();
+    setOutcome(result);
+  }, [key]);
+
+  return { outcome, settle };
+}
+
 function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }) {
-  const [failed, setFailed] = useState(false);
-  if (logoUrl && !failed) {
+  // Through the SAME session cache the table's rows use. This kept its verdict in a plain useState
+  // and threw it away every time the dropdown closed, so re-opening re-fetched every logo,
+  // re-decoded it and re-ran the shape check from scratch -- including for logos already known to
+  // be unusable. The table had been remembering that per URL since the virtualizer forced the issue;
+  // the dropdown simply never got the same treatment.
+  const { outcome, settle } = useLogoOutcome(logoUrl);
+  if (logoUrl && outcome !== "bad") {
     return (
       <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logoUrl}
           alt=""
-          loading="lazy"
+          // Eager, like the table's. The panel is on screen the moment it opens, so a visibility
+          // check only delays a request that is about to happen anyway.
+          loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
           className="size-full object-contain"
-          onError={() => setFailed(true)}
+          ref={(node) => {
+            if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
+              settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
+            }
+          }}
+          onError={() => settle("bad")}
           onLoad={(event) => {
             const img = event.currentTarget;
-            if (!isUsableLogoRatio(img.naturalWidth, img.naturalHeight)) setFailed(true);
+            settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
           }}
         />
       </span>
@@ -2426,19 +2455,11 @@ function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value
 }
 
 function CompanyLogo({ job }: { job: Job }) {
-  const url = job.companyLogoUrl ?? "";
-  // Seeded from the session map, so a recycled row renders its logo immediately instead of starting
-  // over at the placeholder. Empty on the server and on the first client render, which is what keeps
-  // the hydrated markup identical.
-  const [outcome, setOutcome] = useState<"pending" | "ok" | "bad">(() => logoOutcome.get(url) ?? "pending");
+  // The same hook the dropdown's mark uses. Empty on the server and on the first client render,
+  // which is what keeps the hydrated markup identical.
+  const { outcome, settle } = useLogoOutcome(job.companyLogoUrl);
   const failed = outcome === "bad";
   const loaded = outcome === "ok";
-
-  const settle = useCallback((result: "ok" | "bad") => {
-    logoOutcome.set(url, result);
-    persistLogoOutcomes();
-    setOutcome(result);
-  }, [url]);
 
   // A URL already known to be unusable renders the monogram directly -- no <img>, so no request,
   // no decode, no skeleton flash on the way to the same result.
