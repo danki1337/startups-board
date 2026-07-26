@@ -117,7 +117,11 @@ jobs:
       - name: Merge shards into the canonical registry
         run: node scripts/merge-registry-shards.mjs data/shards/shard-*.json
 
+      # continue-on-error: a push race (someone merged mid-run) must not abort the job here --
+      # the registry file on disk is already merged and valid, and skipping the import below over
+      # a git conflict is exactly the silent-gap failure the import step was added to close.
       - name: Commit the refreshed registry
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

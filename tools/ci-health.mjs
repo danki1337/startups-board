@@ -46,16 +46,43 @@ function classify(id) {
   return { cause: line ? line.slice(-160) : "unknown", transient: false };
 }
 
+// A run can report `success` while jobs inside it failed: `continue-on-error: true` (the harvest
+// shards use it, deliberately) makes GitHub swallow the job's failure at run level. Filtering on
+// run conclusion alone therefore reported every discovery run as clean -- including one where all
+// twelve shards died -- which is the exact blind spot this tool was written to remove. Jobs are
+// the unit that fails; runs are just their envelope.
+function failedJobs(runId) {
+  try {
+    const payload = JSON.parse(gh("run", "view", String(runId), "--json", "jobs"));
+    return (payload.jobs ?? []).filter((job) => job.conclusion === "failure");
+  } catch {
+    return [];
+  }
+}
+
 const all = runs();
 const finished = all.filter((r) => r.status === "completed");
 const failed = finished.filter((r) => r.conclusion === "failure");
+// Green runs whose jobs failed under continue-on-error, counted alongside the red ones.
+const greenWithFailedJobs = finished
+  .filter((r) => r.conclusion === "success")
+  .map((run) => ({ run, jobs: failedJobs(run.databaseId) }))
+  .filter(({ jobs }) => jobs.length > 0);
 
-const findings = failed.map((run) => ({
-  id: run.databaseId,
-  workflow: run.workflowName,
-  createdAt: run.createdAt,
-  ...classify(run.databaseId),
-}));
+const findings = [
+  ...failed.map((run) => ({
+    id: run.databaseId,
+    workflow: run.workflowName,
+    createdAt: run.createdAt,
+    ...classify(run.databaseId),
+  })),
+  ...greenWithFailedJobs.map(({ run, jobs }) => ({
+    id: run.databaseId,
+    workflow: `${run.workflowName} (${jobs.length} shard${jobs.length === 1 ? "" : "s"} failed inside a green run)`,
+    createdAt: run.createdAt,
+    ...classify(run.databaseId),
+  })),
+];
 
 // Same workflow failing the same way more than once is the thing worth acting on.
 const repeats = new Map();
@@ -67,7 +94,7 @@ for (const f of findings) {
 const actionable = findings.filter((f) => !f.transient);
 const summary = {
   window: `${finished.length} completed runs`,
-  failed: failed.length,
+  failed: findings.length,
   transient: findings.length - actionable.length,
   actionable: actionable.length,
   byWorkflow: Object.fromEntries(repeats),
@@ -77,7 +104,7 @@ const summary = {
 if (asJson) {
   console.log(JSON.stringify(summary, null, 2));
 } else {
-  console.log(`\nLast ${finished.length} completed runs: ${failed.length} failed`);
+  console.log(`\nLast ${finished.length} completed runs: ${findings.length} failed (${greenWithFailedJobs.length} hidden inside green runs)`);
   console.log(`  ${summary.transient} transient (upstream, self-healing)`);
   console.log(`  ${summary.actionable} need attention\n`);
   for (const [key, count] of repeats) console.log(`  ${String(count).padStart(3)}x  ${key}`);

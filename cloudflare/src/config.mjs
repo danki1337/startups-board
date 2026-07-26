@@ -40,6 +40,12 @@ export const ERROR_BASE_DELAY_MINUTES = 15;
 // invalid response is far more often a bot challenge or a truncated body than a dead board, and
 // acting on one used to wipe the board's entire listing -- so closure needs corroboration.
 export const INVALID_CLOSE_STRIKES = 3;
+// A snapshot that parses but carries ZERO jobs closes a board immediately only when the board had
+// fewer active jobs than this; at or above it, the empty answer needs the same consecutive-strikes
+// corroboration an invalid response needs. Boards genuinely emptying out wind down one posting at
+// a time and pass under the threshold on the way; a 3,000-job board reporting zero overnight is a
+// bot challenge with a 200 status, not a hiring freeze.
+export const EMPTY_CLOSE_MIN_ACTIVE = 10;
 
 // Clamped rather than indexed directly, so a quiet_syncs that has run past the end of the ladder
 // (or arrives negative from a bad write) still lands on a real rung instead of undefined, which

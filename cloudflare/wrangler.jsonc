@@ -81,7 +81,11 @@
     ]
   },
   "triggers": {
-    "crons": ["*/15 * * * *", "17 3 * * SUN"]
+    // The Sunday cron existed only to seed worker-side Common Crawl discovery, which CC's
+    // throttling of Cloudflare egress quietly reduced to a no-op (zero discovery_pages rows ever
+    // written). Discovery runs in the GitHub workflow; the admin /run endpoint can still seed a
+    // worker pass manually.
+    "crons": ["*/15 * * * *"]
   },
   "limits": { "cpu_ms": 300000 },
   "observability": { "enabled": true, "head_sampling_rate": 1 }

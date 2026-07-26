@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
+import { CONSTRUCTED_LOGO_PROVIDERS } from "../../src/company-logo.mjs";
 import { companyDisplayExpression } from "../../src/company-name.mjs";
 import {
   ACTIVE_REFRESH_LADDER_HOURS,
+  EMPTY_CLOSE_MIN_ACTIVE,
   INVALID_CLOSE_STRIKES,
   isRateLimitError,
   nextSyncAt,
@@ -99,11 +101,18 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   // dead still gets cleaned up, just on evidence rather than on a single response: only once it has
   // come back invalid INVALID_CLOSE_STRIKES times in a row do we accept the empty snapshot and let
   // the close pass run.
+  // Set when a failure row has already been INSERTed under `runId` and the refresh then falls
+  // through to the close pass. The completion row must take a fresh id in that case: sync_runs.id
+  // is a primary key, and re-using runId made the final batch throw UNIQUE, roll back the boards/
+  // provider_health bookkeeping AFTER the close loop had already run, and dead-letter the message
+  // -- the deliberate cleanup path failed 100% of the time, destructively.
+  let failureRecorded = false;
   if (board.status === "invalid") {
     const strikes = await recordBoardFailure(db, board, runId, { status: "invalid", escalate: options.escalate });
     if (strikes < INVALID_CLOSE_STRIKES) {
       return { runId, changedJobs, closedJobs, retry: false };
     }
+    failureRecorded = true;
   }
 
   // Batched with the jobs read rather than issued on its own: the refresh interval now depends on
@@ -120,6 +129,28 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   const currentBySourceId = new Map(
     (currentResult.results ?? []).map((job) => [String(job.sourceId), job]),
   );
+  const previouslyActive = (currentResult.results ?? [])
+    .filter((job) => Number(job.isActive) === 1).length;
+
+  // A response that PARSED but contained zero jobs, for a board that has real active ones, gets
+  // the same corroboration an invalid response gets -- because at that scale it almost never means
+  // "the company closed every role at once"; it means a bot challenge that happened to be valid
+  // JSON, a search backend answering an empty shard, or a sitemap index the extractor read as
+  // empty. The invalid guard above existed for exactly this failure and status "empty" walked
+  // straight past it: one hollow 200 closed the whole board, unwitnessed, and 30 days later the
+  // archive sweep made it permanent. Small boards (under 10 actives) still close immediately --
+  // winding down to zero one posting at a time is how boards genuinely empty out.
+  if (!failureRecorded && result.jobs.length === 0 && previouslyActive >= EMPTY_CLOSE_MIN_ACTIVE) {
+    const strikes = await recordBoardFailure(db, {
+      ...board,
+      error: `Empty snapshot for a board with ${previouslyActive} active jobs`,
+    }, runId, { status: "invalid", escalate: options.escalate });
+    if (strikes < INVALID_CLOSE_STRIKES) {
+      return { runId, changedJobs, closedJobs, retry: false };
+    }
+    failureRecorded = true;
+  }
+
   let incoming = result.jobs.map(compactJob);
   // A Getro board re-lists jobs that also live on the company's own ATS board (Greenhouse, Ashby,
   // Workday, ...). Drop those whose native posting already exists so we don't show the same job
@@ -130,11 +161,15 @@ export async function applyBoardSnapshot(db, result, options = {}) {
     incoming = await suppressDuplicatedAggregatorJobs(db, incoming);
   }
   const companyName = incoming.find((job) => job.companyName)?.companyName ?? null;
-  // A logo can come from the job payload (Getro, Spark Hire, Paylocity), from a constructible
-  // tenant URL (Workday), or from scraping the board page (resolved upstream, on the result).
-  const companyLogoUrl = incoming.find((job) => job.companyLogoUrl)?.companyLogoUrl
-    ?? result.companyLogoUrl
-    ?? null;
+  // A logo can come from the job payload (Getro, Spark Hire, Paylocity) or from scraping the board
+  // page (resolved upstream, on the result). A CONSTRUCTED logo -- Workday's assumed tenant path --
+  // must never win here: resolveLogoIfStale verifies constructed URLs and scrapes when they fail,
+  // but this coalesce used to take the payload value first, so the unverified guess overwrote the
+  // verified answer on every refresh and stamped logo_checked_at, closing the recheck gate on it.
+  const payloadLogoUrl = CONSTRUCTED_LOGO_PROVIDERS.has(board.provider)
+    ? null
+    : incoming.find((job) => job.companyLogoUrl)?.companyLogoUrl ?? null;
+  const companyLogoUrl = payloadLogoUrl ?? result.companyLogoUrl ?? null;
   // Stamp logo_checked_at only when a logo actually arrived or a scrape genuinely ran this refresh
   // (result.logoChecked). Binding `now` unconditionally kept refreshing the stamp on every sync, so
   // the "recheck after 30 days" gate upstream never opened and a failed first scrape was permanent.
@@ -160,8 +195,6 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   const incomingSourceIds = new Set(incoming.map((job) => job.sourceId));
   // Counting every active row per provider on each refresh scales quadratically with the
   // registry, so provider_health tracks a per-board delta and is reconciled once a day.
-  const previouslyActive = (currentResult.results ?? [])
-    .filter((job) => Number(job.isActive) === 1).length;
   const activeJobsDelta = incoming.length - previouslyActive;
   const jobsToWrite = incoming.filter((job) => {
     const existing = currentBySourceId.get(job.sourceId);
@@ -252,7 +285,13 @@ export async function applyBoardSnapshot(db, result, options = {}) {
       INSERT INTO sync_runs (id, board_key, provider, status, job_count, changed_jobs,
         closed_jobs, started_at, completed_at)
       VALUES (?, ?, ?, 'complete', ?, ?, ?, ?, ?)
-    `).bind(runId, board.key, board.provider, board.jobCount, changedJobs, closedJobs, now, now),
+    `).bind(
+      // A fresh id when a failure row already holds runId (the invalid/empty fall-through): both
+      // rows are real history, and re-using the primary key made this whole batch throw UNIQUE and
+      // roll back AFTER the close loop had run.
+      failureRecorded ? crypto.randomUUID() : runId,
+      board.key, board.provider, board.jobCount, changedJobs, closedJobs, now, now,
+    ),
     db.prepare(`
       INSERT INTO provider_health (provider, successful_runs, failed_runs, active_jobs, last_success_at, updated_at)
       VALUES (?, 1, 0, ?, ?, ?)
@@ -325,12 +364,46 @@ export async function suppressDuplicatedAggregatorJobs(db, incoming) {
     }
   }
 
-  return incoming.filter((_, index) => {
+  const nativeSuppressed = incoming.filter((_, index) => {
     const identity = identities[index];
     if (!identity) return true;
     if (identity.key) return !activeKeys.has(identity.key);
     return !activeSourceIds.get(identity.provider)?.has(identity.sourceId);
   });
+
+  return suppressCrossBoardAggregatorTwins(db, nativeSuppressed);
+}
+
+// The aggregator-vs-AGGREGATOR half of the dedup: the same Getro job id is re-listed on several
+// network boards (measured: 5,563 active twin groups -- "HR Executive at Hipvan" verbatim on both
+// readbetweenthelines and storyhousereview). The native-ATS pass above cannot see these, because
+// the twin is another Getro row, not a native one.
+//
+// The winner is the lexicographically SMALLEST board_key, and that rule is what makes this safe:
+// a job is suppressed only when an active twin lives on a smaller key, so the smallest board can
+// never suppress its own copy, two boards can never suppress each other in the same round, and the
+// outcome is identical whatever order the boards happen to sync in. Suppression works exactly like
+// the native pass -- dropped from `incoming`, so an already-open duplicate falls into keysToClose
+// and reappearing ones are never reactivated.
+async function suppressCrossBoardAggregatorTwins(db, incoming) {
+  const boardKey = incoming[0]?.boardKey;
+  const provider = incoming[0]?.provider;
+  if (!boardKey || !provider) return incoming;
+
+  const losers = new Set();
+  for (const group of chunks(incoming.map((job) => String(job.sourceId)), D1_MAX_BIND - 1)) {
+    const placeholders = group.map(() => "?").join(",");
+    // min(board_key) over the active twins; served by jobs(provider, source_id, is_active).
+    const rows = await db.prepare(`
+      SELECT source_id AS sourceId, min(board_key) AS winner FROM jobs
+      WHERE provider = ? AND is_active = 1 AND source_id IN (${placeholders})
+      GROUP BY source_id
+    `).bind(provider, ...group).all();
+    for (const row of rows.results ?? []) {
+      if (String(row.winner) < boardKey) losers.add(String(row.sourceId));
+    }
+  }
+  return incoming.filter((job) => !losers.has(String(job.sourceId)));
 }
 
 // Records a failed refresh and returns the board's new consecutive-failure count. `status` is
@@ -339,14 +412,20 @@ export async function suppressDuplicatedAggregatorJobs(db, incoming) {
 // exactly as they were -- this function never closes anything.
 async function recordBoardFailure(db, board, runId, options = {}) {
   const status = options.status === "invalid" ? "invalid" : "error";
-  const current = await db.prepare("SELECT failure_count AS failureCount FROM boards WHERE key = ?")
+  const current = await db.prepare("SELECT failure_count AS failureCount, status FROM boards WHERE key = ?")
     .bind(board.key).first();
   // The queue retries a failed refresh up to five times on its own short ladder, and every one of
   // those attempts used to also advance failure_count -- so the two backoffs compounded. A 12-minute
   // ATS outage burned all five retries inside the outage, left the board at failure_count 6, and
   // pushed next_sync_at out by 16 hours: a brief blip consumed the whole escalation ladder. Only the
   // first delivery of a refresh escalates; its retries record the error without advancing the count.
-  const failureCount = Number(current?.failureCount ?? 0) + (options.escalate === false ? 0 : 1);
+  // Consecutive failures OF THE SAME KIND. failure_count used to carry over across kinds, so two
+  // transient 502s followed by one bot-challenge page counted as three "invalid strikes" and the
+  // board's whole listing was closed on its FIRST invalid response -- the exact single-response
+  // wipe the strike mechanism exists to prevent. A kind change restarts the count (which also
+  // restarts the error ladder from the bottom -- correct: it is a different failure).
+  const consecutive = current?.status === status ? Number(current?.failureCount ?? 0) : 0;
+  const failureCount = consecutive + (options.escalate === false ? 0 : 1);
   const now = board.syncedAt;
   // A rate limit is the provider pushing back on the whole fleet, not this board failing: the
   // 15-minute error ladder walked straight back into it (45,687 Paylocity refreshes 429ed in one
@@ -394,25 +473,34 @@ export async function upsertDiscoveredBoards(db, boards, now = new Date().toISOS
 }
 
 export async function archiveAndCleanupClosedJobs(env, now = new Date().toISOString()) {
-  const rows = await env.DB.prepare(`
-    SELECT * FROM jobs
-    WHERE is_active = 0 AND closed_at < ?
-    ORDER BY closed_at
-    LIMIT 5000
-  `).bind(isoShift(now, -30 * DAY_MS)).all();
-  if (!rows.results?.length) return { archived: 0 };
+  // Passes, not one batch -- the same rule pruneSyncRuns states: the pass cap has to clear the
+  // write rate or the table still grows. A single 5,000-row pass against ~10-20k daily closures
+  // meant the >30-day backlog grew without bound (134k inactive rows and climbing when caught);
+  // ten passes clear 50k/day, comfortably above any real close rate.
+  let archived = 0;
+  for (let pass = 0; pass < 10; pass += 1) {
+    const rows = await env.DB.prepare(`
+      SELECT * FROM jobs
+      WHERE is_active = 0 AND closed_at < ?
+      ORDER BY closed_at
+      LIMIT 5000
+    `).bind(isoShift(now, -30 * DAY_MS)).all();
+    if (!rows.results?.length) break;
 
-  const body = `${rows.results.map((row) => JSON.stringify(row)).join("\n")}\n`;
-  const stream = new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"));
-  const day = now.slice(0, 10);
-  await env.ARCHIVE.put(`closed-jobs/${day}/${crypto.randomUUID()}.ndjson.gz`, stream, {
-    httpMetadata: { contentType: "application/x-ndjson", contentEncoding: "gzip" },
-    customMetadata: { rowCount: String(rows.results.length), archivedAt: now },
-  });
-  for (const group of chunks(rows.results.map((row) => row.key), 50)) {
-    await env.DB.batch(group.map((key) => env.DB.prepare("DELETE FROM jobs WHERE key = ?").bind(key)));
+    const body = `${rows.results.map((row) => JSON.stringify(row)).join("\n")}\n`;
+    const stream = new Blob([body]).stream().pipeThrough(new CompressionStream("gzip"));
+    const day = now.slice(0, 10);
+    await env.ARCHIVE.put(`closed-jobs/${day}/${crypto.randomUUID()}.ndjson.gz`, stream, {
+      httpMetadata: { contentType: "application/x-ndjson", contentEncoding: "gzip" },
+      customMetadata: { rowCount: String(rows.results.length), archivedAt: now },
+    });
+    for (const group of chunks(rows.results.map((row) => row.key), 50)) {
+      await env.DB.batch(group.map((key) => env.DB.prepare("DELETE FROM jobs WHERE key = ?").bind(key)));
+    }
+    archived += rows.results.length;
+    if (rows.results.length < 5_000) break;
   }
-  return { archived: rows.results.length };
+  return { archived };
 }
 
 // Rebuilt daily rather than maintained per write: the typeahead only needs approximate counts, and
@@ -449,7 +537,12 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
         -- jobs-query.ts, and the two drifted: this one handled the Workday tenant pipe but not the
         -- iCIMS careers prefix, so the dropdown offered "Careers Commonspirit" (5,465 jobs) as if
         -- that were a company. See src/company-name.mjs.
-        ${companyDisplayExpression()} AS company,
+        -- min(), not the bare expression: the group is case-folded below, and min() picks the
+        -- variant that starts with an uppercase letter ('Zola' < 'zola' in ASCII) -- i.e. a real
+        -- provider-supplied name beats an identifier fallback. Without the fold, a company whose
+        -- boards disagreed on casing appeared TWICE in the dropdown, titlecased into two
+        -- identical-looking entries with the job count split between them.
+        min(${companyDisplayExpression()}) AS company,
         count(*) AS job_count,
         -- One logo per company: max() over the group picks any non-null one, and every board of a
         -- company resolves to the same employer logo anyway.
@@ -461,7 +554,7 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
         ?
       FROM jobs
       WHERE is_active = 1 AND coalesce(nullif(company_name, ''), company_identifier) IS NOT NULL
-      GROUP BY company
+      GROUP BY lower(${companyDisplayExpression()})
     `).bind(now),
   ]);
   return { companies: Number(result.meta?.changes ?? 0) };
@@ -509,11 +602,15 @@ export async function pruneSyncRuns(db, now = new Date().toISOString(), retentio
 // "unresolved" failures indefinitely. Once a day, resolve any open row whose board is no longer in
 // the live `error` state -- error is the only status that represents an active, retrying failure.
 export async function reconcileFailedTasks(db, now = new Date().toISOString()) {
+  // NOT IN of the error boards, rather than IN of the non-error ones: the two differ exactly for
+  // rows whose board no longer EXISTS (deleted twins, cleaned-up registries). Those matched
+  // neither side of the old IN, so they stayed "unresolved" forever and the failure count only
+  // ever climbed.
   const result = await db.prepare(`
     UPDATE failed_tasks SET resolved_at = ?
     WHERE resolved_at IS NULL
-      AND board_key IN (
-        SELECT key FROM boards WHERE status <> 'error'
+      AND board_key NOT IN (
+        SELECT key FROM boards WHERE status = 'error'
       )
   `).bind(now).run();
   return { resolved: Number(result.meta?.changes ?? 0) };

@@ -483,7 +483,13 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
 
   const postedWithin = Number.parseInt(filters.postedWithin ?? "", 10);
   if (Number.isFinite(postedWithin) && postedWithin > 0) {
-    conditions.push(`published_at >= datetime('now', '-${Math.min(3650, postedWithin)} days')`);
+    // The threshold is built in JS, NOT with SQLite's datetime(): published_at is stored as ISO
+    // ("2026-07-19T10:00:00.000Z") while datetime() renders "2026-07-19 10:00:00", and the two
+    // diverge at index 10 where 'T' sorts after ' ' -- so a datetime() bound silently rounded the
+    // window to whole UTC days ("posted within 1 day" returned up to 48h). Same bug class as the
+    // isoShift note in cloudflare/src/database.mjs.
+    const cutoff = new Date(Date.now() - Math.min(3650, postedWithin) * 24 * 60 * 60 * 1_000).toISOString();
+    conditions.push(`published_at >= '${cutoff}'`);
   }
 
   const order = filters.sort === "oldest"

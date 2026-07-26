@@ -242,7 +242,13 @@ test("accepts changing Workday totals and stops a silently repeated page", async
   });
 
   assert.deepEqual(seenOffsets, [0, 20, 40]);
-  assert.equal(result.jobs.length, 40);
+  // The repeated page is a bot filter or a cache, not the end of the list: 40 of a claimed 50 is a
+  // TRUNCATED snapshot, and applying it as a success used to close every posting past the repeat
+  // point. A repeat now classifies the refresh invalid, which leaves the previous snapshot alone
+  // and counts a strike instead.
+  assert.equal(result.board.status, "invalid");
+  assert.match(result.board.error, /repeated a page/);
+  assert.equal(result.jobs.length, 0);
 });
 
 test("normalizes BambooHR, iCIMS, and Paylocity jobs", async () => {

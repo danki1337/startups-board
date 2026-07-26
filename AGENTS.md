@@ -30,7 +30,7 @@ in shipped defects; do not re-derive them from the JSX.
 
 ## Verification
 
-`npm test` (86 tests + design lint) and `cd web && npm run build` must both pass. UI work is
+`npm test` (the full suite + design lint; Node 22+, see .nvmrc) and `cd web && npm run build` must both pass. UI work is
 verified in the browser, not in the source: run the preview, exercise the interaction, read the
 rendered DOM. Several past defects were invisible in JSX and obvious on screen.
 

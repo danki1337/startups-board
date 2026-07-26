@@ -20,6 +20,8 @@ interface Env {
   QUEUE_ICIMS: Queue;
   QUEUE_LEVER: Queue;
   QUEUE_PAYLOCITY: Queue;
+  QUEUE_RIPPLING: Queue;
+  QUEUE_SMARTRECRUITERS: Queue;
   QUEUE_SPARKHIRE: Queue;
   QUEUE_WORKDAY: Queue;
   QUEUE_DISCOVERY: Queue;

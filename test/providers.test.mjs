@@ -191,20 +191,24 @@ test("SmartRecruiters pagination does not truncate when totalFound is absent", a
   assert.equal(jobs.length, 250);
 });
 
-test("Lever pagination stops when a board repeats a page", async () => {
-  // A board whose API ignores `skip` used to drive the loop to its 1,000-page ceiling, issuing a
-  // thousand requests and accumulating 100,000 duplicates before failing.
+test("Lever pagination throws when a board repeats a page, instead of truncating", async () => {
+  // A board whose API ignores `skip` used to drive the loop to its 1,000-page ceiling; then it
+  // stopped after the repeat but RETURNED the partial list -- which read as "the board shrank" and
+  // closed everything past the repeat point. A repeated page is a failed refresh: the throw
+  // classifies it invalid, which leaves the board's previous snapshot alone.
   const page = Array.from({ length: 100 }, (_, i) => ({ id: `job-${i}` }));
   let calls = 0;
-  const jobs = await getProvider("lever").fetchJobs(
-    { apiUrl: "https://api.lever.co/v0/postings/acme" },
-    async () => {
-      calls += 1;
-      return new Response(JSON.stringify(page), { headers: { "content-type": "application/json" } });
-    },
+  await assert.rejects(
+    getProvider("lever").fetchJobs(
+      { apiUrl: "https://api.lever.co/v0/postings/acme" },
+      async () => {
+        calls += 1;
+        return new Response(JSON.stringify(page), { headers: { "content-type": "application/json" } });
+      },
+    ),
+    /repeated a page/,
   );
-  assert.equal(jobs.length, 100);
-  assert.equal(calls, 2, "should stop after the first repeated page, not run to the page ceiling");
+  assert.equal(calls, 2, "still stops after the first repeated page, not the page ceiling");
 });
 
 test("Greenhouse regional board hosts parse as boards", () => {

@@ -14,7 +14,7 @@ import { parseAtsUrl } from "../src/providers.mjs";
 // (provider, source_id) seek and the primary-key seek. It filters the bound params exactly as the
 // real index-backed queries would, so the test exercises grouping, chunking, and key-vs-source-id
 // routing rather than the SQL itself.
-function stubNativeDb({ sourceIds = new Set(), keys = new Set(), inactiveKeys = new Set() } = {}) {
+function stubNativeDb({ sourceIds = new Set(), keys = new Set(), inactiveKeys = new Set(), twinWinners = new Map() } = {}) {
   return {
     prepare(sql) {
       let bound = [];
@@ -28,6 +28,15 @@ function stubNativeDb({ sourceIds = new Set(), keys = new Set(), inactiveKeys = 
         },
         // eslint-disable-next-line require-await
         async all() {
+          if (/min\(board_key\) AS winner/.test(sql)) {
+            // The aggregator self-dedup probe: source_id -> smallest board_key holding it active.
+            const [, ...ids] = bound;
+            return {
+              results: ids
+                .filter((id) => twinWinners.has(String(id)))
+                .map((id) => ({ sourceId: id, winner: twinWinners.get(String(id)) })),
+            };
+          }
           if (/SELECT key, is_active AS isActive FROM jobs/.test(sql)) {
             // The key probe deliberately carries no is_active predicate -- with one, the planner
             // scanned every active row through a covering index instead of probing the primary key
@@ -200,7 +209,10 @@ function recordingDb(failureCount = 0, options = {}) {
       return { results: [] };
     },
     async first() {
-      return { failureCount };
+      // recordBoardFailure now also reads the board's current status: strikes only count while
+      // consecutive failures are of the SAME kind. Tests that need a specific prior kind pass it
+      // via options.boardStatus.
+      return { failureCount, status: options.boardStatus ?? (failureCount > 0 ? "invalid" : "active") };
     },
   });
   return {
@@ -214,7 +226,11 @@ function recordingDb(failureCount = 0, options = {}) {
       // both shapes. Everything else only cares about meta.changes.
       return list.map((entry) => ({
         meta: { changes },
-        results: /quiet_syncs/.test(entry?.sql ?? "") ? [{ quietSyncs: options.quietSyncs ?? 0 }] : [],
+        results: /quiet_syncs/.test(entry?.sql ?? "")
+          ? [{ quietSyncs: options.quietSyncs ?? 0 }]
+          : /FROM jobs WHERE board_key/.test(entry?.sql ?? "")
+            ? options.currentJobs ?? []
+            : [],
       }));
     },
   };
@@ -239,7 +255,7 @@ test("a rate-limited refresh backs off hours, not the error ladder's minutes", a
   // Three prior failures on record; this 429 is the fourth. The 15-minute ladder would try again
   // in 4 hours at most and re-enter the same provider-wide limit -- production measured 45,687
   // Paylocity refreshes burned that way in a single day.
-  const db = recordingDb(3);
+  const db = recordingDb(3, { boardStatus: "error" });
   await applyBoardSnapshot(db, {
     board: {
       key: "paylocity:global:x", provider: "paylocity", identifier: "x", status: "error",
@@ -274,6 +290,81 @@ test("an inactive native twin does not suppress the aggregator's copy", async ()
   const incoming = [{ url: "https://acme.wd5.myworkdayjobs.com/External/job/Berlin/Engineer_R1" }];
   const kept = await suppressDuplicatedAggregatorJobs(db, incoming);
   assert.equal(kept.length, 1);
+});
+
+test("wrangler.jsonc declares a producer and consumer for every provider binding", async () => {
+  // The hardcoded-literal test above pins config.mjs; this one bridges to wrangler.jsonc, which is
+  // what deploy actually demands. Rippling and SmartRecruiters once existed in wrangler and nowhere
+  // else -- one drift event across three files, caught by none of them.
+  const raw = await readFile(new URL("../cloudflare/wrangler.jsonc", import.meta.url), "utf8");
+  const config = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, ""));
+  const producerBindings = new Set(config.queues.producers.map((producer) => producer.binding));
+  for (const binding of Object.values(PROVIDER_QUEUE_BINDINGS)) {
+    assert.ok(producerBindings.has(binding), `wrangler.jsonc has no producer for ${binding}`);
+  }
+  const consumers = new Set(config.queues.consumers.map((consumer) => consumer.queue));
+  for (const producer of config.queues.producers) {
+    assert.ok(consumers.has(producer.queue), `queue ${producer.queue} has a producer but no consumer`);
+  }
+});
+
+test("a hollow empty snapshot for a stocked board records a strike instead of closing", async () => {
+  // Zero jobs in a 200 that parsed, for a board with 12 active postings: a bot challenge that
+  // happened to be valid JSON, not a company that closed every role overnight. This used to walk
+  // straight down the success path and close all 12 unwitnessed.
+  const active = Array.from({ length: 12 }, (_, index) => ({
+    key: `k${index}`, sourceId: `s${index}`, fingerprint: `f${index}`, isActive: 1,
+  }));
+  const db = recordingDb(0, { currentJobs: active, boardStatus: "active" });
+  const result = await applyBoardSnapshot(db, snapshot([]));
+  assert.equal(result.closedJobs, 0);
+  assert.equal(ran(db, /UPDATE jobs SET is_active = 0/), false);
+  assert.equal(ran(db, /UPDATE boards SET status[\s\S]*failure_count/), true, "recorded as a failure");
+});
+
+test("a small board emptying out still closes without ceremony", async () => {
+  // Winding down to zero one posting at a time is how boards genuinely empty; below the guard
+  // threshold the empty snapshot is accepted immediately.
+  const active = Array.from({ length: 3 }, (_, index) => ({
+    key: `k${index}`, sourceId: `s${index}`, fingerprint: `f${index}`, isActive: 1,
+  }));
+  const db = recordingDb(0, { currentJobs: active, changes: 1 });
+  await applyBoardSnapshot(db, snapshot([]));
+  assert.equal(ran(db, /UPDATE jobs SET is_active = 0/), true);
+});
+
+test("a failure-kind change restarts the strike count", async () => {
+  // Two transient errors on record, then one bot-challenge page. As a running total that was
+  // "three strikes, close the board" -- the single-response wipe the strikes exist to prevent.
+  const db = recordingDb(2, { boardStatus: "error" });
+  await applyBoardSnapshot(db, {
+    board: {
+      key: "greenhouse:global:acme", provider: "greenhouse", identifier: "acme",
+      status: "invalid", jobCount: 0, syncedAt: "2026-07-24T10:00:00.000Z", error: "403",
+    },
+    jobs: [],
+  });
+  assert.equal(ran(db, /FROM jobs WHERE board_key/), false, "strike 1 of 3: no close pass");
+  const update = db.statements.find((entry) => /UPDATE boards SET status/.test(entry.sql) && entry.args);
+  assert.equal(update.args[1], 1, "failure_count restarted for the new kind");
+});
+
+test("an aggregator job is suppressed only when its twin lives on a smaller board key", async () => {
+  // The deterministic winner rule: smallest board_key keeps the job. min == mine and min > mine
+  // both keep; only min < mine suppresses. That asymmetry is what makes the outcome independent of
+  // sync order and immune to two boards suppressing each other's copies in the same round.
+  const incoming = [
+    { url: "https://example.com/1", sourceId: "1", boardKey: "getro:global:mmm", provider: "getro" },
+    { url: "https://example.com/2", sourceId: "2", boardKey: "getro:global:mmm", provider: "getro" },
+    { url: "https://example.com/3", sourceId: "3", boardKey: "getro:global:mmm", provider: "getro" },
+  ];
+  const db = stubNativeDb({ twinWinners: new Map([
+    ["1", "getro:global:aaa"],
+    ["2", "getro:global:mmm"],
+    ["3", "getro:global:zzz"],
+  ]) });
+  const kept = await suppressDuplicatedAggregatorJobs(db, incoming);
+  assert.deepEqual(kept.map((job) => job.sourceId), ["2", "3"]);
 });
 
 test("an invalid board response never closes the board's jobs", async () => {

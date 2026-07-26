@@ -29,8 +29,12 @@ const ICIMS_PREFIX = /^(?:careers|jobs)[.-]/i;
  */
 export function humanizeIdentifier(value, provider) {
   let identifier = value || "Unknown company";
-  // Workday identifiers are "tenant|wdN|site"; only the tenant is a company.
-  if (provider === "workday") identifier = identifier.split("|")[0];
+  // Everything before a pipe, for ANY provider -- mirroring identifierExpression below, which has
+  // no provider condition on its pipe branch. Workday packs "tenant|wdN|site" and Spark Hire
+  // "slug|companyUid"; gating this on workday alone meant a name-less Spark Hire board rendered
+  // "Acme|A1b2c3" while the filter matched "acme" -- the exact invariant breach this module exists
+  // to prevent.
+  if (identifier.includes("|")) identifier = identifier.split("|")[0];
   if (provider === "icims") identifier = identifier.replace(ICIMS_PREFIX, "");
   // Paylocity boards are keyed by a bare GUID and used to render as "Paylocity employer 54C656" --
   // a label invented here, present in no column, and therefore unmatchable by the filter it was

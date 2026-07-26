@@ -649,10 +649,17 @@ async function fetchLeverJobs(candidate, request) {
       return true;
     });
     jobs.push(...fresh);
-    if (payload.length < LEVER_PAGE_SIZE || fresh.length === 0) return jobs;
+    if (payload.length < LEVER_PAGE_SIZE) return jobs;
+    // A full page that added nothing new is `skip` being ignored -- the exact condition the seen
+    // set exists for. Returning the partial list would close every posting past this page as if
+    // the board had shrunk; a failed refresh leaves the snapshot alone instead.
+    if (fresh.length === 0) {
+      throw new InvalidPayloadError(`Lever repeated a page at skip ${page * LEVER_PAGE_SIZE}`);
+    }
   }
 
-  throw new InvalidPayloadError(`Lever board exceeded ${LEVER_MAX_PAGES * LEVER_PAGE_SIZE} jobs`);
+  // A capacity ceiling, not a dead board -- see the Workday equivalent.
+  throw new Error(`Lever board exceeded ${LEVER_MAX_PAGES * LEVER_PAGE_SIZE} jobs`);
 }
 
 async function fetchGreenhouseJobs(candidate, request) {
@@ -704,7 +711,9 @@ async function fetchSmartRecruitersJobs(candidate, request) {
     const totalFound = Number(payload.totalFound);
     if (Number.isFinite(totalFound) && totalFound > 0 && jobs.length >= totalFound) return jobs;
   }
-  throw new InvalidPayloadError(
+  // A capacity ceiling, not a dead board. As InvalidPayloadError this classified "invalid": a
+  // 30-day freeze and, after three strikes, closure of ~20,000 jobs whose board merely grew.
+  throw new Error(
     `SmartRecruiters board exceeded ${SMARTRECRUITERS_MAX_PAGES * SMARTRECRUITERS_PAGE_SIZE} jobs`,
   );
 }
@@ -733,6 +742,10 @@ async function fetchGetroJobs(candidate, request) {
   const jobs = [];
   const seenJobs = new Set();
   const endpoint = `https://api.getro.com/api/v2/collections/${encodeURIComponent(collectionId)}/search/jobs`;
+  // Only a POSITIVE count updates this -- the same guard Workday has, for the same reason: a later
+  // page answering `count: 0` while still returning hits made `jobs.length >= total` true
+  // immediately, truncating the snapshot, and the truncation then closed everything past it.
+  let expectedTotal = Number.POSITIVE_INFINITY;
 
   for (let page = 0; page < GETRO_MAX_PAGES; page += 1) {
     const response = await request(endpoint, {
@@ -758,6 +771,7 @@ async function fetchGetroJobs(candidate, request) {
     }
 
     if (!pageJobs.length) return jobs;
+    if (total > 0) expectedTotal = total;
     let added = 0;
     for (const job of pageJobs) {
       const key = cleanString(job.id) || cleanString(job.slug) || cleanString(job.url);
@@ -767,10 +781,16 @@ async function fetchGetroJobs(candidate, request) {
       added += 1;
     }
 
-    if (!added || pageJobs.length < GETRO_PAGE_SIZE || jobs.length >= total) return jobs;
+    if (pageJobs.length < GETRO_PAGE_SIZE || jobs.length >= expectedTotal) return jobs;
+    // A full page of already-seen jobs is the search backend repeating itself; returning the
+    // partial list would close everything past it. Same guard as Workday and Lever.
+    if (!added) {
+      throw new InvalidPayloadError(`Getro repeated page ${page}`);
+    }
   }
 
-  throw new InvalidPayloadError(`Getro board exceeded ${GETRO_MAX_PAGES * GETRO_PAGE_SIZE} jobs`);
+  // A capacity ceiling, not a dead board -- see the Workday equivalent.
+  throw new Error(`Getro board exceeded ${GETRO_MAX_PAGES * GETRO_PAGE_SIZE} jobs`);
 }
 
 async function fetchSparkHireJobs(candidate, request) {
@@ -851,15 +871,24 @@ async function fetchWorkdayJobs(candidate, request) {
       added += 1;
     }
 
-    // Workday totals can genuinely change while a board is being updated, and
-    // blocked endpoints can silently repeat a page. Follow changing totals, but
-    // stop on a partial/repeated page so either case cannot loop forever.
-    if (!added || payload.jobPostings.length < WORKDAY_PAGE_SIZE || jobs.length >= expectedTotal) {
+    // A short page or a met total is the legitimate end of the list.
+    if (payload.jobPostings.length < WORKDAY_PAGE_SIZE || jobs.length >= expectedTotal) {
       return jobs;
+    }
+    // A FULL page of already-seen postings is the endpoint repeating itself -- a bot filter or a
+    // cache serving the same page for every offset. Returning what was gathered so far used to
+    // read as "the board now has this many jobs" and closed everything past the repeat point: a
+    // 1,486-job board behind a filter that repeated offset 200 had 1,286 postings closed as
+    // removed. A repeat is a failed refresh; invalid leaves the previous snapshot alone.
+    if (!added) {
+      throw new InvalidPayloadError(`Workday repeated a page at offset ${page * WORKDAY_PAGE_SIZE}`);
     }
   }
 
-  throw new InvalidPayloadError(`Workday board exceeded ${WORKDAY_MAX_PAGES * WORKDAY_PAGE_SIZE} jobs`);
+  // Exceeding the ceiling is a capacity condition, not a verdict on the board. It must NOT be
+  // InvalidPayloadError: that classifies as "invalid", which backs off 30 days and -- after three
+  // strikes -- closes every job on a board whose only offence was growing.
+  throw new Error(`Workday board exceeded ${WORKDAY_MAX_PAGES * WORKDAY_PAGE_SIZE} jobs`);
 }
 
 async function fetchIcimsJobs(candidate, request) {
@@ -1091,9 +1120,11 @@ function normalizeWorkdayJob(candidate, job, syncedAt) {
     publishedAt: relativeDate(job.postedOn, syncedAt),
     url,
     applyUrl: url,
-    // Every Workday tenant serves its customer's own logo from a fixed path, so this needs no
-    // extra request at ingestion. The frontend falls back to the generated monogram if it 404s.
-    companyLogoUrl: `${boardBase}/assets/logo`,
+    // No constructed companyLogoUrl. `${boardBase}/assets/logo` was assumed to be the tenant's
+    // logo and measured to be usable on 0 of 13 production tenants -- website banners and 404s.
+    // Stamped on every job row, it also outranked the verified scraped logo in every read-path
+    // coalesce, so the guess didn't just fail, it suppressed the answer that worked. Workday
+    // logos come from the scrape path in resolveLogoIfStale like every other logo-less ATS.
     compensation: null,
   });
 }

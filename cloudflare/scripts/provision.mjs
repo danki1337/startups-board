@@ -8,20 +8,18 @@ const configPath = resolve(root, "cloudflare/wrangler.jsonc");
 const wranglerPath = resolve(root, "web/node_modules/wrangler/bin/wrangler.js");
 const databaseName = "startups-board-production";
 const bucketName = "startups-board-archive";
-const queueNames = [
-  "startups-board-jobs-ashby",
-  "startups-board-jobs-bamboohr",
-  "startups-board-jobs-gem",
-  "startups-board-jobs-getro",
-  "startups-board-jobs-greenhouse",
-  "startups-board-jobs-icims",
-  "startups-board-jobs-lever",
-  "startups-board-jobs-paylocity",
-  "startups-board-jobs-sparkhire",
-  "startups-board-jobs-workday",
-  "startups-board-discovery",
-  "startups-board-dlq",
-];
+// Derived from wrangler.jsonc, not a second hand-written list. The hand-written copy drifted the
+// first time it possibly could: Rippling and SmartRecruiters were added to wrangler's producers
+// and consumers but never here, so a fresh-account provision created 12 queues and then died in
+// `wrangler deploy` against the two missing ones -- after the database and migrations had already
+// run. Whatever wrangler declares is, by definition, what deploy will demand.
+const wranglerConfig = JSON.parse(
+  (await readFile(configPath, "utf8")).replace(/^\s*\/\/.*$/gm, ""),
+);
+const queueNames = [...new Set([
+  ...(wranglerConfig.queues?.producers ?? []).map((producer) => producer.queue),
+  ...(wranglerConfig.queues?.consumers ?? []).map((consumer) => consumer.queue),
+])];
 
 assertNodeVersion();
 await configureDatabase();

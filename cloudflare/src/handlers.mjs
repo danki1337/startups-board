@@ -4,6 +4,7 @@ import {
   verifyLogoShape,
   CONSTRUCTED_LOGO_PROVIDERS,
 } from "../../src/company-logo.mjs";
+import { parseAtsUrl } from "../../src/providers.mjs";
 import { syncBoard } from "../../src/jobs.mjs";
 import { requestWithRetry } from "../../src/validation.mjs";
 import { isRateLimitError, queueForProvider, rateLimitNextSyncAt } from "./config.mjs";
@@ -28,8 +29,12 @@ import { processDiscoveryTask, seedDiscoveryTasks } from "./discovery.mjs";
 
 export async function scheduled(controller, env, ctx) {
   const work = [];
-  // controller.cron is the literal string from wrangler.jsonc, which uses SUN rather than 0.
-  if (controller.cron !== "*/15 * * * *") work.push(seedDiscoveryTasks(env));
+  // Discovery is NOT seeded from a cron any more. The weekly seeding ran for weeks and wrote zero
+  // discovery_pages rows and zero dead letters: Common Crawl throttles Cloudflare egress, the
+  // skip-on-throttle path returns empty, and every task "succeeded" at nothing -- while still
+  // burning queue operations and hammering CC's index endpoints. Discovery belongs to the GitHub
+  // workflow (residential-ish runners CC actually answers); the admin /run endpoint can still
+  // trigger a worker-side pass by hand if that ever changes.
   // 2,000 per 15 minutes is ~192k refreshes/day, enough headroom for a ~60k-board registry.
   work.push(scheduleDueBoards(env, { limit: 2_000 }));
   // The 15-minute cron fires four times inside hour 4, so pin daily work to the top of the hour.
@@ -113,7 +118,9 @@ export async function handleOperatorRequest(request, env) {
 
   const expected = env.ADMIN_TOKEN;
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!expected || actual !== expected) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (!expected || !actual || !timingSafeEqualString(actual, expected)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   if (url.pathname === "/api/internal/admin/run" && request.method === "POST") {
     const payload = await request.json().catch(() => ({}));
@@ -124,12 +131,23 @@ export async function handleOperatorRequest(request, env) {
   }
 
   if (url.pathname === "/api/internal/admin/import-boards" && request.method === "POST") {
-    const payload = await request.json();
+    const payload = await request.json().catch(() => ({}));
     if (!Array.isArray(payload.boards)) {
       return Response.json({ error: "boards must be an array" }, { status: 400 });
     }
-    const inserted = await upsertDiscoveredBoards(env.DB, payload.boards.slice(0, 5_000));
-    return Response.json({ ok: true, inserted });
+    // Re-derived through parseAtsUrl HERE, not trusted from the payload. The import script already
+    // canonicalizes, but the endpoint accepting whatever it was sent is how 1,779 SmartRecruiters
+    // case-twin boards (AccorHotel next to accorhotel) got back in after the 07-23 cleanup -- an
+    // import run with pre-fix data re-created them, and every twin pair duplicated its company's
+    // entire listing (~107k twice-shown jobs). Boards whose URL no parser claims are dropped, and
+    // the response says how many, so a bad input file is visible instead of silent.
+    const canonical = new Map();
+    for (const board of payload.boards.slice(0, 5_000)) {
+      const parsed = parseAtsUrl(board.boardUrl || board.apiUrl, board.provider);
+      if (parsed) canonical.set(parsed.key, parsed);
+    }
+    const inserted = await upsertDiscoveredBoards(env.DB, [...canonical.values()]);
+    return Response.json({ ok: true, inserted, accepted: canonical.size, rejected: payload.boards.length - canonical.size });
   }
 
   if (url.pathname === "/api/internal/admin/failures" && request.method === "GET") {
@@ -151,7 +169,22 @@ export async function scheduleDueBoards(env, options = {}) {
 
   for (const [provider, providerBoards] of groups) {
     const targetQueue = queueForProvider(env, provider);
-    if (!targetQueue) continue;
+    if (!targetQueue) {
+      // A provider with no queue binding (added to the registry before its queue shipped, or a
+      // typo'd import) must not just be skipped: its boards stay idle with next_sync_at in the
+      // past, sort FIRST in enqueueDueBoards forever, and silently consume the whole 2,000-board
+      // window -- the registry stops refreshing with no error anywhere. Parked a day ahead so the
+      // window stays clear and they resurface if the binding appears.
+      const now = new Date().toISOString();
+      const parkedUntil = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString();
+      for (const group of chunks(providerBoards, 50)) {
+        await env.DB.batch(group.map((board) => env.DB.prepare(
+          "UPDATE boards SET next_sync_at = ?, updated_at = ? WHERE key = ?",
+        ).bind(parkedUntil, now, board.key)));
+      }
+      console.error("No queue binding for provider; boards parked 24h", { provider, boards: providerBoards.length });
+      continue;
+    }
     const claimedKeys = new Set(await markBoardsQueued(env.DB, providerBoards.map((board) => board.key)));
     const claimedBoards = providerBoards.filter((board) => claimedKeys.has(board.key));
     // Release only what was never sent. Releasing every claimed board on a mid-way failure left
@@ -309,4 +342,18 @@ async function recordDeadLetter(db, payload, attempts, error) {
 
 function retryDelay(attempt) {
   return Math.min(43_200, 30 * 2 ** Math.max(0, attempt - 1));
+}
+
+// Constant-time string comparison for the bearer token. `!==` short-circuits at the first
+// differing character, which leaks how much of a guess was right through response timing. The XOR
+// accumulator touches every character regardless; comparing against a length-matched slice keeps
+// the loop bound independent of the guess's length too.
+export function timingSafeEqualString(a, b) {
+  const left = String(a);
+  const right = String(b);
+  let mismatch = left.length === right.length ? 0 : 1;
+  for (let index = 0; index < right.length; index += 1) {
+    mismatch |= (left.charCodeAt(index % left.length) || 0) ^ right.charCodeAt(index);
+  }
+  return mismatch === 0;
 }
