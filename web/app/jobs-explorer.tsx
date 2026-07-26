@@ -1553,9 +1553,13 @@ function SearchCheckList({
 
 // Placeholder rows for a list that is still loading, sized like the real ones so the panel does not
 // resize under the cursor when they arrive.
+// h-80 + overflow-hidden: both dropdown lists cap their scroller at max-h-80, and twelve 30px
+// placeholder rows are 360px -- so the SKELETON was what triggered the scrollbar, on content
+// nobody can scroll to. Clipping the placeholder at exactly the scroller's height keeps the panel
+// at its final size with no bar until there is something real to scroll.
 function ListSkeleton({ rows = 9 }: { rows?: number }) {
   return (
-    <div className="is-pulsing" aria-hidden="true">
+    <div className="is-pulsing h-80 overflow-hidden" aria-hidden="true">
       <div>
         {Array.from({ length: rows }, (_, row) => (
           <div key={row} className="flex items-center justify-between gap-2 px-2 py-[9px]">
@@ -1919,15 +1923,19 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
       aria-label={`Remove filter ${value}`}
       className="chip-in inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--border)] bg-[var(--control)] px-3 text-sm font-bold text-[var(--ink)] transition-transform duration-[160ms] ease-[var(--ease-out)] hover:bg-[var(--control-hover)] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
-      {/* No leading category glyph. It named the FILTER ("this is a country filter") while the mark
-          beside the value already names the VALUE (a flag, a globe, an ATS logo) -- two icons for one
-          fact, and the redundant one came first. The company chip keeps its logo because that is the
-          value's own mark, not a category label. */}
       {chip.kind === "company" && <CompanyMark name={value} logoUrl={chip.logoUrl ?? null} />}
       <span className="inline-flex max-w-48 items-center gap-1.5 truncate">
         {chip.code && <Flag code={chip.code} />}
+        {/* The Title chip carries the same person glyph as the pill it came from. A picked role was
+            the one chip in the row with no mark at all -- every neighbour (flag, globe, ATS logo,
+            job-type clock) opens with one, so the bare chip read as unstyled rather than minimal.
+            All chip glyphs render at 16px ([&>svg]:size-4): they are qualifiers of the value, not
+            the value, and at the pill's 20px they crowded the text they introduce. */}
+        {chip.kind === "title" && (
+          <span className="inline-flex shrink-0 [&>svg]:size-4"><IconTitleF /></span>
+        )}
         {chip.kind === "workplace" && WORKPLACE_ICONS[value.toLowerCase()] && (
-          <span className="inline-flex [&>svg]:size-5 text-[var(--muted)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
+          <span className="inline-flex [&>svg]:size-4 text-[var(--muted)]">{(() => { const Glyph = WORKPLACE_ICONS[value.toLowerCase()]; return <Glyph />; })()}</span>
         )}
         {/* Job type carries its glyph here too. It had one in the dropdown you pick it from and one in
             every row it filters to, and none on the chip in between -- the only place in that chain
@@ -1935,7 +1943,7 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
             Looked up through the same normalisation the table uses, not the raw label: keyed on the
             raw text, "Full-time Tier 2" reads as an unknown type and silently loses its clock. */}
         {chip.kind === "employmentType" && JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(value))] && (
-          <span className="inline-flex text-[var(--muted)] [&>svg]:size-5">
+          <span className="inline-flex text-[var(--muted)] [&>svg]:size-4">
             {(() => { const Glyph = JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(value))]; return <Glyph />; })()}
           </span>
         )}
@@ -2079,7 +2087,9 @@ const WORKPLACE_ICONS: Record<string, () => React.ReactElement> = {
 
 // The supplied 20px close glyph, drawn at the chip's scale.
 const IconCloseGlyph = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-4 shrink-0">
+  // 20px against the chip glyphs' 16: the close is the chip's one ACTION, and the extra size is
+  // hit-area as much as emphasis.
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-5 shrink-0">
     <path d="M15 5L10 10M10 10L5 15M10 10L15 15M10 10L5 5" stroke="#868990" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
@@ -2719,6 +2729,14 @@ function JobCells({
   const companyTip = useTruncationTip(job.company);
   const places = splitLocations(job.location);
   const regionFlag = regionFlagCode(places.primary);
+  // The flag (or the remote globe), built once so the cell can place it INSIDE the filter button
+  // when there is one: the flag sits flush against the place name it qualifies, so a click landing
+  // on it visibly belonged to the same target -- and used to do nothing.
+  const flagGlyph = regionFlag || job.country || cityCountry(job.city) ? (
+    <Flag code={regionFlag || job.country || cityCountry(job.city)} />
+  ) : job.workplace === "Remote" ? (
+    <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">🌍</span>
+  ) : null;
   // The badge stands for locations the cell never drew, so hovering it has to be able to show them.
   const extraTip = useHoverTip(places.all);
   // The tooltip carries the whole list, not just the entry the cell had room for.
@@ -2778,29 +2796,28 @@ function JobCells({
       </td>
       <td className="px-5 py-3 text-sm text-[var(--muted)]">
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-          {/* REGION first, and that order is the fix rather than an ordering preference. job.country is
-              the posting's ingested country, which for a multi-location listing is whichever one the
-              ATS happened to resolve -- so "Europe · London · Dublin" is stamped gb, and the cell
-              drew a Union Jack next to the word Europe. The flag has to answer for the text beside
-              it, and the text beside it is places.primary. */}
-          {/* Nothing at all when there is no glyph -- not an empty span.
-              The empty span was still a flex CHILD, so the row's gap-1.5 applied on both sides of it
-              and pushed the place name 6px right. Every row without a flag therefore started 6px
-              further in than the LOCATION heading above it, and than every row that did have one. An
-              invisible element with zero width is not the same as no element. */}
-          {regionFlag || job.country || cityCountry(job.city) ? (
-            <Flag code={regionFlag || job.country || cityCountry(job.city)} />
-          ) : job.workplace === "Remote" ? (
-            <span aria-hidden="true" className="shrink-0 text-[13px] leading-none">🌍</span>
-          ) : null}
-          {job.location === "Location not specified" ? null : places.count !== null ? (
+          {/* REGION first (inside flagGlyph above), and that order is the fix rather than an
+              ordering preference. job.country is the posting's ingested country, which for a
+              multi-location listing is whichever one the ATS happened to resolve -- so
+              "Europe · London · Dublin" is stamped gb, and the cell drew a Union Jack next to the
+              word Europe. The flag has to answer for the text beside it, and the text beside it is
+              places.primary.
+              When the cell renders a filter button the glyph moves INSIDE it -- flush against the
+              name it qualifies, the flag reads as part of the click target, and it used to be the
+              one part of it that ignored the click. The no-button branches keep it out here.
+              Nothing at all when there is no glyph -- not an empty span: an empty span is still a
+              flex CHILD, so gap-1.5 applied around it and pushed the place name 6px right. */}
+          {job.location === "Location not specified" ? flagGlyph : places.count !== null ? (
             // A bare count is not a place, so it is not made to look like one: no filter link (there
-            // is nothing to filter by), no flag, and lowercase so it reads as a description of the
-            // posting rather than the name of somewhere.
-            <span className="min-w-0 truncate text-[var(--muted)]">
-              {places.count > 0 ? `${places.count} locations` : "Multiple locations"}
-            </span>
-          ) : !places.primary && !job.city ? null : (
+            // is nothing to filter by), and lowercase so it reads as a description of the posting
+            // rather than the name of somewhere.
+            <>
+              {flagGlyph}
+              <span className="min-w-0 truncate text-[var(--muted)]">
+                {places.count > 0 ? `${places.count} locations` : "Multiple locations"}
+              </span>
+            </>
+          ) : !places.primary && !job.city ? flagGlyph : (
             // Nothing at all when there is no place to name -- a Remote-only location strips to the
             // empty string, and the unguarded branch rendered an empty, tab-focusable button whose
             // click filtered by "" (a no-op) on every remote-only row: a nameless control with a
@@ -2813,9 +2830,10 @@ function JobCells({
                 onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: places.primary }))}
                 title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${places.primary}`}
                 {...locationTip.tipProps}
-                className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="-mx-1.5 flex min-w-0 items-center gap-1.5 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
-                {places.primary || job.city}
+                {flagGlyph}
+                <span className="min-w-0 truncate">{places.primary || job.city}</span>
               </button>
               {/* The remaining places, as a count rather than a truncated run-on. The full list is
                   the tooltip, so nothing is hidden -- it just stops one posting in three from

@@ -535,19 +535,19 @@ a {
     transparent 65%
   );
   mix-blend-mode: overlay;
-  translate: -100% 0;
-  /* linear, and starting flush against the left edge rather than 130% out.
-     Both are about the delay before anything happens. ease-in-out spends its first frames barely
-     moving, and a band parked 30% beyond the edge has to cross that gap before it is even visible --
-     together that was roughly a third of a second of nothing after the click. A shimmer is constant
-     motion, which is what linear is for; -100% puts the band's trailing edge exactly on the leading
-     edge of the mark, so the first frame already shows light on the first letter. */
-  animation: wordmark-shimmer 1400ms linear both;
+  translate: -65% 0;
+  /* The travel is exactly the VISIBLE sweep. The gradient's lit band spans 35%-65% of the element,
+     so at -100% the band's trailing edge still sat 35% of a width short of the first letter -- the
+     first ~500ms of the animation drew nothing, which read as a delay after the click. -65% puts
+     the band's trailing edge exactly on the first letter (0.65 x width reaches x=0), and +65% is
+     the mirror on the way out: every frame of the animation is light moving across glyphs.
+     linear, because a shimmer is constant motion. */
+  animation: wordmark-shimmer 1200ms linear both;
 }
 
 @keyframes wordmark-shimmer {
-  from { translate: -100% 0; }
-  to   { translate: 100% 0; }
+  from { translate: -65% 0; }
+  to   { translate: 65% 0; }
 }
 
 /* Removed entirely rather than shortened. It is decoration with no information in it, so for
@@ -998,10 +998,12 @@ button:disabled,
   translate: -50% calc(-100% - 14px);
   /* Above .t-skel-content (z-index 2), which it is now a sibling of rather than a child. */
   z-index: 4;
-  /* No transition, because the badge no longer moves. The count disappears and "Updating…" appears
-     in its place, at the foot, where the pill always is -- one change to follow rather than two at
-     once. That also settles the standard-7 argument from the last pass by removing its subject:
-     with nothing animating `top`, no layout property is animated here at all. */
+  /* The move to centre and back. A documented exception to transform/opacity-only, like the
+     badge's width tween: `top` is the one property that can carry this trip (top: 100% -> 50% has
+     a real interpolation; bottom-to-top does not), the element is a lone absolutely-positioned
+     pill, and the alternative -- teleporting between foot and centre -- is exactly the "jumping
+     badge" that was reported as a bug. */
+  transition: top 240ms var(--ease-out), translate 240ms var(--ease-out);
   pointer-events: none;
   padding: 5px 14px;
   border-radius: 999px;
@@ -1015,6 +1017,15 @@ button:disabled,
   font-weight: 700;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* While the rows are dimmed for a refetch the badge sits at the CENTRE of the table -- at the foot
+   it read as a caption on rows nobody can read, and the centre is where the eye already is. It can
+   sit over the content without being washed out because it is a sibling of the filtered element,
+   not a child (a `filter` makes a containing block and renders children into the blurred surface). */
+.jobs-count-badge.is-centred {
+  top: 50%;
+  translate: -50% -50%;
 }
 
 .tip-bubble {

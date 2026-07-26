@@ -176,3 +176,18 @@ test("SmartRecruiters, the longest provider name, still fits", () => {
   const gets = (columnWidths(rows).source / 100) * 1176;
   assert.ok(gets >= needs, `Source gets ${gets.toFixed(1)}px, needs ${needs.toFixed(1)}px`);
 });
+
+test("one Greenhouse among many short providers still fits, even at min table width", () => {
+  // The residual crop after the mark-width fix: Source was p95-sized, so a page where the widest
+  // provider appeared in under 1 row in 20 was sized for the short names -- and the cropping came
+  // and went with the page. Source is a CLOSED vocabulary; the widest present label always fits.
+  const rows = [
+    ...Array.from({ length: 39 }, () => row({ source: "Gem" })),
+    row({ source: "Greenhouse" }),
+  ];
+  const needs = textWidth("Greenhouse", 14) + 20 + 8 + 40;
+  // At 1050px -- the table's min-width -- not the 1176px reference: the widths are percentages, so
+  // a fit that only holds at the reference is window-dependent, which was the "sometimes".
+  const gets = (columnWidths(rows).source / 100) * 1050;
+  assert.ok(gets >= needs, `Source gets ${gets.toFixed(1)}px at min width, needs ${needs.toFixed(1)}px`);
+});

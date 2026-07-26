@@ -171,6 +171,19 @@ export function columnWidths(rows) {
     samples.source.push(textWidth(row.source, BODY_SIZE) + ATS_MARK_AND_GAP);
   }
   for (const key of Object.keys(samples)) content[key] = percentile(samples[key], P);
+  // Source is the one sampled column where p95 was WRONG. The p95 rule guards against a freak row
+  // gaming the layout, but Source draws from a closed set of twelve provider labels -- there is no
+  // freak row to guard against, and the guard itself did the cropping: a page where Greenhouse
+  // appeared in fewer than 1 row in 20 sized the column for the shorter names and ellipsized every
+  // Greenhouse that did appear. max() of a closed vocabulary cannot be gamed.
+  // Scaled by NARROWEST for the same reason the heading floors are: the widths are percentages, so
+  // a fit computed at the 1176px reference loses ~11% at the table's 1050px min-width -- which was
+  // the OTHER "sometimes doesn't fit": the same page cropped or not depending on the window. The
+  // cell padding rides inside the scale, because it shrinks with the percentage exactly as the
+  // text does; scaling the text alone left the requirement 0.7px short at the narrowest.
+  if (samples.source.length) {
+    content.source = (Math.max(...samples.source) + CELL_PADDING) * NARROWEST - CELL_PADDING;
+  }
   // Posted is not sampled at all -- see POSTED_WIDEST above.
   content.posted = textWidth(POSTED_WIDEST, BODY_SIZE);
 
