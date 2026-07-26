@@ -787,7 +787,7 @@ export function JobsExplorer({
       {/* The section owns the viewport and the results card takes whatever the hero and controls
           leave, so every pixel trimmed above goes straight into rows on screen. Kept deliberately
           tight for that reason. */}
-      <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-6 pt-8 sm:px-8 sm:pt-10">
+      <section className="mx-auto flex min-h-[100dvh] w-full max-w-[1240px] flex-col px-5 pb-6 pt-4 sm:px-8 sm:pt-6">
         <div className="mb-8 text-center">
           {/* The description IS the headline now -- "Join a high-growth startup" said nothing this
               does not, and said it without the live count, which is the one number that tells a
@@ -799,20 +799,24 @@ export function JobsExplorer({
               size buys: the clamp has a low floor precisely so a 390px phone can still fit the
               sentence rather than breaking it. Inter, not the pixel face -- a display face is for
               three or four words, and this is a sentence with a number in it. */}
-          {/* The wordmark. An <img> rather than inline SVG: it is 10KB of path data that never
-              changes and takes no styling from the page, so it belongs in the browser's cache
-              rather than in the JS bundle and in every server render.
-              alt is the brand name, not empty -- this is the only place the product names itself on
-              screen, and a wordmark that reads as nothing to a screen reader is a wordmark that is
-              not there. width/height are the intrinsic size, which is what stops the headline
-              beneath it jumping when the image lands. */}
+          {/* The wordmark, as a lossless WebP with alpha (VP8L). Lossless rather than lossy is not
+              caution: at q92 the same image encodes LARGER (23,340 vs 22,618 bytes), because lossy
+              spends its bits on exactly the sharp flat-colour edges a logo is made of, and pays for
+              them in ringing artefacts around every letter.
+              354px wide is 3x the 118px it renders at, which covers every retina density with room
+              to grow. The 707px source would have been 6x -- bytes and decode time for pixels
+              nobody can see. 2x would be 13KB, but leaves nothing for a size change.
+              width/height are the INTRINSIC size and the display size is CSS, so the browser
+              reserves the right box from the ratio and the headline beneath never jumps.
+              alt is the brand name, not empty: this is the only place the product names itself on
+              screen, and a wordmark that reads as nothing is a wordmark that is not there. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/aboard-wordmark.svg"
+            src="/aboard-wordmark.webp"
             alt="Aboard"
-            width={118}
-            height={51}
-            className="mx-auto mb-3 block"
+            width={354}
+            height={151}
+            className="mx-auto mb-5 block h-[51px] w-auto"
           />
           <h1
             className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
