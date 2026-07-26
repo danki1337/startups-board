@@ -227,27 +227,34 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   }
   addLikeFilter(conditions, bindings, "lower(j.title)", titleValue);
 
+  // One budget shared by every set filter, spent in declaration order. Each filter alone caps at
+  // 12 values, but eight filters times 12 is 96 binds BEFORE the text filters above take theirs --
+  // a URL stacking all of them bound 109 parameters and D1 threw "too many SQL variables": a 500
+  // and a blank first paint from a shareable link. The trailing binds (exactness, posted-within,
+  // cursor, limit/offset) live inside RESERVED_BINDS.
+  const setBudget = { left: Math.max(0, D1_MAX_BIND - RESERVED_BINDS - bindings.length) };
+
   // "anywhere" is remote-with-no-country, which is a distinct answer from "country unknown".
   const country = params.get("country");
   if (country === "anywhere") {
     conditions.push(`${filtered("j.country")} IS NULL AND ${filtered("j.workplace")} = 'Remote'`);
   } else if (country) {
-    addSetFilter(conditions, bindings, filtered("j.country"), country, (value) => value.toLowerCase());
+    addSetFilter(conditions, bindings, setBudget, filtered("j.country"), country, (value) => value.toLowerCase());
   }
 
   // Filters accept comma-separated values so the UI can offer multi-select without extra requests.
-  addSetFilter(conditions, bindings, filtered("j.provider"), params.get("provider"), (value) =>
+  addSetFilter(conditions, bindings, setBudget, filtered("j.provider"), params.get("provider"), (value) =>
     PROVIDER_BY_LABEL.get(value.toLowerCase()) ?? value.toLowerCase());
-  addSetFilter(conditions, bindings, filtered("j.city"), params.get("city"));
-  addSetFilter(conditions, bindings, filtered("j.role_family"), params.get("roleFamily"));
-  addSetFilter(conditions, bindings, filtered("j.company_industry"), params.get("industry"));
-  addSetFilter(conditions, bindings, filtered("j.workplace"), params.get("workplace"));
-  addSetFilter(conditions, bindings, filtered("j.category"), params.get("category"));
+  addSetFilter(conditions, bindings, setBudget, filtered("j.city"), params.get("city"));
+  addSetFilter(conditions, bindings, setBudget, filtered("j.role_family"), params.get("roleFamily"));
+  addSetFilter(conditions, bindings, setBudget, filtered("j.company_industry"), params.get("industry"));
+  addSetFilter(conditions, bindings, setBudget, filtered("j.workplace"), params.get("workplace"));
   // Employment types are stored as each provider sent them ("Full-Time", "full time", "Full Time",
   // ...), so the filter matches case- and hyphen-insensitively; an exact IN matched almost nothing.
   addSetFilter(
     conditions,
     bindings,
+    setBudget,
     filtered("lower(replace(j.employment_type, '-', ' '))"),
     params.get("employmentType"),
     (value) => value.toLowerCase().replaceAll("-", " "),
@@ -460,7 +467,9 @@ function collapseDuplicates(fetched: JobRow[], limit: number) {
   for (const row of fetched) {
     if (rows.length >= limit) break;
     consumed += 1;
-    const identity = `${row.title ?? ""} ${row.companyName ?? row.companyIdentifier ?? ""}`.toLowerCase();
+    const identity = // "\u0000" as an ESCAPE, never a literal NUL byte: a raw NUL makes grep/rg treat this whole
+    // file -- the one holding every SQL statement the API builds -- as binary and silently skip it.
+    `${row.title ?? ""}\u0000${row.companyName ?? row.companyIdentifier ?? ""}`.toLowerCase();
     if (seen.has(identity)) continue;
     seen.add(identity);
     rows.push(row);
@@ -676,8 +685,10 @@ function prettyCompanies(rows: unknown[]) {
     jobCount: row.jobCount,
     // The same proxy path the job rows use, so a company's logo is ONE cache entry whether it was
     // first seen in the table or in this dropdown. Null until the daily aggregate has rebuilt with
-    // logo_board_key, which simply means no mark rather than a broken one.
-    logoUrl: row.logoBoardKey ? logoProxyUrl(row.logoBoardKey) : null,
+    // logo_board_key, which simply means no mark rather than a broken one. The stored (un-prettied)
+    // company rides along because logo_board_key can be an aggregator board holding many companies'
+    // logos -- without it, every Getro-sourced company drew the same arbitrary mark.
+    logoUrl: row.logoBoardKey ? logoProxyUrl(row.logoBoardKey, row.company) : null,
   }));
 }
 
@@ -819,6 +830,7 @@ function addLikeFilter(conditions: string[], bindings: unknown[], column: string
 function addSetFilter(
   conditions: string[],
   bindings: unknown[],
+  budget: { left: number },
   column: string,
   value: string | null,
   normalize: (value: string) => string = (input) => input,
@@ -827,11 +839,12 @@ function addSetFilter(
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
-    .slice(0, 12)
+    .slice(0, Math.min(12, budget.left))
     .map(normalize);
   if (!values.length) return;
   conditions.push(`${column} IN (${values.map(() => "?").join(", ")})`);
   bindings.push(...values);
+  budget.left -= values.length;
 }
 
 // Build the FTS5 MATCH expression: each meaningful token becomes a quoted prefix term, AND-ed so
@@ -904,8 +917,13 @@ async function correctQuery(
   db: ReturnType<typeof getD1>,
   search: string | null,
 ): Promise<string | null> {
+  // The upper bound is load-bearing: editDistance1 fans out ~52 candidates per character, and a
+  // token with no cap made an unauthenticated `?search=` the most expensive request the worker
+  // served -- ~0.56 sequential D1 statements per character (measured: 447 statements for an
+  // 800-char garbage query, which always lands here because garbage matches nothing). No real
+  // vocabulary term is longer than 24 characters; anything longer is not a typo to correct.
   const tokens = (search ?? "").toLowerCase().match(/[\p{L}\p{N}]+/gu)
-    ?.filter((token) => token.length >= 3).slice(0, 4) ?? [];
+    ?.filter((token) => token.length >= 3 && token.length <= 24).slice(0, 4) ?? [];
   if (!tokens.length) return null;
 
   let corrected = search ?? "";
@@ -950,7 +968,11 @@ function decodeCursor(value: string | null): KeysetCursor | OffsetCursor | null 
   if (!value) return null;
   try {
     const cursor = JSON.parse(decodeURIComponent(escape(atob(value))));
-    if (typeof cursor.offset === "number" && Number.isFinite(cursor.offset)) return { offset: cursor.offset };
+    // Integer, not merely finite: the offset is bound into `LIMIT ? OFFSET ?`, and SQLite answers
+    // a REAL there with "datatype mismatch" -- so a crafted {"offset":0.5} cursor was a one-request
+    // 500. Negative and huge values were already clamped; the fraction was the only value that
+    // slipped through to the statement.
+    if (Number.isInteger(cursor.offset)) return { offset: cursor.offset };
     const validValue = typeof cursor.value === "string" || cursor.value === null;
     return validValue && typeof cursor.key === "string" ? cursor : null;
   } catch {
@@ -968,7 +990,9 @@ function toPublicJob(job: JobRow): PublicJob {
     // Our own origin, so the response carries cache-control the browser can use. The ATS hosts send
     // none -- a Workday logo has no cache-control, no etag and no last-modified -- so every scroll
     // back into a virtualized row and every re-open of the Company dropdown re-downloaded it.
-    companyLogoUrl: job.hasLogo ? logoProxyUrl(job.boardKey) : null,
+    // The company rides along for aggregator boards: one Getro board is many companies, and a
+    // board-only key made every row on it draw whichever single logo LIMIT 1 happened to pick.
+    companyLogoUrl: job.hasLogo ? logoProxyUrl(job.boardKey, company) : null,
     companyColor: companyColor(company),
     location: job.location || "Location not specified",
     country: job.country ?? null,
@@ -988,9 +1012,12 @@ function toPublicJob(job: JobRow): PublicJob {
 }
 
 // One place that knows the shape of the proxy path, shared by the jobs rows and the Company
-// dropdown so the two can never drift into requesting different URLs for the same logo.
-export function logoProxyUrl(boardKey: string) {
-  return `/api/logo?b=${encodeURIComponent(boardKey)}`;
+// dropdown so the two can never drift into requesting different URLs for the same logo. The
+// optional company narrows the lookup within a board -- required for correctness on aggregator
+// boards (Getro), where one board key spans many companies' logos.
+export function logoProxyUrl(boardKey: string, company?: string | null) {
+  const base = `/api/logo?b=${encodeURIComponent(boardKey)}`;
+  return company ? `${base}&c=${encodeURIComponent(company)}` : base;
 }
 
 function initials(value: string) {

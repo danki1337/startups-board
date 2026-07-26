@@ -125,3 +125,16 @@ test("a single location has nothing hidden", () => {
   const one = splitLocations("San Francisco, CA");
   assert.deepEqual(one, { primary: "San Francisco, CA", extra: 0, all: "San Francisco, CA", count: null });
 });
+
+test("a remote entry in a middot or semicolon list leaves no dangling separator", () => {
+  // The strip used to treat "Berlin · Remote" as ONE segment (its boundaries knew commas but not
+  // middots), strip the trailing word, and render "Berlin ·" -- separator and all -- in the column
+  // and its tooltip. Each shape below was a measured production rendering.
+  assert.equal(splitLocations("Berlin · Remote").primary, "Berlin");
+  assert.equal(splitLocations("Remote; Berlin").primary, "Berlin");
+  assert.equal(splitLocations("Remote; Remote").primary, "");
+  const list = splitLocations("Berlin · Munich · Remote");
+  assert.equal(list.primary, "Berlin");
+  // Munich survives as the hidden count even though the remote entry was dropped mid-list.
+  assert.equal(list.extra, 1);
+});

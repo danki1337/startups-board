@@ -98,12 +98,15 @@ export function tidyLocation(value) {
 //
 // Conservative on purpose. Only a whole segment that says nothing but "remote" is dropped, plus the
 // two prefix forms the ATSs actually write ("Remote in Europe", "Remote-WesternEurope") and the
-// trailing form ("US Remote"). A segment is bounded by a comma, a pipe, a slash or a SPACED hyphen
-// -- spaced, so that Winston-Salem and Baden-Baden survive.
+// trailing form ("US Remote"). A segment is bounded by a comma, a pipe, a slash, a semicolon, a
+// middot (Ashby's list separator) or a SPACED hyphen -- spaced, so that Winston-Salem and
+// Baden-Baden survive. The middot and semicolon were missing at first, so "Berlin · Remote" was
+// one segment whose trailing word got stripped -- rendering "Berlin ·", dangling separator and all,
+// in the column and its tooltip.
 // Anything it does not recognise is returned untouched: a location it fails to strip still reads as
 // a place, whereas one it mangles does not.
 const REMOTE_ONLY = /^(?:fully\s+|100%\s+|is\s+|entirely\s+)?remote(?:\s+(?:work|only|first|position|role|job))?$/i;
-const SEGMENT = /\s*(?:[,|/]|\s[-–—]\s)\s*/;
+const SEGMENT = /\s*(?:[,|/;·•]|\s[-–—]\s)\s*/;
 
 // Per SEGMENT, not over the whole string, and that ordering is the whole correctness of it. Doing
 // the trailing "... Remote" strip first turned "Europe, Remote" into "Europe," (a dangling comma)
@@ -161,8 +164,13 @@ export function splitLocations(location) {
     return { primary: "", extra: 0, all: value, count: counted[1] ? Number(counted[1]) : 0 };
   }
 
-  const parts = value.split(/\s*[;·•]\s*|\s+·\s+/).map((part) => stripRemote(tidyLocation(part))).filter(Boolean);
-  if (parts.length <= 1) return { primary: value, extra: 0, all: value, count: null };
+  // Split from the TIDIED original, not from `value`: when stripRemote removes a segment it
+  // rejoins the survivors with commas, so a stripped "Berlin · Munich · Remote" no longer carries
+  // the middots this split is looking for -- the two named places would collapse into one entry
+  // and the "+1" disappear.
+  const parts = String(tidyLocation(location)).split(/\s*[;·•]\s*/)
+    .map((part) => stripRemote(part)).filter(Boolean);
+  if (parts.length <= 1) return { primary: parts[0] ?? value, extra: 0, all: value, count: null };
 
   // A count riding along with named places is Workday's shape: the count is the TOTAL, so what is
   // hidden is the total minus what we can name -- one named place out of two is "+1", not "+0".

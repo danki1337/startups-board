@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// orderChips lives in a .tsx file, so it is restated here as the same twelve lines the component
-// runs. Not ideal -- the real thing would move to its own module -- but the ordering rule is worth
-// pinning, and the alternative is no coverage at all.
+// orderChips lives in a .tsx file, so it is restated here as the same lines the component runs.
+// Not ideal -- the real thing would move to its own module -- but the ordering rule is worth
+// pinning, and the alternative is no coverage at all. The order array is caller-owned (the
+// component holds one per instance via useState), never module state: a module array leaked one
+// SSR request's ordering into the next visitor's render and guaranteed a hydration mismatch.
 let chipOrder = [];
 const chipId = (chip) => `${chip.kind}:${chip.label}`;
-function orderChips(chips) {
+function orderChips(chips, order = chipOrder) {
   const ids = chips.map(chipId);
   const present = new Set(ids);
-  const known = new Set(chipOrder);
-  chipOrder = [...chipOrder.filter((id) => present.has(id)), ...ids.filter((id) => !known.has(id))];
-  const rank = new Map(chipOrder.map((id, index) => [id, index]));
+  const known = new Set(order);
+  order.splice(0, order.length,
+    ...order.filter((id) => present.has(id)),
+    ...ids.filter((id) => !known.has(id)),
+  );
+  const rank = new Map(order.map((id, index) => [id, index]));
   return [...chips].sort((left, right) => rank.get(chipId(left)) - rank.get(chipId(right)));
 }
 

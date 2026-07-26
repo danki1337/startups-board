@@ -42,8 +42,14 @@ const EMPTY = new Response(null, {
 });
 
 export async function GET(request: Request) {
-  const board = new URL(request.url).searchParams.get("b");
+  const params = new URL(request.url).searchParams;
+  const board = params.get("b");
   if (!board) return EMPTY;
+  // Narrows the row lookup within a board -- still only ever a database key, never a URL. Required
+  // for aggregator boards: one Getro board carries N portfolio companies, each with its OWN logo on
+  // its own rows, and a board-only lookup served whichever single logo LIMIT 1 happened to hit
+  // beside every company's name on the board.
+  const company = params.get("c");
 
   // Mirrors the coalesce the jobs query itself uses: a payload-supplied logo on the board's own jobs
   // (Getro, Spark Hire, Paylocity) wins, then the one the scraper resolved onto the company. Only
@@ -51,12 +57,14 @@ export async function GET(request: Request) {
   const row = await getD1().prepare(`
     SELECT coalesce(
       (SELECT j.company_logo_url FROM jobs j
-        WHERE j.board_key = ? AND j.company_logo_url IS NOT NULL AND j.company_logo_url <> '' LIMIT 1),
+        WHERE j.board_key = ?1 AND j.company_logo_url IS NOT NULL AND j.company_logo_url <> ''
+          AND (?3 IS NULL OR j.company_name = ?3)
+        LIMIT 1),
       c.logo_url
     ) AS url
     FROM boards b LEFT JOIN companies c ON c.key = b.company_key
-    WHERE b.key = ?
-  `).bind(board, board).first<{ url: string | null }>();
+    WHERE b.key = ?2
+  `).bind(board, board, company).first<{ url: string | null }>();
 
   const url = row?.url ?? "";
   // https only. Even coming from our own database this is the last gate before fetch(), and a

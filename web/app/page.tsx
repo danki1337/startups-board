@@ -52,6 +52,11 @@ function firstPageParams(resolved: Record<string, string | string[] | undefined>
   for (const [key, value] of Object.entries(resolved)) {
     if (typeof value === "string" && value) params.set(key, value);
   }
+  // A first paint never has a cursor: queryJobs skips the count on cursor pages, so forwarding one
+  // rendered "Find 0 open roles" over a full table, dropped the canonical/OG block, and seeded the
+  // client's result cache with total 0 for the bare query. A shared mid-scroll URL now simply
+  // renders page one.
+  params.delete("cursor");
   params.set("limit", "100");
   const key = params.toString();
   const existing = paramCache.get(key);

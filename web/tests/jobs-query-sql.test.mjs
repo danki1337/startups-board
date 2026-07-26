@@ -118,6 +118,24 @@ testWithBuild("a browse count keeps every filter when the cursor is not a keyset
   assert.match(count.sql, /j\.workplace IN/);
 });
 
+testWithBuild("stacking every filter stays under D1's 100-bind ceiling", async () => {
+  // Eight set filters at 12 values each bound 96 parameters before the text filters took theirs --
+  // 109 total, and D1 throws "too many SQL variables": a 500 from a shareable URL. The shared
+  // budget truncates the later filters instead of failing the whole request.
+  const twelve = (prefix) => Array.from({ length: 12 }, (_, i) => `${prefix}${i}`).join(",");
+  const statements = await capture(
+    `country=${twelve("c")}&city=${twelve("t")}&roleFamily=${twelve("r")}&industry=${twelve("i")}` +
+    `&workplace=${twelve("w")}&employmentType=${twelve("e")}&provider=${twelve("p")}` +
+    `&title=engineer&company=acme&location=berlin&search=nurse&postedWithin=7`,
+  );
+  for (const statement of statements) {
+    assert.ok(
+      statement.bindings.length <= 100,
+      `a statement bound ${statement.bindings.length} parameters:\n${statement.sql.slice(0, 200)}`,
+    );
+  }
+});
+
 testWithBuild("the unfiltered browse count comes from provider_health, not a corpus scan", async () => {
   // count(*) over every active row read ~1.6M rows PER HOMEPAGE VIEW -- the one query that made
   // traffic itself expensive. provider_health carries the same total, maintained incrementally and
@@ -164,9 +182,12 @@ testWithBuild("a logo request never carries a URL the caller chose", async () =>
 
 testWithBuild("the logo route refuses anything it cannot resolve to one of two columns", async () => {
   const route = await readFile(new URL("../app/api/logo/route.ts", import.meta.url), "utf8");
-  // No caller-supplied URL reaches fetch().
-  assert.doesNotMatch(route, /searchParams\.get\(["'](?:url|u|src)["']\)/);
-  assert.match(route, /searchParams\.get\("b"\)/);
+  // No caller-supplied URL reaches fetch(). The route takes a board key and (for aggregator
+  // boards, where one board spans many companies' logos) a company NAME -- both only ever database
+  // lookup keys, never something fetched.
+  assert.doesNotMatch(route, /\.get\(["'](?:url|u|src)["']\)/);
+  assert.match(route, /params\.get\("b"\)/);
+  assert.match(route, /params\.get\("c"\)/);
   // https only, as the last gate before fetch -- a stored value is only as trustworthy as the ATS
   // page it was scraped from.
   assert.match(route, /startsWith\("https:\/\/"\)/);

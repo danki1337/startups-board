@@ -240,28 +240,29 @@ type Filters = {
 
 // The order chips are shown in: first applied, first in the row.
 //
-// A module-level array rather than a ref or a piece of state. A ref cannot be read during render
-// (the hooks lint forbids it, correctly), and state would need an effect to update -- which means
-// the first paint after applying a filter shows the OLD order and then reshuffles, a visible flick
-// on exactly the element that just changed. Same reasoning as widthCache further down.
+// The caller OWNS the order array and passes it in -- it must never be module state. This renders
+// on the server too, where one isolate serves many visitors: a module-level array accumulated one
+// visitor's application order and imposed it on the next request's chips, so two identical URLs
+// rendered differently depending on who filtered before you -- and, because the client's copy
+// always started empty, every polluted server render was a hydration mismatch on the chip row.
+// Updated in place during render (not state): an effect would paint the OLD order first and
+// reshuffle -- a visible flick on exactly the element that just changed.
 // Reconciled rather than appended blindly: ids that no longer exist are dropped, so removing a chip
 // and re-adding it puts it at the end again, which is what "when it was applied" means.
-let chipOrder: string[] = [];
-
 function chipId(chip: ActiveChip) {
   return `${chip.kind}:${chip.label}`;
 }
 
-export function orderChips(chips: ActiveChip[]) {
+export function orderChips(chips: ActiveChip[], order: string[] = []) {
   const ids = chips.map(chipId);
   const present = new Set(ids);
-  const known = new Set(chipOrder);
-  chipOrder = [
-    ...chipOrder.filter((id) => present.has(id)),
+  const known = new Set(order);
+  order.splice(0, order.length,
+    ...order.filter((id) => present.has(id)),
     ...ids.filter((id) => !known.has(id)),
-  ];
-  const rank = new Map(chipOrder.map((id, index) => [id, index]));
-  // Stable by construction: every id is in `rank`, because chipOrder was just rebuilt from these
+  );
+  const rank = new Map(order.map((id, index) => [id, index]));
+  // Stable by construction: every id is in `rank`, because the order was just rebuilt from these
   // exact chips.
   return [...chips].sort((left, right) => rank.get(chipId(left))! - rank.get(chipId(right))!);
 }
@@ -614,6 +615,10 @@ export function JobsExplorer({
     // this effect's job, so the cascading-render rule does not apply.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPagingError(false);
+    // The refresh-failed banner belongs to the query that failed, for the same reason: uncleared,
+    // it sat accusing a brand-new filter's results of being stale before their request had even
+    // been sent -- and if that request was aborted mid-typing, nothing ever took it down.
+    setError(null);
 
     if (skipNextFetch.current) {
       skipNextFetch.current = false;
@@ -631,6 +636,12 @@ export function JobsExplorer({
       setTotalCapped(cached.totalCapped);
       setCorrectedTo(null); // re-established by the refresh fetch below
       setCursor(cached.cursor);
+    } else {
+      // A cursor belongs to the result set it came from. On a cache miss the old rows stay up (as
+      // the dimmed skeleton backdrop) but the cursor must not: loadMore's stale-query guard checks
+      // FILTERS, not cursors, so an endReached during the debounce+fetch window issued "new
+      // filters + old cursor" and appended page one of the new results under the old list.
+      setCursor(null);
     }
 
     // Busy is owned by THIS effect, not by the input's onChange.
@@ -724,6 +735,10 @@ export function JobsExplorer({
     }
   }, [cursor, isPaging, queryString]);
 
+  // One order array per component instance, mutated in place by orderChips. useState's initializer
+  // gives a stable identity without re-renders; per-instance is what makes it SSR-safe (a module
+  // array shared one visitor's ordering with the next request's render).
+  const [chipOrderStore] = useState(() => [] as string[]);
   const activeChips = useMemo(() => {
     const chips: ActiveChip[] = [];
     if (filters.search.trim()) chips.push({ kind: "search", label: `“${filters.search.trim()}”`, clear: () => update({ search: "" }) });
@@ -762,8 +777,8 @@ export function JobsExplorer({
     // already there, and the chip you just added appeared somewhere in the middle of a row you were
     // not looking at. Appending keeps the newest at the end, where the eye already is because that
     // is where the previous one landed.
-    return orderChips(chips);
-  }, [filters, watchlistActive, jobs]);
+    return orderChips(chips, chipOrderStore);
+  }, [filters, watchlistActive, jobs, chipOrderStore]);
 
   // How many things "Clear all" would actually clear. Not simply activeChips.length: the date filter
   // deliberately has no chip of its own (the date pill already shows its own selection, and a chip
@@ -784,10 +799,13 @@ export function JobsExplorer({
   // arrow here would hand it a new function on every parent render.
   const renderHeader = useCallback(() => <TableHeader widths={widths} />, [widths]);
 
-  // A small "Showing results for X" note when a typo'd search was auto-corrected.
+  // A small "Showing results for X" note when a typo'd search was auto-corrected. `inert` when
+  // collapsed, exactly like the chips row and the failure banner: row-collapse hides visually
+  // (0fr + opacity) but removes nothing from the accessibility tree, so without it every visitor's
+  // screen reader met a dangling "Showing results for" with an empty value on every page load.
   const correctionNote = (
     <div className={`row-collapse ${correctedTo ? "is-open" : ""}`}>
-      <div>
+      <div inert={correctedTo ? undefined : true}>
         <p className="mb-2 px-1 text-[13px] text-[var(--muted)]">
           Showing results for <span className="font-bold text-[var(--ink)]">{correctedTo}</span>
         </p>
@@ -805,7 +823,10 @@ export function JobsExplorer({
     <div className={`row-collapse ${error && jobs.length > 0 ? "is-open" : ""}`}>
       <div inert={error && jobs.length > 0 ? undefined : true}>
         <div role="status" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--danger-wash)] px-3 py-2 text-[13px] text-[var(--danger-ink)]">
-          <span>These results may be out of date &mdash; the last refresh failed.</span>
+          {/* Mounted only while failed: role="status" announces on CONTENT change, not visibility
+              change, so text that was present from first paint was never read out when the failure
+              actually happened. */}
+          <span>{error ? <>These results may be out of date &mdash; the last refresh failed.</> : null}</span>
           <button
             type="button"
             onClick={() => setRetryToken((token) => token + 1)}
@@ -2779,7 +2800,11 @@ function JobCells({
             <span className="min-w-0 truncate text-[var(--muted)]">
               {places.count > 0 ? `${places.count} locations` : "Multiple locations"}
             </span>
-          ) : (
+          ) : !places.primary && !job.city ? null : (
+            // Nothing at all when there is no place to name -- a Remote-only location strips to the
+            // empty string, and the unguarded branch rendered an empty, tab-focusable button whose
+            // click filtered by "" (a no-op) on every remote-only row: a nameless control with a
+            // dead target, on a very large slice of the table.
             <>
               <button
                 type="button"
@@ -2790,7 +2815,7 @@ function JobCells({
                 {...locationTip.tipProps}
                 className="-mx-1.5 min-w-0 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
-                {places.primary}
+                {places.primary || job.city}
               </button>
               {/* The remaining places, as a count rather than a truncated run-on. The full list is
                   the tooltip, so nothing is hidden -- it just stops one posting in three from
