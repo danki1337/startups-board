@@ -54,6 +54,24 @@ export function queueForProvider(env, provider) {
   return binding ? env[binding] : null;
 }
 
+// 429 is the host rate limiting; 530 is what Getro answers when pushed (a Cloudflare origin code
+// used the same way). Both mean "the PROVIDER wants less traffic", which no per-board error ladder
+// can express -- so they get their own, longer backoff and are never retried in place.
+export function isRateLimitError(message) {
+  return /\bHTTP (?:429|530)\b/.test(message ?? "");
+}
+
+// Hours, not the error ladder's minutes: measured on production, the 15-minute ladder walked
+// 45,687 Paylocity refreshes into the same 429 in one day -- each burning its queue retries and
+// ~13 rows of failure bookkeeping. Doubles per consecutive failure, capped at a day. The ±25%
+// jitter matters as much as the length: every board of a provider tends to hit the limit in the
+// same minute, and without it they all come back in the same minute too.
+export function rateLimitNextSyncAt(failureCount = 1, now = Date.now()) {
+  const hours = Math.min(24, 2 ** Math.max(1, Math.floor(failureCount) || 1));
+  const jitter = 0.75 + Math.random() * 0.5;
+  return new Date(now + hours * 60 * 60 * 1_000 * jitter).toISOString();
+}
+
 /**
  * @param {string} status
  * @param {number} failureCount consecutive failures, for the error backoff

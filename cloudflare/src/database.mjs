@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
 import { companyDisplayExpression } from "../../src/company-name.mjs";
-import { ACTIVE_REFRESH_LADDER_HOURS, INVALID_CLOSE_STRIKES, nextSyncAt } from "./config.mjs";
+import {
+  ACTIVE_REFRESH_LADDER_HOURS,
+  INVALID_CLOSE_STRIKES,
+  isRateLimitError,
+  nextSyncAt,
+  rateLimitNextSyncAt,
+} from "./config.mjs";
 
 // Providers that re-list other boards' jobs rather than hosting their own, so their snapshots are
 // deduplicated against the native postings at ingestion.
@@ -70,10 +76,12 @@ export async function applyBoardSnapshot(db, result, options = {}) {
   let changedJobs = 0;
   let closedJobs = 0;
 
-  await db.prepare(`
-    INSERT INTO sync_runs (id, board_key, provider, status, job_count, started_at)
-    VALUES (?, ?, ?, 'running', 0, ?)
-  `).bind(runId, board.key, board.provider, now).run();
+  // sync_runs is written ONCE, at the end, with its final status. It used to be INSERTed as
+  // 'running' up front and UPDATEd at completion -- two statements and ~9 index-amplified rows per
+  // refresh, ~113,000 times a day, purely so abandoned runs could be detected. But the queue
+  // already owns that: a consumer that dies never acks, the message redelivers, and the 2-hour
+  // queued-state reclaim in enqueueDueBoards unsticks the board. The 'running' row was a second,
+  // more expensive copy of bookkeeping the system already had.
 
   if (board.status === "error") {
     await recordBoardFailure(db, board, runId, { escalate: options.escalate });
@@ -241,9 +249,10 @@ export async function applyBoardSnapshot(db, result, options = {}) {
       companyKey, now, board.key,
     ),
     db.prepare(`
-      UPDATE sync_runs SET status = 'complete', job_count = ?, changed_jobs = ?,
-        closed_jobs = ?, completed_at = ? WHERE id = ?
-    `).bind(board.jobCount, changedJobs, closedJobs, now, runId),
+      INSERT INTO sync_runs (id, board_key, provider, status, job_count, changed_jobs,
+        closed_jobs, started_at, completed_at)
+      VALUES (?, ?, ?, 'complete', ?, ?, ?, ?, ?)
+    `).bind(runId, board.key, board.provider, board.jobCount, changedJobs, closedJobs, now, now),
     db.prepare(`
       INSERT INTO provider_health (provider, successful_runs, failed_runs, active_jobs, last_success_at, updated_at)
       VALUES (?, 1, 0, ?, ?, ?)
@@ -303,10 +312,17 @@ export async function suppressDuplicatedAggregatorJobs(db, incoming) {
   const activeKeys = new Set();
   for (const group of chunks([...keys], D1_MAX_BIND)) {
     const placeholders = group.map(() => "?").join(",");
+    // is_active is filtered HERE, not in the SQL. With `is_active = 1 AND key IN (...)` the planner
+    // chose jobs_active_published_idx -- it covers `key`, so scanning every active entry looked
+    // cheaper to it than probing the primary key -- and each probe read ~1.6M rows instead of ~100.
+    // At 900 runs a day that one plan was 1.48 BILLION rows read, ~80% of the entire D1 read bill.
+    // With `key` alone in the WHERE, the primary key is the only usable index.
     const rows = await db.prepare(`
-      SELECT key FROM jobs WHERE is_active = 1 AND key IN (${placeholders})
+      SELECT key, is_active AS isActive FROM jobs WHERE key IN (${placeholders})
     `).bind(...group).all();
-    for (const row of rows.results ?? []) activeKeys.add(String(row.key));
+    for (const row of rows.results ?? []) {
+      if (Number(row.isActive) === 1) activeKeys.add(String(row.key));
+    }
   }
 
   return incoming.filter((_, index) => {
@@ -332,14 +348,21 @@ async function recordBoardFailure(db, board, runId, options = {}) {
   // first delivery of a refresh escalates; its retries record the error without advancing the count.
   const failureCount = Number(current?.failureCount ?? 0) + (options.escalate === false ? 0 : 1);
   const now = board.syncedAt;
+  // A rate limit is the provider pushing back on the whole fleet, not this board failing: the
+  // 15-minute error ladder walked straight back into it (45,687 Paylocity refreshes 429ed in one
+  // day), so 429/530 boards step aside for hours, jittered so they do not all come back at once.
+  const retryAt = isRateLimitError(board.error)
+    ? rateLimitNextSyncAt(failureCount, Date.parse(now))
+    : nextSyncAt(status, failureCount, Date.parse(now));
   await db.batch([
     db.prepare(`
       UPDATE boards SET status = ?, queue_state = 'idle', failure_count = ?,
         last_synced_at = ?, next_sync_at = ?, last_error = ?, updated_at = ? WHERE key = ?
-    `).bind(status, failureCount, now, nextSyncAt(status, failureCount, Date.parse(now)), board.error, now, board.key),
+    `).bind(status, failureCount, now, retryAt, board.error, now, board.key),
     db.prepare(`
-      UPDATE sync_runs SET status = 'error', error = ?, completed_at = ? WHERE id = ?
-    `).bind(board.error, now, runId),
+      INSERT INTO sync_runs (id, board_key, provider, status, job_count, error, started_at, completed_at)
+      VALUES (?, ?, ?, 'error', 0, ?, ?, ?)
+    `).bind(runId, board.key, board.provider, board.error, now, now),
     db.prepare(`
       INSERT INTO provider_health (provider, successful_runs, failed_runs, active_jobs, last_failure_at, last_error, updated_at)
       VALUES (?, 0, 1, 0, ?, ?, ?)
@@ -456,22 +479,6 @@ export async function reconcileProviderHealth(db, now = new Date().toISOString()
     "UPDATE provider_health SET active_jobs = ?, updated_at = ? WHERE provider = ?",
   ).bind(Number(row.activeJobs ?? 0), now, row.provider)));
   return { reconciled: rows.length };
-}
-
-// applyBoardSnapshot writes its sync_runs row as 'running' and only flips it at the end, so any
-// refresh that dies mid-write -- a D1 timeout partway through the job batches, an evicted isolate --
-// leaves the row 'running' forever. Nothing reconciled them: the daily crons covered
-// provider_health, failed_tasks and pruning, but not this, so the ops view showed a growing set of
-// runs that never finished and could not be distinguished from ones genuinely in flight.
-//
-// A refresh cannot outlive the queue consumer's own ceiling, so anything still 'running' after a
-// couple of hours is abandoned by definition.
-export async function reconcileStuckSyncRuns(db, now = new Date().toISOString(), staleHours = 3) {
-  const result = await db.prepare(`
-    UPDATE sync_runs SET status = 'abandoned', error = 'Run did not complete', completed_at = ?
-    WHERE status = 'running' AND started_at < ?
-  `).bind(now, isoShift(now, -staleHours * 60 * 60 * 1_000)).run();
-  return { reconciled: Number(result.meta?.changes ?? 0) };
 }
 
 // One sync_runs row is written per board refresh and nothing removed them, so the table grew

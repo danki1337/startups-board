@@ -6,7 +6,7 @@ import {
 } from "../../src/company-logo.mjs";
 import { syncBoard } from "../../src/jobs.mjs";
 import { requestWithRetry } from "../../src/validation.mjs";
-import { queueForProvider } from "./config.mjs";
+import { isRateLimitError, queueForProvider, rateLimitNextSyncAt } from "./config.mjs";
 
 const LOGO_RECHECK_MS = 30 * 24 * 60 * 60 * 1_000;
 import {
@@ -18,7 +18,6 @@ import {
   pruneFailedTasks,
   pruneSyncRuns,
   reconcileFailedTasks,
-  reconcileStuckSyncRuns,
   reconcileProviderHealth,
   refreshTitleSuggestions,
   refreshCompanySuggestions,
@@ -42,7 +41,6 @@ export async function scheduled(controller, env, ctx) {
       reconcileProviderHealth(env.DB, dailyAt),
       pruneSyncRuns(env.DB, dailyAt),
       reconcileFailedTasks(env.DB, dailyAt),
-      reconcileStuckSyncRuns(env.DB, dailyAt),
       pruneFailedTasks(env.DB, dailyAt),
       refreshTitleSuggestions(env.DB, dailyAt),
       refreshCompanySuggestions(env.DB, dailyAt),
@@ -68,10 +66,19 @@ export async function queue(batch, env) {
     return;
   }
 
+  // A rate limit is provider-wide: once one board in this batch has answered 429/530, the other
+  // nine are going to as well, and fetching them anyway is exactly the traffic the provider just
+  // asked us to stop sending. Boards behind a limit the batch has already seen are stepped aside
+  // without touching the ATS -- rescheduled hours out, no failure recorded, because they were
+  // never actually attempted.
+  const rateLimited = new Set();
   for (const message of batch.messages) {
+    const provider = message.body?.board?.provider;
     try {
       if (message.body?.type === "discovery") {
         await processDiscoveryTask(env, message.body);
+      } else if (provider && rateLimited.has(provider)) {
+        await stepAsideForRateLimit(env.DB, message.body.board);
       } else {
         // Only the first delivery advances the board.s failure ladder; the queue.s own retries of
         // the same refresh must not compound with it.
@@ -79,10 +86,24 @@ export async function queue(batch, env) {
       }
       message.ack();
     } catch (error) {
+      if (error.rateLimited && provider) {
+        // The failure and its hours-long backoff are already recorded on the board; a queue retry
+        // would just walk back into the limit five more times. Acked, not retried.
+        rateLimited.add(provider);
+        message.ack();
+        continue;
+      }
       console.error("Queue task failed", { queue: batch.queue, error: error.message });
       message.retry({ delaySeconds: retryDelay(message.attempts ?? 1) });
     }
   }
+}
+
+async function stepAsideForRateLimit(db, board) {
+  const now = new Date().toISOString();
+  await db.prepare(
+    "UPDATE boards SET queue_state = 'idle', next_sync_at = ?, updated_at = ? WHERE key = ?",
+  ).bind(rateLimitNextSyncAt(1, Date.parse(now)), now, board.key).run();
 }
 
 export async function handleOperatorRequest(request, env) {
@@ -163,7 +184,13 @@ async function processBoardTask(env, task, options = {}) {
   result.companyLogoUrl = logo.url;
   result.logoChecked = logo.checked;
   const applied = await applyBoardSnapshot(env.DB, result, { escalate: options.escalate });
-  if (applied.retry) throw new Error(result.board.error || "ATS refresh failed");
+  if (applied.retry) {
+    const error = new Error(result.board.error || "ATS refresh failed");
+    // Read by the queue handler: a rate-limited refresh is acked (its long backoff is already on
+    // the board) and poisons the provider for the rest of the batch.
+    error.rateLimited = isRateLimitError(result.board.error);
+    throw error;
+  }
   return applied;
 }
 

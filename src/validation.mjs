@@ -142,7 +142,11 @@ function classifyError(error) {
 }
 
 function isRetryableStatus(status) {
-  return status === 408 || status === 429 || status >= 500;
+  // 429 (and 530, Getro's version of it) are deliberately NOT here: they are the host asking for
+  // less traffic, and re-requesting 300ms later is more of exactly what triggered them. The sync
+  // scheduler gives rate-limited boards an hours-long jittered backoff instead; retrying in
+  // process just multiplied every doomed refresh by three requests.
+  return status === 408 || (status >= 500 && status !== 530);
 }
 
 function delay(milliseconds) {

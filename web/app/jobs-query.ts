@@ -379,9 +379,19 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const countConditions = hasKeysetCursor ? conditions.slice(0, -1) : conditions;
   const countWhere = countConditions.join(" AND ");
   const countBindings = bindings.slice(0, filterBindingCount);
-  const count = isSearch
-    ? db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings)
-    : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
+  // The unfiltered browse -- the homepage, by far the most requested shape -- is the one whose
+  // exact count(*) walks the entire active index: ~1.6M rows read per view, to decorate the h1
+  // with a number. That is $0.0017 of D1 reads PER PAGE VIEW, the single thing that would have
+  // made traffic expensive. provider_health already holds per-provider active counts, maintained
+  // incrementally on every refresh and recomputed exactly once a day, so the same number is a
+  // 12-row sum. Every filtered or searched count still runs against jobs, where the filter's own
+  // index (or the search cap) bounds the work.
+  const isBareBrowse = !isSearch && countConditions.length === 1;
+  const count = isBareBrowse
+    ? db.prepare("SELECT coalesce(sum(active_jobs), 0) AS total FROM provider_health")
+    : isSearch
+      ? db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings)
+      : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
 
   // Only the first page of a result set needs the total. The infinite scroll keeps the count it got
   // from that page and never reads `total` off a cursor response -- but every scroll page was still
@@ -393,7 +403,15 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     ? await db.batch([select, count])
     : [(await select.all()) as { results: unknown[] }, null];
   const fetched = rowsResult.results as unknown as JobRow[];
-  const rawTotal = Number((countResult?.results[0] as { total?: number } | undefined)?.total ?? 0);
+  let rawTotal = Number((countResult?.results[0] as { total?: number } | undefined)?.total ?? 0);
+  // provider_health is empty on a fresh database (local dev, a rebuilt environment) while jobs may
+  // not be -- and "Find 0 open roles" above a full table is worse than one exact count. Zero is the
+  // only value that can be wrong here: any positive sum came from real refreshes.
+  if (isBareBrowse && withCount && rawTotal === 0) {
+    const exact = await db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`)
+      .bind(...countBindings).first<{ total: number }>();
+    rawTotal = Number(exact?.total ?? 0);
+  }
   const totalCapped = withCount && isSearch && rawTotal > COUNT_CAP;
   // null, not 0: a cursor page has no opinion about the total, and 0 would read as "no results" to
   // anything that trusted it.

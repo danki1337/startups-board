@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { INVALID_CLOSE_STRIKES, nextSyncAt, PROVIDER_QUEUE_BINDINGS } from "../cloudflare/src/config.mjs";
+import {
+  INVALID_CLOSE_STRIKES,
+  isRateLimitError,
+  nextSyncAt,
+  PROVIDER_QUEUE_BINDINGS,
+} from "../cloudflare/src/config.mjs";
 import { applyBoardSnapshot, suppressDuplicatedAggregatorJobs } from "../cloudflare/src/database.mjs";
 import { parseAtsUrl } from "../src/providers.mjs";
 
@@ -9,7 +14,7 @@ import { parseAtsUrl } from "../src/providers.mjs";
 // (provider, source_id) seek and the primary-key seek. It filters the bound params exactly as the
 // real index-backed queries would, so the test exercises grouping, chunking, and key-vs-source-id
 // routing rather than the SQL itself.
-function stubNativeDb({ sourceIds = new Set(), keys = new Set() } = {}) {
+function stubNativeDb({ sourceIds = new Set(), keys = new Set(), inactiveKeys = new Set() } = {}) {
   return {
     prepare(sql) {
       let bound = [];
@@ -23,8 +28,17 @@ function stubNativeDb({ sourceIds = new Set(), keys = new Set() } = {}) {
         },
         // eslint-disable-next-line require-await
         async all() {
-          if (/SELECT key FROM jobs/.test(sql)) {
-            return { results: bound.filter((key) => keys.has(key)).map((key) => ({ key })) };
+          if (/SELECT key, is_active AS isActive FROM jobs/.test(sql)) {
+            // The key probe deliberately carries no is_active predicate -- with one, the planner
+            // scanned every active row through a covering index instead of probing the primary key
+            // (1.48B rows read a day). The stub answers the way the real table does: a row per
+            // existing key, active or not, and the caller filters.
+            assert.doesNotMatch(sql, /is_active = 1/);
+            return {
+              results: bound
+                .filter((key) => keys.has(key) || inactiveKeys.has(key))
+                .map((key) => ({ key, isActive: inactiveKeys.has(key) ? 0 : 1 })),
+            };
           }
           const [provider, ...ids] = bound;
           return {
@@ -207,6 +221,60 @@ function recordingDb(failureCount = 0, options = {}) {
 }
 
 const ran = (db, pattern) => db.statements.some((entry) => pattern.test(entry.sql));
+
+test("a refresh writes its sync_runs row once, with the final status", async () => {
+  // The row used to be INSERTed as 'running' and UPDATEd at completion: two index-amplified writes
+  // per refresh, ~113,000 times a day, to detect abandonment the queue already detects (an unacked
+  // message redelivers; a stuck 'queued' board is reclaimed after 2 hours).
+  const db = recordingDb(0, { changes: 1 });
+  await applyBoardSnapshot(db, snapshot([sampleJob("a")]));
+  const runs = db.statements.filter((entry) => /INTO sync_runs/.test(entry.sql) && entry.args);
+  assert.equal(runs.length, 1);
+  assert.match(runs[0].sql, /'complete'/);
+  assert.equal(ran(db, /'running'/), false);
+  assert.equal(ran(db, /UPDATE sync_runs/), false);
+});
+
+test("a rate-limited refresh backs off hours, not the error ladder's minutes", async () => {
+  // Three prior failures on record; this 429 is the fourth. The 15-minute ladder would try again
+  // in 4 hours at most and re-enter the same provider-wide limit -- production measured 45,687
+  // Paylocity refreshes burned that way in a single day.
+  const db = recordingDb(3);
+  await applyBoardSnapshot(db, {
+    board: {
+      key: "paylocity:global:x", provider: "paylocity", identifier: "x", status: "error",
+      jobCount: 0, syncedAt: "2026-07-26T00:00:00.000Z", error: "HTTP 429 from recruiting.paylocity.com",
+    },
+    jobs: [],
+  });
+  const update = db.statements.find((entry) => /UPDATE boards SET status/.test(entry.sql) && entry.args);
+  const hours = (Date.parse(update.args[3]) - Date.parse("2026-07-26T00:00:00.000Z")) / 3_600_000;
+  // failure_count 4 doubles to a 16h base; the ±25% jitter is the point, so assert the band.
+  assert.ok(hours >= 12 && hours <= 20, `expected ~16h jittered backoff, got ${hours.toFixed(1)}h`);
+  // The failed run is also a single final-status INSERT.
+  const runs = db.statements.filter((entry) => /INTO sync_runs/.test(entry.sql) && entry.args);
+  assert.equal(runs.length, 1);
+  assert.match(runs[0].sql, /'error'/);
+});
+
+test("rate-limit detection matches the messages production records", () => {
+  assert.equal(isRateLimitError("HTTP 429 from recruiting.paylocity.com"), true);
+  assert.equal(isRateLimitError("HTTP 530 from api.getro.com"), true);
+  assert.equal(isRateLimitError("HTTP 404 from boards-api.greenhouse.io"), false);
+  assert.equal(isRateLimitError("Expected Paylocity window.pageData"), false);
+  assert.equal(isRateLimitError(null), false);
+});
+
+test("an inactive native twin does not suppress the aggregator's copy", async () => {
+  // The key probe returns existing rows whether active or not (the is_active filter moved out of
+  // the SQL to keep the primary key driving the plan) -- so the JS filter is what protects a job
+  // whose native posting has closed: the aggregator's live copy must survive.
+  const workdayBoard = parseAtsUrl("https://acme.wd5.myworkdayjobs.com/External");
+  const db = stubNativeDb({ inactiveKeys: new Set([`${workdayBoard.key}:Engineer_R1`]) });
+  const incoming = [{ url: "https://acme.wd5.myworkdayjobs.com/External/job/Berlin/Engineer_R1" }];
+  const kept = await suppressDuplicatedAggregatorJobs(db, incoming);
+  assert.equal(kept.length, 1);
+});
 
 test("an invalid board response never closes the board's jobs", async () => {
   // "invalid" covers a 4xx, a bot challenge and a proxy-truncated body as well as a genuinely dead

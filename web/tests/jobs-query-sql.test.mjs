@@ -118,6 +118,25 @@ testWithBuild("a browse count keeps every filter when the cursor is not a keyset
   assert.match(count.sql, /j\.workplace IN/);
 });
 
+testWithBuild("the unfiltered browse count comes from provider_health, not a corpus scan", async () => {
+  // count(*) over every active row read ~1.6M rows PER HOMEPAGE VIEW -- the one query that made
+  // traffic itself expensive. provider_health carries the same total, maintained incrementally and
+  // reconciled daily, in ~12 rows.
+  const statements = await capture("limit=1");
+  const health = statements.find((s) => /sum\(active_jobs\)/.test(s.sql));
+  assert.ok(health, "expected the provider_health sum to be prepared for the bare browse");
+
+  // Zero is the one provider_health answer that cannot be trusted (fresh database, local dev), and
+  // the recorder answers zero -- so the exact count must have been prepared as the fallback.
+  const exact = countQuery(statements);
+  assert.ok(exact, "expected the exact count as the zero fallback");
+
+  // Any real filter puts the count back on the jobs table, where its index bounds the work.
+  const filtered = await capture("workplace=Remote&limit=1");
+  assert.equal(filtered.some((s) => /sum\(active_jobs\)/.test(s.sql)), false);
+  assert.match(countQuery(filtered).sql, /count\(\*\) AS total FROM jobs j/);
+});
+
 testWithBuild("the company filter compares against the shared display expression", async () => {
   const statements = await capture("company=Vhchealth");
   const rows = rowQuery(statements);
