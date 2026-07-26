@@ -30,28 +30,33 @@
      The accent and the danger ink are NOT part of this scale -- they are semantic (this is your
      filter / this failed), not a step in a neutral ramp. */
   --muted: rgba(60, 60, 67, 0.74);
-  /* Pink is the primary. --accent is the brand hue (decorative surfaces, focus ring);
-     --accent-strong is the text-safe shade — it carries ~4.9:1 on --accent-wash, which the brand
-     pink itself does not. */
-  --accent: #f50fb4;
-  /* Deliberately the same value as --accent now: every pink FOREGROUND on the page is the brand
-     colour, with no darker sibling.
-     Kept as a separate token rather than collapsed, because it marks the places that carry TEXT --
-     and that distinction is the one to reach for if the contrast below ever needs fixing, since it
-     can be re-pointed at a darker shade in one line without touching a single component.
-     Worth knowing what was traded: #f50fb4 has a relative luminance of 0.2305, so reaching 4.5:1
-     would need a background at 1.212 -- brighter than white, at 1.000. No derivation gets there.
-     It is therefore 3.74:1 at best, which passes for LARGE text (the 28px headline count), for
-     icons and for focus rings (all 3:1), and fails for small text: the selected filter pill's
-     13px label sits at 3.23:1 on the wash. */
-  --accent-strong: #f50fb4;
-  /* Stays a pale tint, and is the one pink that cannot become #f50fb4: text is drawn ON it, so
+  /* Pink is the primary, and it is now the WORDMARK's pink: the logo above the headline is drawn in
+     #FF73E5, and an accent a shade off the logo it sits under reads as a mistake rather than as a
+     palette.
+     What that costs, measured, because it is a real cost and not a rounding one. #FF73E5 has a
+     relative luminance of 0.3918 against #f50fb4's 0.2305, so:
+                        on white   on --canvas   on --accent-wash
+       #f50fb4 (was)     3.74:1       3.65:1         3.23:1
+       #FF73E5 (now)     2.38:1       2.32:1         2.05:1
+     The old pink cleared 3:1, so it passed for LARGE text (the 28px headline count), for icons and
+     for focus rings. This one clears neither: WCAG 1.4.11 asks 3:1 of a focus indicator and --focus
+     is now 2.38:1, which is a functional regression for keyboard users rather than a cosmetic one.
+     --focus is kept as its own token precisely so that can be reversed in one line without touching
+     a single component, if the ring turns out to be too faint to find. */
+  --accent: #FF73E5;
+  /* The same value, kept as a separate token because it marks the uses that carry TEXT -- the
+     headline count, the selected pill's label, the Retry link. That is the handle to grab if the
+     contrast above ever needs to come back: re-point this one and the decorative surfaces keep the
+     brand pink. */
+  --accent-strong: #FF73E5;
+  /* Stays a pale tint, and is the one pink that cannot become #FF73E5: text is drawn ON it, so
      matching the two would leave the label invisible against its own fill. */
   --accent-wash: #ffe8f6;
   --success: #2f9b65;
-  /* The ring is the brand colour: 3.74:1 on white clears the 3:1 that WCAG 1.4.11 asks of a focus
-     indicator. */
-  --focus: #f50fb4;
+  /* The ring is the brand colour. See the note above: at 2.38:1 it no longer clears the 3:1 WCAG
+     1.4.11 asks of a focus indicator, and this is the one line to change if that matters more than
+     matching the wordmark. */
+  --focus: #FF73E5;
   --shadow-panel:
     0 1px 2px oklch(0 0 0 / 0.04),
     0 1px 1px oklch(0 0 0 / 0.03);

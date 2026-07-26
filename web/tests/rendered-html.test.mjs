@@ -211,12 +211,12 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // Pink is the primary, at the brand hue. --accent-strong is the text-safe partner: the brand
   // colour is 3.80:1 on white, which clears the 3:1 a focus ring needs but not the 4.5:1 body text
   // does, so the two are deliberately different values and both are asserted.
-  assert.match(styles, /--accent: #f50fb4/);
+  assert.match(styles, /--accent: #FF73E5/);
   // Deliberately the same value: every pink foreground is the brand colour now. The token stays
   // separate because it marks the text-bearing uses, which is where a darker shade would go back.
-  assert.match(styles, /--accent-strong: #f50fb4/);
+  assert.match(styles, /--accent-strong: #FF73E5/);
   // The wash is the one pink that must NOT match -- text is drawn on it.
-  assert.doesNotMatch(styles, /--accent-wash: #f50fb4/);
+  assert.doesNotMatch(styles, /--accent-wash: #FF73E5/);
   assert.match(styles, /@import "@heroui\/styles"/);
   assert.match(layout, /Startup jobs — Aboard/);
   assert.match(packageJson, /"@heroui\/react"/);
@@ -233,7 +233,7 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   assert.doesNotMatch(styles, /^\s*--glyph:/m);
   // The accent and the danger ink are deliberately NOT part of that scale: they are semantic, not a
   // step in a neutral ramp.
-  assert.match(styles, /--accent-strong: #f50fb4/);
+  assert.match(styles, /--accent-strong: #FF73E5/);
   assert.match(styles, /--danger-ink: #8a1f1f/);
   // The previous accent survived the palette change in three focus rings because it sat INSIDE a
   // shadow-[...] arbitrary value, which the colour rule's regex did not reach into. Both the rule
@@ -301,7 +301,7 @@ test("the wordmark is a lossless WebP that still carries its alpha", async () =>
   // 22 instead of 21 puts every field a byte out and the alpha flag reads 0 on an image that has one.
   assert.equal(bytes[20], 0x2f, "VP8L signature byte");
   const header = bytes.readUInt32LE(21);
-  assert.equal((header & 0x3fff) + 1, 354, "intrinsic width, which the markup declares");
-  assert.equal(((header >> 14) & 0x3fff) + 1, 151, "intrinsic height");
+  assert.equal((header & 0x3fff) + 1, 707, "intrinsic width, which the markup declares");
+  assert.equal(((header >> 14) & 0x3fff) + 1, 303, "intrinsic height");
   assert.ok((header >> 28) & 1, "the alpha channel must survive the conversion");
 });

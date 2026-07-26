@@ -803,9 +803,13 @@ export function JobsExplorer({
               caution: at q92 the same image encodes LARGER (23,340 vs 22,618 bytes), because lossy
               spends its bits on exactly the sharp flat-colour edges a logo is made of, and pays for
               them in ringing artefacts around every letter.
-              354px wide is 3x the 118px it renders at, which covers every retina density with room
-              to grow. The 707px source would have been 6x -- bytes and decode time for pixels
-              nobody can see. 2x would be 13KB, but leaves nothing for a size change.
+              Served at the source's NATIVE 707px, with no resampling anywhere in the pipeline. That
+              is not the obvious call and the numbers are why: downscaling to 590px produced a
+              LARGER file than the native 707 (65,356 against 57,444 bytes), because resampling
+              turns the crisp flat-colour regions a logo is made of into interpolated gradients,
+              which lossless compresses far worse. The first version of this went through sips at
+              354px and lost real detail -- the same 354px through cwebp's own filter came out 23%
+              bigger, which is the detail sips had thrown away. Downscaling cost quality AND bytes.
               width/height are the INTRINSIC size and the display size is CSS, so the browser
               reserves the right box from the ratio and the headline beneath never jumps.
               alt is the brand name, not empty: this is the only place the product names itself on
@@ -814,8 +818,8 @@ export function JobsExplorer({
           <img
             src="/aboard-wordmark.webp"
             alt="Aboard"
-            width={354}
-            height={151}
+            width={707}
+            height={303}
             className="mx-auto mb-5 block h-[51px] w-auto"
           />
           <h1
