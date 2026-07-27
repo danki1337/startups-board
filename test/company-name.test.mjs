@@ -73,7 +73,7 @@ test("the rendered company name round-trips through the filter's SQL", () => {
   });
 });
 
-test("the dropdown aggregate groups on the same value the filter matches", () => {
+test("the display expression folds a company's many boards into one name", () => {
   // Two boards of one Workday company, which is exactly the case the display expression exists for:
   // grouped raw they are three unrecognisable rows, grouped on the tenant they are one company.
   const db = withRows([
@@ -108,4 +108,43 @@ test("separators are read one at a time on both sides", () => {
   const db = withRows([{ identifier: "acme--corp", name: null, provider: "greenhouse" }]);
   const matched = db.prepare(`SELECT ${companyMatchExpression()} AS value FROM jobs`).get();
   assert.equal(normalizeCompanyValue(humanizeIdentifier("acme--corp", "greenhouse")), matched.value);
+});
+
+test("the dropdown's groups are the filter's groups", () => {
+  // The Company dropdown is built from job_companies, which is grouped once a day. It used to group
+  // on lower(display) while ?company= matched on companyMatchExpression -- two different definitions
+  // of "the same company", and the dropdown was built on the looser one.
+  //
+  // lower() folds case but not separators, so a company whose boards spell it 'aalo-atomics' and
+  // 'Aalo Atomics' was TWO groups. Both prettify to the identical string "Aalo Atomics", so the
+  // reader saw the same company listed twice with its jobs split between the entries. 17 companies
+  // on production were doubled that way; "Incredible Health" showed 580 beside its own 3.
+  const db = withRows([
+    { identifier: "aalo-atomics", name: null, provider: "greenhouse" },
+    { identifier: "aalo-atomics", name: "Aalo Atomics", provider: "lever" },
+    { identifier: "aalo.atomics", name: null, provider: "ashby" },
+  ]);
+
+  const loose = db.prepare(`
+    SELECT count(*) AS groups FROM (
+      SELECT 1 FROM jobs GROUP BY lower(${companyDisplayExpression()})
+    )
+  `).get();
+  assert.equal(loose.groups, 3, "the old grouping splits one company into three");
+
+  const tight = db.prepare(`
+    SELECT count(*) AS groups, count(*) AS n FROM (
+      SELECT 1 FROM jobs GROUP BY ${companyMatchExpression()}
+    )
+  `).get();
+  assert.equal(tight.groups, 1, "the filter's own normalisation keeps it whole");
+
+  // And the one group it produces is reachable: what the dropdown offers, normalised back, is the
+  // value the filter compares against. A group the filter cannot find is worse than a split one.
+  const row = db.prepare(`
+    SELECT min(${companyDisplayExpression()}) AS company, count(*) AS jobCount
+    FROM jobs GROUP BY ${companyMatchExpression()}
+  `).get();
+  assert.equal(row.jobCount, 3, "all three rows land in the one entry");
+  assert.equal(normalizeCompanyValue(row.company), db.prepare(`SELECT ${companyMatchExpression()} AS v FROM jobs`).get().v);
 });

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { aggregatorJobIdentity } from "../../src/providers.mjs";
 import { CONSTRUCTED_LOGO_PROVIDERS } from "../../src/company-logo.mjs";
-import { companyDisplayExpression } from "../../src/company-name.mjs";
+import { companyDisplayExpression, companyMatchExpression } from "../../src/company-name.mjs";
 import {
   ACTIVE_REFRESH_LADDER_HOURS,
   EMPTY_CLOSE_MIN_ACTIVE,
@@ -599,7 +599,17 @@ export async function refreshCompanySuggestions(db, now = new Date().toISOString
         ?
       FROM jobs
       WHERE is_active = 1 AND coalesce(nullif(company_name, ''), company_identifier) IS NOT NULL
-      GROUP BY lower(${companyDisplayExpression()})
+      -- Grouped by the expression the FILTER matches on, not by lower(display). Those are two
+      -- different definitions of "the same company" and the dropdown was built on the looser one:
+      -- lower() folds case but not separators, so 'aalo-atomics' and 'Aalo Atomics' were two groups,
+      -- both prettified to the identical string "Aalo Atomics", and the reader got the same company
+      -- twice with its 104 jobs split 52/52. Measured on production, 17 companies were doubled this
+      -- way -- "Incredible Health" showed 580 beside its own 3.
+      --
+      -- companyMatchExpression is what ?company= is compared against, so grouping on it makes every
+      -- row in this table correspond to exactly one filter value: one entry, one whole count, and
+      -- clicking it cannot land on a subset of itself.
+      GROUP BY ${companyMatchExpression()}
     `).bind(now),
   ]);
   return { companies: Number(result.meta?.changes ?? 0) };
