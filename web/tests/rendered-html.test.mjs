@@ -415,3 +415,35 @@ test("the wordmark is a lossless WebP that still carries its alpha", async () =>
   // for the transform's cheap filter to alias).
   assert.doesNotMatch(mark, /srcSet/);
 });
+
+test("the location cell's clip box is wider than the hover ground inside it", async () => {
+  const explorer = await readFile(new URL("../app/jobs-explorer.tsx", import.meta.url), "utf8");
+  // Filtering by the resolved city is unique to the location button, which is what anchors this to
+  // the right cell: the two beside it carry an identical <td> class.
+  const anchor = explorer.indexOf("onFilter({ city: [job.city]");
+  assert.ok(anchor > 0, "the location filter button moved");
+  const cell = explorer.slice(explorer.lastIndexOf("<td", anchor), explorer.indexOf("</td>", anchor));
+
+  // The first <span> in the cell is the wrapper that clips; the button is inside it. Both carry
+  // overflow-hidden, so the tag has to be part of the match or this reads the button's class.
+  const wrapper = /<span className="([^"]*overflow-hidden[^"]*)"/.exec(cell)?.[1];
+  const button = cell.slice(cell.lastIndexOf("<button", cell.indexOf("onFilter({ city:")));
+  assert.ok(wrapper, "the location cell's clipping wrapper moved");
+
+  const rem = (source, pattern) => {
+    const found = pattern.exec(source);
+    assert.ok(found, `${pattern} not found in: ${source.slice(0, 120)}`);
+    return Number(found[1]);
+  };
+
+  // The button draws the grey hover ground and is pulled outwards so the label does not shift when
+  // the padding appears under it. Anything the wrapper does not pad for is sliced off the ground --
+  // and what gets sliced first is the rounded corners, which is the whole shape of the thing.
+  const pull = rem(button, /-mx-(\d+(?:\.\d+)?)/);
+  const pad = rem(wrapper, /(?:^|\s)px-(\d+(?:\.\d+)?)/);
+  assert.ok(pad >= pull, `the clip box pads ${pad} against a ${pull} pull -- the hover ground is cropped`);
+
+  // And the padding is given straight back, so the content box the text truncates against is the
+  // width it always was. Padding without the matching pull would narrow every location on the page.
+  assert.equal(rem(wrapper, /(?:^|\s)-mx-(\d+(?:\.\d+)?)/), pad);
+});

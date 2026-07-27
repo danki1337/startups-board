@@ -3093,7 +3093,14 @@ const JobCells = memo(function JobCells({
         </div>
       </td>
       <td className="px-5 py-3 text-sm text-[var(--muted)]">
-        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+        {/* The padding is here to be CLIPPED instead of the button. overflow-hidden bounds the
+            filter button below to this box, and that button is -mx-1.5 -- so the clip landed 6px
+            inside each end of it and sliced both rounded corners off the hover ground, leaving a
+            grey block that ran flat into the edges of the cell. The 8px of padding gives the clip
+            box that 6px back with 2px to spare, and the matching negative margin takes it straight
+            back out of the layout, so the content box -- which is what the text truncates against --
+            is the same width in the same place it always was. */}
+        <span className="-mx-2 flex min-w-0 items-center gap-1.5 overflow-hidden px-2">
           {/* REGION first (inside flagGlyph above), and that order is the fix rather than an
               ordering preference. job.country is the posting's ingested country, which for a
               multi-location listing is whichever one the ATS happened to resolve -- so
