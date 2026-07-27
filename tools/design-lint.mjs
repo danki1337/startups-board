@@ -55,6 +55,42 @@ function designTokens() {
 
 /* ------------------------------------------------------------------------ rules */
 
+// Every JSX opening tag in a source file, with its attribute text and 1-based line.
+//
+// A regex cannot do this. `<button([^>]*)>` stops at the first `>` in the attributes, and JSX
+// attributes are full of them -- every `onClick={() => …}` contains one. That truncation is silent:
+// the rule still "matches", just against half an element, so it misses whatever came after the
+// first arrow function. This walks the text instead, tracking brace depth and quotes, and ends a
+// tag only at a `>` that is genuinely outside both.
+function* openingTags(source) {
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] !== "<" || !/[A-Za-z]/.test(source[index + 1] ?? "")) continue;
+    let depth = 0;
+    let quote = null;
+    for (let cursor = index + 1; cursor < source.length; cursor += 1) {
+      const char = source[cursor];
+      if (quote) {
+        if (char === quote) quote = null;
+        continue;
+      }
+      if (char === '"' || char === "'" || char === "`") { quote = char; continue; }
+      if (char === "{") depth += 1;
+      else if (char === "}") depth -= 1;
+      else if (char === "<" && depth === 0) break; // unterminated -- not a real tag
+      else if (char === ">" && depth === 0) {
+        const whole = source.slice(index, cursor + 1);
+        yield {
+          tag: /^<([A-Za-z][\w.]*)/.exec(whole)?.[1] ?? "",
+          attrs: whole,
+          line: source.slice(0, index).split("\n").length,
+        };
+        index = cursor;
+        break;
+      }
+    }
+  }
+}
+
 function lintSource(file, tokens) {
   const lines = read(file).split("\n");
   const brandAsset = BRAND_ASSET_FILES.has(file);
@@ -124,6 +160,27 @@ function lintSource(file, tokens) {
         "Use useTruncationTip(): it measures scrollWidth first and shows on focus as well as hover.");
     }
   });
+
+  // R8 -- a truncation tooltip must be measured on an element that can actually overflow.
+  //
+  // useTruncationTip decides whether to open by comparing scrollWidth against clientWidth on the
+  // node its `ref` lands on. A flex or grid container NEVER satisfies that test: its children
+  // shrink to fit instead of overflowing, so the container reports zero overflow no matter how
+  // badly the text inside is cropped.
+  //
+  // This shipped. Putting the country flag inside the Location cell's filter button turned that
+  // button into `flex`, the tipProps stayed on it, and every cropped location silently lost its
+  // tooltip -- measured live at the time: the inner span overflowed by 184px while the button
+  // reported 0. Nothing failed; the tooltip just never appeared again.
+  for (const { attrs, line } of openingTags(read(file))) {
+    if (!/\.tipProps\b/.test(attrs)) continue;
+    const className = /className=(?:"([^"]*)"|\{`([^`]*)`\})/.exec(attrs);
+    const classes = (className?.[1] ?? className?.[2] ?? "");
+    if (!/(?:^|\s)(?:inline-)?(?:flex|grid)(?:\s|$)/.test(classes)) continue;
+    report("error", "tooltip-measure-target", file, line,
+      "tipProps sit on a flex/grid container, which can never report text overflow.",
+      "Move tipProps onto the child that carries `truncate` -- the element that actually crops.");
+  }
 
   // R5 -- an icon-only control needs an accessible name. Checked across the whole file rather than
   // per line, since the markup wraps.

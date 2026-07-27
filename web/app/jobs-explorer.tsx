@@ -2829,11 +2829,18 @@ function JobCells({
                 // often a full address that would match only this one posting.
                 onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: places.primary }))}
                 title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${places.primary}`}
-                {...locationTip.tipProps}
-                className="-mx-1.5 flex min-w-0 items-center gap-1.5 truncate rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {flagGlyph}
-                <span className="min-w-0 truncate">{places.primary || job.city}</span>
+                {/* tipProps ride on THIS span, not the button, because this is the element that
+                    truncates -- which is what useTruncationTip measures (scrollWidth > clientWidth).
+                    Moving the flag inside the button made the button a flex container, and a flex
+                    container never overflows: its children shrink instead. Measured live, the span
+                    overflowed by 184px while the button reported 0, so the hook concluded nothing
+                    was cropped and suppressed the tooltip on every truncated location. */}
+                <span {...locationTip.tipProps} className="min-w-0 truncate">
+                  {places.primary || job.city}
+                </span>
               </button>
               {/* The remaining places, as a count rather than a truncated run-on. The full list is
                   the tooltip, so nothing is hidden -- it just stops one posting in three from
