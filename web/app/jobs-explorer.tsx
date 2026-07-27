@@ -2338,7 +2338,16 @@ function SearchBox({
         >
           <button
             type="button"
-            className="t-icon flex size-9 items-center justify-center rounded-full text-[var(--muted)] hover:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+            // Hover darkens the glyph; it does NOT fade it, and that is not a preference.
+            // The swap's own rule -- .t-icon-swap[data-state="a"] .t-icon[data-icon="a"] -- sets
+            // opacity, filter and transform at specificity (0,4,0). A hover utility for any of
+            // those three compiles to (0,2,0) and loses silently, which is why the fade this button
+            // used to declare never once applied. Colour is the one channel the swap does not
+            // claim. Instant, per the design rule: hover feedback does not transition.
+            // (The old utility is described rather than quoted on purpose -- Tailwind scans this
+            // file as raw text, comments included, so naming a class here mints a real CSS rule
+            // for it.)
+            className="t-icon flex size-9 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
             data-icon="a"
             disabled={loading}
             aria-hidden={loading || undefined}
