@@ -1373,7 +1373,16 @@ button:disabled,
 }
 
 .page-enter {
-  animation: page-enter 260ms var(--ease-out) both;
+  /* `backwards`, NEVER `both`.
+     `both` keeps the last keyframe applied forever, and that keyframe sets `transform: none` --
+     which the engine still represents as an identity matrix rather than as no transform at all. An
+     element with a filling transform animation is a STACKING CONTEXT and a containing block, so the
+     filter row became a box its own dropdowns could not paint out of: the Job type menu opened
+     underneath the results table, which is positioned and comes later in the document.
+     `backwards` holds the FIRST keyframe through the delay (so nothing flashes in at full opacity
+     before its turn) and then reverts to the base styles once the animation is done -- same motion,
+     no residue. The end state is already the element's natural state, so there is nothing to keep. */
+  animation: page-enter 260ms var(--ease-out) backwards;
 }
 .page-enter--2 { animation-delay: 40ms; }
 .page-enter--3 { animation-delay: 80ms; }
