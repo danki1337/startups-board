@@ -23,23 +23,30 @@ const testWithBuild = hasBuild
 // empty. Cache-busting the worker import does not help, because the shim is the module that holds
 // the binding.
 let sink = [];
+// Rows the recorder hands back for the ROW query, so a test can drive the response body and not
+// just the SQL. Module-level for the same reason `sink` is: the cloudflare:workers shim resolves
+// to a data: URL and is evaluated exactly once, so a per-call recorder would never be seen.
+let nextRows = [];
 
 const recorder = {
   prepare: (sql) => {
     const record = { sql, bindings: [] };
     const statement = {
+      sql,
       bind: (...bindings) => {
         record.bindings = bindings;
         return statement;
       },
-      all: async () => ({ results: [] }),
+      all: async () => ({ results: /FROM \(/.test(sql) ? nextRows : [] }),
       first: async () => null,
       run: async () => ({ meta: { changes: 0 } }),
     };
     sink.push(record);
     return statement;
   },
-  batch: async (prepared) => prepared.map(() => ({ results: [{ total: 0 }] })),
+  batch: async (prepared) => prepared.map((statement) => (
+    /FROM \(/.test(statement?.sql ?? "") ? { results: nextRows } : { results: [{ total: 0 }] }
+  )),
 };
 
 globalThis.__CLOUDFLARE_TEST_ENV__ = { DB: recorder };
@@ -116,6 +123,40 @@ testWithBuild("a browse count keeps every filter when the cursor is not a keyset
   // The count is prepared even on a cursor page (it is simply not executed), so its WHERE is
   // observable here and must still carry the filter.
   assert.match(count.sql, /j\.workplace IN/);
+});
+
+testWithBuild("one requisition syndicated across a tenant's career sites collapses to one row", async () => {
+  // Workday publishes the SAME requisition on every language variant of a tenant's career site.
+  // Production, verified: JR36476 at Allegion exists four times -- allegion|wd5|careers plus
+  // _SimonsVoss_English, _French and _Italian. Every one of them humanizes to "Allegion" and
+  // carries the identical title, so the reader sees one job listed four times at the top of a
+  // search for "product". Dedup used to compare the RAW identifier, which differs for all four.
+  const row = (identifier) => ({
+    key: `workday:global:${identifier}:JR36476`, title: "Head of Product Management (m/w/d)",
+    companyIdentifier: identifier, companyName: null, hasLogo: 0,
+    boardKey: `workday:global:${identifier}`, location: "Unterföhring, Germany",
+    country: "de", city: null, roleFamily: null, companyIndustry: null, workplace: "Unspecified",
+    employmentType: null, category: "Product & Design", provider: "workday",
+    publishedAt: "2026-07-27T00:00:00.000Z", url: "https://example.test/jr36476",
+  });
+  nextRows = [
+    row("allegion|wd5|careers"),
+    row("allegion|wd5|careers_SimonsVoss_English"),
+    row("allegion|wd5|careers_SimonsVoss_French"),
+    row("allegion|wd5|careers_SimonsVoss_Italian"),
+  ];
+  try {
+    const response = await worker.fetch(
+      new Request("http://localhost/api/jobs?search=product&limit=10"),
+      { DB: recorder, ASSETS: { fetch: async () => new Response("", { status: 404 }) } },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    const page = await response.json();
+    assert.equal(page.jobs.length, 1, `expected one row, got ${page.jobs.map((j) => j.company).join(", ")}`);
+    assert.equal(page.jobs[0].company, "Allegion");
+  } finally {
+    nextRows = [];
+  }
 });
 
 testWithBuild("stacking every filter stays under D1's 100-bind ceiling", async () => {

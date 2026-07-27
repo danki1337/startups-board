@@ -1931,6 +1931,12 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
             job-type clock) opens with one, so the bare chip read as unstyled rather than minimal.
             All chip glyphs render at 16px ([&>svg]:size-4): they are qualifiers of the value, not
             the value, and at the pill's 20px they crowded the text they introduce. */}
+        {/* The search chip opens with the same magnifier as the field it came from, exactly as the
+            Title chip carries the pill's person glyph. Without it the quoted term was the only chip
+            in the row with no mark, which read as unstyled rather than deliberate. */}
+        {chip.kind === "search" && (
+          <span className="inline-flex shrink-0 [&>svg]:size-4"><IconSearchGlyph /></span>
+        )}
         {chip.kind === "title" && (
           <span className="inline-flex shrink-0 [&>svg]:size-4"><IconTitleF /></span>
         )}

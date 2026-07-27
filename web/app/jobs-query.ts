@@ -467,14 +467,27 @@ function collapseDuplicates(fetched: JobRow[], limit: number) {
   for (const row of fetched) {
     if (rows.length >= limit) break;
     consumed += 1;
-    const identity = // "\u0000" as an ESCAPE, never a literal NUL byte: a raw NUL makes grep/rg treat this whole
+    // Keyed on the company as DISPLAYED, not as stored -- the same rule the rest of the codebase
+    // holds to (see src/company-name.mjs). Comparing raw identifiers meant two rows a reader
+    // cannot tell apart counted as different companies, and the gap is not hypothetical: Workday
+    // requisition JR36476 is published on four language variants of one tenant's career site --
+    // allegion|wd5|careers plus _SimonsVoss_English, _French and _Italian. All four humanize to
+    // "Allegion", all four carry the identical title and location, and all four were listed
+    // separately. One job, four rows, at the top of a search for "product".
+    // "\u0000" as an ESCAPE, never a literal NUL byte: a raw NUL makes grep/rg treat this whole
     // file -- the one holding every SQL statement the API builds -- as binary and silently skip it.
-    `${row.title ?? ""}\u0000${row.companyName ?? row.companyIdentifier ?? ""}`.toLowerCase();
+    const identity = `${row.title ?? ""}\u0000${displayCompany(row)}`.toLowerCase();
     if (seen.has(identity)) continue;
     seen.add(identity);
     rows.push(row);
   }
   return { rows, consumed };
+}
+
+// The single derivation of "what company does this row say it is". toPublicJob renders exactly
+// this, so anything that compares companies compares what the reader actually sees.
+function displayCompany(row: Pick<JobRow, "companyName" | "companyIdentifier" | "provider">) {
+  return row.companyName || humanizeIdentifier(row.companyIdentifier, row.provider);
 }
 
 // A full page continues from its last row. A short page in the newest sort's dated phase means the
@@ -981,7 +994,7 @@ function decodeCursor(value: string | null): KeysetCursor | OffsetCursor | null 
 }
 
 function toPublicJob(job: JobRow): PublicJob {
-  const company = job.companyName || humanizeIdentifier(job.companyIdentifier, job.provider);
+  const company = displayCompany(job);
   return {
     id: job.key,
     title: job.title,
