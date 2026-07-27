@@ -11,6 +11,13 @@
      search field's hover, an open dropdown pill. */
   --control-active: #ececf4;
   --row-hover: #f7f7fb;
+  /* A control hovered INSIDE an already-hovered row, and it has to be its own value because
+     --control-hover is byte-identical to --row-hover. Everywhere else that is fine: a pill, a chip
+     and a dropdown item all sit on white or --canvas, where #f7f7fb reads clearly. Inside a table
+     row it cannot -- you are necessarily hovering the row when you hover a cell in it, so the
+     control's ground and the row's ground were the same colour and the container was invisible.
+     One step further, so it reads against the row rather than matching it. */
+  --row-control-hover: #ececf4;
   --border: #e6e7e9;
   --border-soft: #ededf2;
   --danger-wash: #fff4f4;

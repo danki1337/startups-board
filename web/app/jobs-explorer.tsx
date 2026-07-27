@@ -3082,7 +3082,7 @@ const JobCells = memo(function JobCells({
                 // The 52% cap existed to leave room for the category beside it; with that gone the
                 // company gets the whole line, so names stop truncating for no reason.
                 {...companyTip.tipProps}
-                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--row-control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
@@ -3127,7 +3127,7 @@ const JobCells = memo(function JobCells({
                 // often a full address that would match only this one posting.
                 onClick={() => (job.city ? onFilter({ city: [job.city], location: "" }) : onFilter({ location: places.primary }))}
                 title={locationTip.open ? undefined : job.city ? `Show only jobs in ${job.city}` : `Show only jobs in ${places.primary}`}
-                className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--row-control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {flagGlyph}
                 {/* tipProps ride on THIS span, not the button, because this is the element that
@@ -3324,7 +3324,7 @@ function ValueWithIcon({ Icon, value, onClick, title }: {
       type="button"
       onClick={onClick}
       title={title}
-      className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+      className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--row-control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
     >
       {body}
     </button>
