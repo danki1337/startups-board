@@ -542,7 +542,7 @@ a {
      the band's trailing edge exactly on the first letter (0.65 x width reaches x=0), and +65% is
      the mirror on the way out: every frame of the animation is light moving across glyphs.
      linear, because a shimmer is constant motion. */
-  animation: wordmark-shimmer 1200ms linear both;
+  animation: wordmark-shimmer 900ms linear both;
 }
 
 @keyframes wordmark-shimmer {
