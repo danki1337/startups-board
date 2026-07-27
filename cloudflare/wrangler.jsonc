@@ -88,5 +88,10 @@
     "crons": ["*/15 * * * *"]
   },
   "limits": { "cpu_ms": 300000 },
+  // Alert email, through the zone's own Email Routing. No destination_address is pinned here: the
+  // recipient is the ALERT_EMAIL_TO secret, so changing who gets paged is a secret rotation rather
+  // than a redeploy. Cloudflare still only delivers to addresses verified on the account, which is
+  // the guard that makes an unpinned binding safe.
+  "send_email": [{ "name": "SEND_EMAIL" }],
   "observability": { "enabled": true, "head_sampling_rate": 1 }
 }

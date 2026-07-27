@@ -643,6 +643,12 @@ export function JobsExplorer({
   // immediately refetch the identical query. When the server could not reach D1 (local dev) the
   // first fetch must still run, otherwise the page would sit on the sample rows forever.
   const skipNextFetch = useRef(hasServerData);
+  // Whether `total` means anything yet. Without a server render it does NOT -- it is the 0 the state
+  // was initialised with, and a badge reading "0 jobs" while the real answer is in flight is the
+  // same wrong-number-then-jump this exists to prevent, just a different wrong number. The only URL
+  // that lands here today is the starred-companies view, which the server cannot resolve: the list
+  // is in this browser's localStorage. See the note in page.tsx.
+  const [countKnown, setCountKnown] = useState(hasServerData);
   // In-memory cache of the first page keyed by the fetch query, so returning to a filter combination
   // already viewed this session paints instantly instead of flashing an empty/loading table while a
   // fresh request is in flight. It still revalidates in the background, so nothing goes stale.
@@ -777,6 +783,7 @@ export function JobsExplorer({
       setJobs(cached.jobs);
       setTotal(cached.total);
       setTotalCapped(cached.totalCapped);
+      setCountKnown(true);
       setCorrectedTo(null); // re-established by the refresh fetch below
       setCursor(cached.cursor);
       // THIS is why removing a filter felt slow on data that was already correct.
@@ -824,6 +831,7 @@ export function JobsExplorer({
         setJobs(payload.jobs);
         setTotal(payload.total);
         setTotalCapped(payload.totalCapped ?? false);
+        setCountKnown(true);
         setCorrectedTo(payload.correctedTo ?? null);
         setCursor(payload.nextCursor);
         setError(null);
@@ -996,7 +1004,10 @@ export function JobsExplorer({
   // the whole result set, so the total is stale and saying "loading more" of a set that is about to
   // be discarded would be the wrong claim. In practice they do not overlap -- loadMore returns early
   // while a page is in flight -- but the order states which one matters if they ever do.
-  const badgeState = slowLoading ? 1 : slowPaging ? 2 : 0;
+  // !countKnown jumps straight to "Updating…" with no two-second wait. The delay exists to stop the
+  // badge blinking over a count that is merely STALE; here there is no count at all, and showing the
+  // "0 jobs" the state was initialised with would be the wrong number this whole path avoids.
+  const badgeState = !countKnown || slowLoading ? 1 : slowPaging ? 2 : 0;
   // The badge tweens its width between its states; each needs measuring.
   const countSwapRef = useSwapWidth(badgeState, `${formatTotal(total, totalCapped)} ${total === 1 ? "job" : "jobs"}`);
   // Memoised because Virtuoso re-renders its header whenever this identity changes, and an inline
@@ -1305,13 +1316,22 @@ export function JobsExplorer({
                 not a control responding to a press.
                 respectReducedMotion defaults to true; it is written out because it is the reason
                 this is safe to put on the busiest-updating element on the page. */}
-            <TextMorph
-              as="span"
-              className="tabular-nums text-[var(--accent-strong)]"
-              duration={320}
-              ease="cubic-bezier(0.23, 1, 0.32, 1)"
-              respectReducedMotion
-            >{formatTotal(total, totalCapped)}</TextMorph>{" "}
+            {/* Omitted entirely while the count is unknown, rather than shown as the 0 it is
+                initialised to. "Find open roles, straight from the source" is a true sentence with
+                nothing missing from it; "Find 0 open roles" is a false one, and it would then morph
+                digit-by-digit up to the real figure -- announcing the wrong answer and then
+                animating away from it. */}
+            {countKnown && (
+              <>
+                <TextMorph
+                  as="span"
+                  className="tabular-nums text-[var(--accent-strong)]"
+                  duration={320}
+                  ease="cubic-bezier(0.23, 1, 0.32, 1)"
+                  respectReducedMotion
+                >{formatTotal(total, totalCapped)}</TextMorph>{" "}
+              </>
+            )}
             open roles, straight from the source
           </h1>
         </div>
