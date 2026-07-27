@@ -458,23 +458,64 @@ function EmptyState({ onClear }: { onClear: () => void }) {
 // number it exists to show.
 function useSwapWidth(active: number, key: string) {
   const ref = useRef<HTMLSpanElement>(null);
-  useLayoutEffect(() => {
+  // Whether this container has ever been pinned. The FIRST pin must not animate: the element has
+  // already painted at its natural width, so tweening to the number that describes that same width
+  // is a 200ms wobble on every page load and nothing else.
+  const pinned = useRef(false);
+
+  // `animated` is the whole distinction: a width change the reader ASKED for (they picked a filter,
+  // the count became "Updating…") should tween, and a width change that is only this hook catching
+  // up with reality (first pin, webfont landing) should not. Both used to tween, which is why the
+  // badge slid on every refresh.
+  const measure = useCallback((animated: boolean) => {
     const el = ref.current;
     const child = el?.children[active] as HTMLElement | undefined;
     if (!el || !child) return;
     // Cleared BEFORE reading. The container clips (overflow: hidden), so with last frame's width
     // still set, the child about to become active reports the OLD width and nothing ever resizes --
     // measured at 79px for both states before this line existed. Clearing lets the grid size to
-    // max-content for one read; the write on the next line puts it straight back, inside the same
-    // layout pass, so nothing paints in between.
+    // max-content for one read; the write below puts it straight back, inside the same layout pass,
+    // so nothing paints in between.
     el.style.width = "";
     // box-sizing is border-box globally, so `width` includes any padding the container carries --
     // and .t-morph-pill carries 8px a side to keep a pill's shadow from being cropped. Measuring the
     // child alone and writing that would clip the pill by exactly that padding.
     const style = getComputedStyle(el);
     const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
-    el.style.width = `${child.offsetWidth + padding}px`;
-  }, [active, key]);
+    const next = `${child.offsetWidth + padding}px`;
+    if (animated && pinned.current) {
+      el.style.width = next;
+      return;
+    }
+    pinned.current = true;
+    // The reflow between the two writes is what stops the browser coalescing them into one frame,
+    // which would leave the transition active for the write it is meant to suppress.
+    const previous = el.style.transition;
+    el.style.transition = "none";
+    el.style.width = next;
+    void el.offsetWidth;
+    el.style.transition = previous;
+  }, [active]);
+
+  // The first run pins silently; every later run is a real state swap and tweens.
+  useLayoutEffect(() => { measure(true); }, [measure, key]);
+
+  // Re-pinned once the webfont lands, and this is the reason the badge changed width after a
+  // refresh. The first measurement runs at hydration, which is often BEFORE Nunito has finished
+  // loading -- so the width was pinned against the fallback face, the real face arrived a moment
+  // later at a different width, and the pinned container no longer matched its own text. With a
+  // 200ms transition on width, that correction was a visible slide.
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) return;
+    let cancelled = false;
+    // Deliberately silent on rejection: a font that fails to load leaves the fallback measurement in
+    // place, which is correct, and there is nothing to report.
+    // Silent: this is a correction, not a state change. Sliding the badge to its real width is the
+    // jump being fixed, not a nicer version of it.
+    document.fonts.ready.then(() => { if (!cancelled) measure(false); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [measure]);
+
   return ref;
 }
 
@@ -1812,9 +1853,11 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   // The dropdown's mark had no reveal at all while the table's row had one, which is the opposite of
   // what this component is for -- a company is supposed to look the same in the list as in the rows.
   const { painted, paint, fade } = useImagePainted();
-  // Same layering as the table's row, because the rule this component exists to hold is that a
-  // company looks the same in the list as in the rows: the monogram is the base and a logo fades in
-  // over it, so neither surface ever shows a placeholder for a logo that is not coming.
+  // Still layered -- monogram underneath, logo fading in over it -- where the table's row is not.
+  // The two differ deliberately. The table's avatars are on screen the instant the page loads, so a
+  // colour-then-image swap there happens on every refresh and reads as a blink; this list only
+  // exists once someone opens it, which is already an action they took, and a mark that resolves
+  // while the panel is opening is the panel filling in rather than the page changing under them.
   // `block` for the same reason the table's tile carries it: an inline <span> ignores width and
   // height, so size-5 would apply nothing and the absolute tile would have no box to fill.
   return (
@@ -3281,29 +3324,23 @@ function CompanyLogo({ job }: { job: Job }) {
   // scrolling into fresh companies met a column of grey squares that would never become anything.
   // Now every row shows its letter immediately and the ones that HAVE a logo quietly gain it.
   //
-  // The base is still rendered when the logo succeeds -- it costs nothing, the white tile covers it
-  // completely, and keeping it mounted means the swap never passes through a blank frame.
+  // And the monogram is NOT drawn under a logo that is on its way. Stacking them meant every
+  // logo-bearing row painted its coloured letter first and then swapped to the image a moment later
+  // -- on every single load, because the swap waits on a request even when that request is served
+  // from cache. A row that has a logo now renders the empty framed tile the logo will fill, so the
+  // tile never changes, only its contents arrive.
+  //
+  // The cost, stated: a company whose stored logo turns out to be a banner shows an empty frame for
+  // the ~2s /api/logo takes to reject it, and only then falls back to the letter. That happens once
+  // per company per reader -- the verdict is remembered in localStorage, so every later visit skips
+  // the request entirely and draws the monogram immediately.
   // `block`, not the default inline. A <span> is an inline box and an inline box IGNORES width and
   // height, so size-9 applied nothing at all: the absolutely positioned tile inside it had a
   // zero-sized containing block and the monogram rendered as a bare floating letter with no tile.
   // The old markup got away with a bare <span> because it carried `flex`, which made it a block.
-  return (
-    <span className="relative block size-9 shrink-0">
-      <span
-        // Rounded-square mark, matching the design's app-icon style logos. A pale tint carrying its
-        // own letter rather than a solid block carrying white: the row's real content is the job
-        // title, and a saturated 36px block in every logo-less row -- which is most of them -- pulled
-        // the eye down the avatar column instead of down the titles.
-        // The tint comes from the letter (see monogramTint), so this column stops being one pink
-        // stripe. 13px rather than 11: on a 36px tile an 11px letter left a lot of empty fill around
-        // it, and the letter is the tinted tile's only strong mark.
-        className="absolute inset-0 flex items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1"
-        style={monogramTint(job.companyMark)}
-        aria-hidden="true"
-      >
-        {job.companyMark}
-      </span>
-      {job.companyLogoUrl && !failed ? (
+  if (job.companyLogoUrl && !failed) {
+    return (
+      <span className="relative block size-9 shrink-0">
         <span
           className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-[var(--border)] ${loaded ? fade : "opacity-0"}`}
         >
@@ -3342,7 +3379,23 @@ function CompanyLogo({ job }: { job: Job }) {
             }}
           />
         </span>
-      ) : null}
+      </span>
+    );
+  }
+
+  // No logo, or one already known to be unusable: the letter, tinted from itself. A pale tint
+  // carrying its own letter rather than a solid block carrying white -- the row's real content is
+  // the job title, and a saturated 36px block in every logo-less row (which is most of them) pulled
+  // the eye down the avatar column instead of down the titles. The tint comes from the letter, so
+  // this column stops being one pink stripe; see monogramTint. 13px rather than 11, because on a
+  // 36px tile an 11px letter left a lot of empty fill around the only strong mark it has.
+  return (
+    <span
+      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1"
+      style={monogramTint(job.companyMark)}
+      aria-hidden="true"
+    >
+      {job.companyMark}
     </span>
   );
 }
