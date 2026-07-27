@@ -70,12 +70,18 @@ test("production refresh cadence is adaptive", () => {
   // over 3 days while ~2,000 changed on every one.
   assert.equal(nextSyncAt("active", 0, now, 0), "2026-07-21T03:00:00.000Z", "just changed: look again soon");
   assert.equal(nextSyncAt("active", 0, now, 1), "2026-07-21T06:00:00.000Z");
-  assert.equal(nextSyncAt("active", 0, now, 2), "2026-07-21T12:00:00.000Z");
-  assert.equal(nextSyncAt("active", 0, now, 3), "2026-07-22T00:00:00.000Z");
-  assert.equal(nextSyncAt("active", 0, now, 4), "2026-07-23T00:00:00.000Z", "dormant: every other day");
+  // 12h is the FLOOR of freshness, not a waypoint on the way to 48h. The ladder used to run on to
+  // 24h and 48h, and 59% of active boards had settled on that last rung -- so a posting an employer
+  // pulled just after a refresh stayed listed for up to two days. Quietness predicts that a board
+  // will not ADD anything; it says nothing about whether it will close a role.
+  assert.equal(nextSyncAt("active", 0, now, 2), "2026-07-21T12:00:00.000Z", "dormant: twice a day, and no slower");
+  assert.equal(nextSyncAt("active", 0, now, 3), "2026-07-21T12:00:00.000Z");
+  assert.equal(nextSyncAt("active", 0, now, 4), "2026-07-21T12:00:00.000Z");
   // Past the end of the ladder, and below its start, still land on a real rung. An out-of-range
-  // index would make the interval NaN and the board unschedulable for good.
-  assert.equal(nextSyncAt("active", 0, now, 99), "2026-07-23T00:00:00.000Z");
+  // index would make the interval NaN and the board unschedulable for good. Boards carrying a
+  // quiet_syncs of 3 or 4 from the old five-rung ladder land here, which is why no migration is
+  // needed to bring them back down.
+  assert.equal(nextSyncAt("active", 0, now, 99), "2026-07-21T12:00:00.000Z");
   assert.equal(nextSyncAt("active", 0, now, -3), "2026-07-21T03:00:00.000Z");
   assert.equal(nextSyncAt("active", 0, now, Number.NaN), "2026-07-21T03:00:00.000Z");
   // Omitting the argument keeps the fast rung, so a caller that does not track quietness still
@@ -105,12 +111,13 @@ const sampleJob = (id) => ({
 });
 
 test("a refresh that finds nothing moves the board one rung down the ladder", async () => {
-  // The board has already come back empty twice; a third empty refresh takes it to rung 3 (24h).
-  const db = recordingDb(0, { quietSyncs: 2, changes: 0 });
+  // The board has already come back empty once; a second empty refresh takes it to rung 2 (12h),
+  // which is the bottom of the ladder.
+  const db = recordingDb(0, { quietSyncs: 1, changes: 0 });
   await applyBoardSnapshot(db, snapshot([]));
   const [, , , nextSyncAtArg, quiet] = boardUpdate(db).args;
-  assert.equal(quiet, 3);
-  assert.equal(nextSyncAtArg, "2026-07-22T00:00:00.000Z", "rung 3 is 24h out");
+  assert.equal(quiet, 2);
+  assert.equal(nextSyncAtArg, "2026-07-21T12:00:00.000Z", "rung 2 is 12h out");
 });
 
 test("a refresh that writes something puts the board straight back on the fast rung", async () => {
@@ -128,8 +135,8 @@ test("the quiet counter cannot climb past the end of the ladder", async () => {
   const db = recordingDb(0, { quietSyncs: 99, changes: 0 });
   await applyBoardSnapshot(db, snapshot([]));
   const [, , , nextSyncAtArg, quiet] = boardUpdate(db).args;
-  assert.equal(quiet, 4, "clamped to the last rung");
-  assert.equal(nextSyncAtArg, "2026-07-23T00:00:00.000Z");
+  assert.equal(quiet, 2, "clamped to the last rung");
+  assert.equal(nextSyncAtArg, "2026-07-21T12:00:00.000Z");
 });
 
 test("every production ATS has an isolated queue binding", () => {

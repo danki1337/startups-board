@@ -32,7 +32,25 @@ export const PROVIDER_QUEUE_BINDINGS = Object.freeze({
 // and a floor low enough to let a large set converge on it would blow through that ceiling and
 // through the politeness budget of the ATSs that already push back (Getro answers 530 at
 // concurrency 2).
-export const ACTIVE_REFRESH_LADDER_HOURS = Object.freeze([3, 6, 12, 24, 48]);
+// Was [3, 6, 12, 24, 48], and the top two rungs were costing freshness for almost nothing.
+//
+// Measured on production: of 31,000 active boards, 18,443 -- 59% of them, holding 361,179 jobs or
+// 23.6% of the whole active index -- had backed off to the 48h rung. So a posting pulled from an
+// employer's board minutes after a refresh stayed listed here for up to two days, on a site whose
+// headline is "straight from the source". That is exactly how a Dataguard posting removed from
+// Ashby at ~11:00 was still in the table at 15:30 with the next check not due until the 29th.
+//
+// The premise behind the long rungs is that a board quiet for four cycles is unlikely to change,
+// and for ADDITIONS that mostly holds. For REMOVALS it does not: a company that has not posted
+// anything new in a week can still close a role today, and a closed role is the one kind of stale
+// row that wastes a reader's time rather than merely being incomplete.
+//
+// What the top rungs were buying, priced from the same production numbers: capping at 12h takes the
+// sync count from ~53,000 to ~85,000 a day, and the D1 reads those syncs cost from ~6.5M to ~7.1M
+// rows a day -- about $0.006 a month more in reads, on a ~$10 bill. The fetches are ~1/second
+// spread across thirteen providers, and rate-limit backoff already handles a vendor that objects.
+// Four times the freshness on a quarter of the index, for noise.
+export const ACTIVE_REFRESH_LADDER_HOURS = Object.freeze([3, 6, 12]);
 export const EMPTY_REFRESH_HOURS = 96;
 export const INVALID_REFRESH_HOURS = 24 * 30;
 export const ERROR_BASE_DELAY_MINUTES = 15;
