@@ -54,7 +54,7 @@ export function warmAtsIcons() {
 
 export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; size?: 4 | 5 }) {
   const [failed, setFailed] = useState(false);
-  const { paint, fade } = useImagePainted();
+  const { paint, hidden, fade } = useImagePainted();
   const icon = ICONS[source];
   const dimension = size === 4 ? "size-4" : "size-5";
 
@@ -85,7 +85,7 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
         // near-white, so without an edge they float. A shadow rather than an outline because the
         // ring layer IS the first shadow (0 0 0 1px), so one property draws both the edge and the
         // lift and they can never disagree.
-        className={`${dimension} shrink-0 rounded-[36%] object-contain shadow-[var(--shadow-control)] ${fade}`}
+        className={`${dimension} shrink-0 rounded-[36%] object-contain shadow-[var(--shadow-control)] ${hidden} ${fade}`}
         ref={paint}
         onLoad={(event) => paint(event.currentTarget)}
         onError={() => setFailed(true)}

@@ -160,7 +160,7 @@ const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
 function Flag({ code }: { code?: string | null }) {
   const cc = (code ?? "").trim().toLowerCase();
   const [failed, setFailed] = useState(false);
-  const { paint, fade } = useImagePainted();
+  const { paint, hidden, fade } = useImagePainted();
   // Two ASCII letters, not merely two characters. `code` is job.country, ingested from a dozen ATS
   // payloads, and it goes straight into a URL below -- so what it is allowed to contain has to be
   // stated here rather than assumed of every upstream normalizer forever.
@@ -179,7 +179,7 @@ function Flag({ code }: { code?: string | null }) {
       ref={paint}
       onLoad={(event) => paint(event.currentTarget)}
       onError={() => setFailed(true)}
-      className={`inline-block h-[13px] w-[18px] shrink-0 rounded-[3px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10 ${fade}`}
+      className={`inline-block h-[13px] w-[18px] shrink-0 rounded-[3px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10 ${hidden} ${fade}`}
     />
   );
 }
@@ -213,7 +213,7 @@ function Flag({ code }: { code?: string | null }) {
 // alt is the brand name, not empty: this is the only place the product names itself on screen, and
 // a wordmark that reads as nothing is a wordmark that is not there.
 function Wordmark() {
-  const { paint, fade } = useImagePainted();
+  const { paint, hidden, fade } = useImagePainted();
   return (
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
@@ -223,7 +223,7 @@ function Wordmark() {
       height={153}
       ref={paint}
       onLoad={(event) => paint(event.currentTarget)}
-      className={`block h-[51px] w-auto ${fade}`}
+      className={`block h-[51px] w-auto ${hidden} ${fade}`}
     />
   );
 }
@@ -1050,6 +1050,10 @@ export function JobsExplorer({
               const sync = () => {
                 const atEnd = Math.ceil(el.scrollTop + el.clientHeight) >= el.scrollHeight - 1;
                 el.toggleAttribute("data-scroll-bottom", !atEnd);
+                // The positive form of the same fact, because the results table defaults its bottom
+                // fade ON. See .jobs-table-scroll in globals: an absent-until-proven attribute meant
+                // every refresh painted a hard edge and then snapped the fade on at hydration.
+                el.toggleAttribute("data-scroll-end", atEnd);
                 el.toggleAttribute("data-scroll-top", el.scrollTop > 1);
                 // The top fade parks directly under the sticky column header, so it needs that
                 // header's height -- measured rather than hardcoded, since it is styled in Tailwind
@@ -2316,12 +2320,15 @@ const WORKPLACE_ICONS: Record<string, () => React.ReactElement> = {
 };
 
 
-// The supplied 20px close glyph, drawn at the chip's scale.
+// The supplied 16px close glyph.
+//
+// 16 now, matching the chip's other glyphs rather than standing a size above them. The 20px version
+// it replaces was reasoned as hit-area, which it was not: the whole chip is the button, so the cross
+// is a mark inside a 36px target and never the target itself. At 20 it simply outweighed the value
+// it sits beside. The heavier 2px stroke is what keeps it legible at the smaller size.
 const IconCloseGlyph = () => (
-  // 20px against the chip glyphs' 16: the close is the chip's one ACTION, and the extra size is
-  // hit-area as much as emphasis.
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-5 shrink-0">
-    <path d="M15 5L10 10M10 10L5 15M10 10L15 15M10 10L5 5" stroke="#868990" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="size-4 shrink-0">
+    <path d="M12 4L8 8M8 8L4 12M8 8L12 12M8 8L4 4" stroke="#868990" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 

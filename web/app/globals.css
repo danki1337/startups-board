@@ -853,7 +853,14 @@ button:disabled,
    column header along with the rows. The top edge is drawn as an overlay instead. */
 .jobs-table-scroll.scroll-shadow,
 .jobs-table-scroll.scroll-shadow[data-scroll-top] { --fade-top: 0px; }
-.jobs-table-scroll[data-scroll-bottom] { --fade-bottom: 64px; }
+/* ON by default, and removed only once the scroller reports it has reached the end.
+   It used to be the other way round -- absent until an attribute said otherwise -- and the server
+   cannot know a scroll position, so every load painted the table with a hard bottom edge and then
+   snapped a 64px fade onto it the instant hydration ran the first sync. Visible on every refresh,
+   and pure noise: a first paint of a full page ALWAYS has more below it, so the faded state is the
+   one that is almost always right. Starting there means the common case never moves. */
+.jobs-table-scroll.scroll-shadow { --fade-bottom: 64px; }
+.jobs-table-scroll.scroll-shadow[data-scroll-end] { --fade-bottom: 0px; }
 
 /* Sits inside the scroller and sticks to the top, so it rides under the sticky header rather than
    over it. Zero height with a taller child, so it occupies no row space. */
