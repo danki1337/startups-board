@@ -3304,33 +3304,42 @@ function CompanyLogo({ job }: { job: Job }) {
   const { painted, paint, fade } = useImagePainted();
   const loaded = painted && outcome === "ok";
 
-  // The monogram is the BASE layer, always drawn, and a logo fades in over it. It is not a fallback
-  // any more and there is no placeholder at all, which is the whole point.
+  // The letter is the BASE layer, always drawn, and a logo fades in over it when one actually turns
+  // up. Nothing is ever a placeholder, so nothing is ever empty.
   //
-  // What this replaces: a pulsing skeleton that sat there until the logo request settled. That reads
-  // as "loading" and for most rows it was loading nothing -- /api/logo answers 404 for any company
-  // whose stored logo turns out to be a banner rather than a mark, and it takes ~2s cold and ~0.44s
-  // warm to say so (it is not edge-cached; the Next `vary` header defeats that). So a reader
-  // scrolling into fresh companies met a column of grey squares that would never become anything.
-  // Now every row shows its letter immediately and the ones that HAVE a logo quietly gain it.
+  // This has been both ways round, and the numbers settle it. Measured on production, page one:
+  // all 100 rows carry a logo URL, and of 25 sampled through /api/logo, FOUR were served and
+  // TWENTY-ONE were rejected -- p50 127ms, p90 1,748ms. The stored URL is a promise the proxy
+  // usually breaks, because 197k of those rows carry a logo the ATS payload supplied and nobody
+  // verified (Paylocity 114k, Getro 84k), while the scraped ones on `companies` ARE shape-checked.
   //
-  // And the monogram is NOT drawn under a logo that is on its way. Stacking them meant every
-  // logo-bearing row painted its coloured letter first and then swapped to the image a moment later
-  // -- on every single load, because the swap waits on a request even when that request is served
-  // from cache. A row that has a logo now renders the empty framed tile the logo will fill, so the
-  // tile never changes, only its contents arrive.
+  // Drawing the empty frame first therefore leaves ~84% of rows blank for up to two seconds before
+  // giving up and showing the letter that was always the right answer. Drawing the letter first
+  // makes those same rows correct in the first frame, and costs a quiet swap on the ~16% that do
+  // resolve. Four rows changing beats twenty-one rows waiting.
   //
-  // The cost, stated: a company whose stored logo turns out to be a banner shows an empty frame for
-  // the ~2s /api/logo takes to reject it, and only then falls back to the letter. That happens once
-  // per company per reader -- the verdict is remembered in localStorage, so every later visit skips
-  // the request entirely and draws the monogram immediately.
+  // The right fix is upstream: verify the payload logo before storing it, so hasLogo stops claiming
+  // a logo that does not exist. Then nothing swaps at all. Until then this is the layout that is
+  // wrong least often.
   // `block`, not the default inline. A <span> is an inline box and an inline box IGNORES width and
   // height, so size-9 applied nothing at all: the absolutely positioned tile inside it had a
   // zero-sized containing block and the monogram rendered as a bare floating letter with no tile.
   // The old markup got away with a bare <span> because it carried `flex`, which made it a block.
-  if (job.companyLogoUrl && !failed) {
-    return (
-      <span className="relative block size-9 shrink-0">
+  return (
+    <span className="relative block size-9 shrink-0">
+      <span
+        // The letter, tinted from itself -- a pale tint carrying its own glyph rather than a solid
+        // block carrying white. The row's real content is the job title, and a saturated 36px block
+        // in every logo-less row (which is most of them) pulled the eye down the avatar column
+        // instead of down the titles. 13px rather than 11, because on a 36px tile an 11px letter
+        // left a lot of empty fill around the only strong mark it has.
+        className="absolute inset-0 flex items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1"
+        style={monogramTint(job.companyMark)}
+        aria-hidden="true"
+      >
+        {job.companyMark}
+      </span>
+      {job.companyLogoUrl && !failed ? (
         <span
           className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-[var(--border)] ${loaded ? fade : "opacity-0"}`}
         >
@@ -3369,23 +3378,7 @@ function CompanyLogo({ job }: { job: Job }) {
             }}
           />
         </span>
-      </span>
-    );
-  }
-
-  // No logo, or one already known to be unusable: the letter, tinted from itself. A pale tint
-  // carrying its own letter rather than a solid block carrying white -- the row's real content is
-  // the job title, and a saturated 36px block in every logo-less row (which is most of them) pulled
-  // the eye down the avatar column instead of down the titles. The tint comes from the letter, so
-  // this column stops being one pink stripe; see monogramTint. 13px rather than 11, because on a
-  // 36px tile an 11px letter left a lot of empty fill around the only strong mark it has.
-  return (
-    <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1"
-      style={monogramTint(job.companyMark)}
-      aria-hidden="true"
-    >
-      {job.companyMark}
+      ) : null}
     </span>
   );
 }
