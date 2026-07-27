@@ -490,6 +490,49 @@ function useSwapWidth(active: number, key: string) {
   return ref;
 }
 
+// True only once `active` has been continuously true for `delay` ms. A request that settles before
+// then never raises a loading state at all.
+//
+// Most requests here are fast enough that announcing them was pure noise: measured against
+// production, the homepage answers in ~270ms at p50 and a page of scroll results in ~160ms. Showing
+// "Loading more…" for a sixth of a second, on every page, during one continuous scroll, is a badge
+// that blinks rather than a badge that informs. Below the threshold the reader simply sees the
+// result arrive, which is the honest report of what happened.
+//
+// `minVisible` is not scope creep, it is what stops the threshold from becoming a new flicker
+// source. Search sits at ~2.5s at p50, right on top of a 2s delay, so without a floor the spinner
+// would appear at 2.00s and vanish at 2.05s on exactly the queries the delay is meant to cover.
+// Once it has been earned it stays long enough to be read.
+function useSlowFlag(active: boolean, delay = 2000, minVisible = 400) {
+  const [shown, setShown] = useState(false);
+  // Refs, not state: these are bookkeeping for the timers and must not themselves cause a render.
+  // Only touched inside the effect, never during one.
+  const shownAt = useRef(0);
+  const isShown = useRef(false);
+  useEffect(() => {
+    if (active) {
+      // Already visible from an earlier run -- rescheduling would reset shownAt and extend the
+      // floor past what was actually earned.
+      if (isShown.current) return;
+      const timer = setTimeout(() => {
+        shownAt.current = Date.now();
+        isShown.current = true;
+        setShown(true);
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+    if (!isShown.current) return;
+    // Always through a timer, even at zero: a synchronous setState here is a cascading render, and
+    // Math.max keeps the two cases one code path instead of two.
+    const timer = setTimeout(() => {
+      isShown.current = false;
+      setShown(false);
+    }, Math.max(0, minVisible - (Date.now() - shownAt.current)));
+    return () => clearTimeout(timer);
+  }, [active, delay, minVisible]);
+  return shown;
+}
+
 // transitions.dev texts-reveal (18) needs .is-shown added AFTER the element has painted once at
 // its starting values -- applied during the same render, the browser has no previous frame to
 // transition FROM and the lines simply appear. A state flip inside an effect, one frame late, is
@@ -909,11 +952,19 @@ export function JobsExplorer({
   const [shimmer, setShimmer] = useState(0);
 
   const widths = columnWidthsFor(jobs);
-  // Which of the badge's three states is showing. isLoading wins over isPaging: a new query replaces
+  // Both loading affordances are gated on the request outlasting two seconds -- see useSlowFlag.
+  // What that costs, stated rather than buried: for a query that settles inside the threshold the
+  // badge keeps showing the PREVIOUS count for up to two seconds, and that count is stale by
+  // definition while a query is in flight. The judgement is that a number a second or two out of
+  // date, which then morphs into the right one, is a smaller lie than a badge that blinks on every
+  // keystroke and every scroll page.
+  const slowLoading = useSlowFlag(isLoading);
+  const slowPaging = useSlowFlag(isPaging);
+  // Which of the badge's three states is showing. Loading wins over paging: a new query replaces
   // the whole result set, so the total is stale and saying "loading more" of a set that is about to
   // be discarded would be the wrong claim. In practice they do not overlap -- loadMore returns early
   // while a page is in flight -- but the order states which one matters if they ever do.
-  const badgeState = isLoading ? 1 : isPaging ? 2 : 0;
+  const badgeState = slowLoading ? 1 : slowPaging ? 2 : 0;
   // The badge tweens its width between its states; each needs measuring.
   const countSwapRef = useSwapWidth(badgeState, `${formatTotal(total, totalCapped)} ${total === 1 ? "job" : "jobs"}`);
   // Memoised because Virtuoso re-renders its header whenever this identity changes, and an inline
@@ -984,11 +1035,14 @@ export function JobsExplorer({
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
           <JobsSkeleton widths={widths} />
         </div>
-        {/* isLoading with rows already present means a REFETCH, not a first load -- the skeleton
-            layer behind this one covers that case and is already faded out by now. See
-            .jobs-refreshing: the rows dim and blur while the answer is in flight rather than being
-            replaced between frames with nothing said in between. */}
-        <div className={`t-skel-content relative ${isLoading && jobs.length > 0 ? "jobs-refreshing" : "jobs-settled"}`}>
+        {/* A refetch with rows already present -- the skeleton layer behind this one covers a first
+            load and is already faded out by now. See .jobs-refreshing: the rows dim while the answer
+            is in flight rather than being replaced between frames with nothing said in between.
+            Gated on the SLOW flag, not the raw one, and this is the most visible place that matters:
+            dimming the whole table to 45% and back for a query that answers in 270ms is a flinch
+            across the largest element on the page. Below the threshold the old rows simply hold
+            still until the new ones replace them. */}
+        <div className={`t-skel-content relative ${slowLoading && jobs.length > 0 ? "jobs-refreshing" : "jobs-settled"}`}>
           <TableVirtuoso
             ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
