@@ -571,20 +571,11 @@ a {
 }
 
 .wordmark-link:hover {
-  /* Lift and tilt, but do NOT scale up.
-     The mark is a 707x303 raster drawn at 119x51, so it has ~3x the pixels the screen needs -- the
-     hover blur was never a resolution problem. It is that a transformed element is resampled from
-     the texture the compositor already rasterized, and scale(1.04) stretched that texture 4% past
-     the size it was rasterized for. On a sticker whose whole design is a hard white outline, 4% of
-     bilinear stretch is exactly the softness you can see.
-     translateY resamples nothing (it is a whole-pixel-friendly offset, not a rescale) and reads as
-     the same "picked up off the page" the scale was there for. The tilt stays, because rotation of
-     a texture with 3x headroom is where the extra pixels actually get spent. */
-  transform: translateY(-2px) rotate(1.6deg);
+  transform: scale(1.04) rotate(1.6deg);
 }
 
 .wordmark-link:active {
-  transform: translateY(0) scale(0.98) rotate(0deg);
+  transform: scale(0.98) rotate(0deg);
   transition-duration: 90ms;
 }
 
@@ -1357,48 +1348,4 @@ button:disabled,
 
 @media (prefers-reduced-motion: reduce) {
   .t-resize { transition: none; }
-}
-
-
-/* A small entrance for the things that make up the page.
-
-   Deliberately a keyframe rather than a transition: Emil's transitions-over-keyframes rule is about
-   RAPID triggers, where an interruptible transition is what keeps a re-trigger from restarting mid
-   way. This fires once per navigation, so an animation with `both` is the simpler tool -- and it
-   needs no mount-flag state in React, which would cost a second render and a frame of blank page.
-
-   Short and shallow on purpose. 4px and 260ms is enough to read as "this arrived" without making
-   anyone wait to use the page; the stagger is 40ms, the same step the empty state's lines use, so
-   the header resolves top-down as one movement rather than four independent fades.
-
-   The TABLE is deliberately excluded. It has its own skeleton-to-content reveal, and stacking a
-   second fade on top of that would animate the same pixels twice. */
-@keyframes page-enter {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: none; }
-}
-
-.page-enter {
-  /* `backwards`, NEVER `both`.
-     `both` keeps the last keyframe applied forever, and that keyframe sets `transform: none` --
-     which the engine still represents as an identity matrix rather than as no transform at all. An
-     element with a filling transform animation is a STACKING CONTEXT and a containing block, so the
-     filter row became a box its own dropdowns could not paint out of: the Job type menu opened
-     underneath the results table, which is positioned and comes later in the document.
-     `backwards` holds the FIRST keyframe through the delay (so nothing flashes in at full opacity
-     before its turn) and then reverts to the base styles once the animation is done -- same motion,
-     no residue. The end state is already the element's natural state, so there is nothing to keep. */
-  animation: page-enter 260ms var(--ease-out) backwards;
-}
-.page-enter--2 { animation-delay: 40ms; }
-.page-enter--3 { animation-delay: 80ms; }
-
-/* Decoration with no information in it, so for someone who has asked for less motion the correct
-   amount is none -- the content is simply there. */
-@media (prefers-reduced-motion: reduce) {
-  .page-enter,
-  .page-enter--2,
-  .page-enter--3 {
-    animation: none;
-  }
 }

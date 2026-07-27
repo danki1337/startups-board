@@ -187,6 +187,9 @@ export default async function Home({
       initialCursor={initialPage?.nextCursor ?? null}
       hasServerData={initialPage !== null}
       initialQuery={clientQuery.toString()}
+      // The server's clock, so the Posted column renders "6d ago" in the HTML itself instead of an
+      // absolute date that flips to relative a few milliseconds after hydration.
+      serverNow={Date.now()}
     />
   );
 }

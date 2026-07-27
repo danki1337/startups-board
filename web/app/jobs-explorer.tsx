@@ -249,8 +249,15 @@ type Filters = {
 // reshuffle -- a visible flick on exactly the element that just changed.
 // Reconciled rather than appended blindly: ids that no longer exist are dropped, so removing a chip
 // and re-adding it puts it at the end again, which is what "when it was applied" means.
+// Kinds that can only ever produce ONE chip. Their identity is the kind alone, deliberately: the
+// label carries the live value, so keying on it meant every keystroke in the search box produced a
+// new React key -- the chip unmounted and remounted, replaying its entrance animation on each
+// character, and chipOrder saw an unfamiliar id and re-appended it, so it also jumped to the end of
+// the row while you typed.
+const SINGLETON_CHIPS = new Set(["search", "title", "company", "location", "roleFamily", "watchlist"]);
+
 function chipId(chip: ActiveChip) {
-  return `${chip.kind}:${chip.label}`;
+  return SINGLETON_CHIPS.has(chip.kind) ? chip.kind : `${chip.kind}:${chip.label}`;
 }
 
 export function orderChips(chips: ActiveChip[], order: string[] = []) {
@@ -457,6 +464,7 @@ export function JobsExplorer({
   initialQuery = "",
   initialTotalCapped = false,
   initialCorrectedTo = null,
+  serverNow = 0,
 }: {
   initialJobs?: Job[];
   initialTotal?: number;
@@ -467,6 +475,8 @@ export function JobsExplorer({
   initialTotalCapped?: boolean;
   // The term the server-rendered first page was spell-corrected to, if any.
   initialCorrectedTo?: string | null;
+  // The SERVER's clock at render time, so "6d ago" is computed identically on both sides.
+  serverNow?: number;
 }) {
   // Seeded from the server-supplied query string rather than window.location, so the server and
   // client render identical markup. Reading window here caused a hydration mismatch whenever the
@@ -493,9 +503,17 @@ export function JobsExplorer({
   const [error, setError] = useState<string | null>(null);
   const [pagingError, setPagingError] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
-  // Captured once after mount (0 during SSR/first paint) so relative "3h ago" labels are computed on
-  // the client only -- keeping the server and client markup identical, then swapping in on hydrate.
-  const [now, setNow] = useState(0);
+  // Seeded with the SERVER's clock, not 0.
+  //
+  // At 0 the Posted column had no reference point, so it fell back to the absolute date -- every
+  // refresh painted "Jul 21, 2026" and then flipped the whole column to "6d ago" a few milliseconds
+  // later, once the mount effect supplied a clock. The flip was the most visible thing on the page.
+  // Passing the server's own timestamp down means the server and the client's first render compute
+  // the SAME label from the SAME instant, so there is nothing to swap and no hydration mismatch --
+  // the value is baked into the HTML rather than read from two different clocks. The minute tick
+  // below then keeps it fresh. The page is force-dynamic and no-store, so this timestamp is never
+  // served stale from a cache.
+  const [now, setNow] = useState(serverNow);
   // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
   // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
   // client render match, then hydrated from storage in an effect below.
@@ -778,7 +796,17 @@ export function JobsExplorer({
         clear: () => toggle("country", value),
       });
     }
-    for (const value of filters.city) chips.push({ kind: "city", label: value, clear: () => toggle("city", value) });
+    // Same flag treatment the country and location chips get. A city chip was the one place-shaped
+    // chip with no glyph, so picking a place from the table produced a bare "US" next to chips that
+    // all carried a mark.
+    for (const value of filters.city) {
+      chips.push({
+        kind: "city",
+        label: value,
+        code: cityCountry(value) ?? regionFlagCode(value) ?? undefined,
+        clear: () => toggle("city", value),
+      });
+    }
     if (filters.roleFamily) chips.push({ kind: "roleFamily", label: filters.roleFamily, clear: () => update({ roleFamily: "" }) });
     for (const value of filters.industry) chips.push({ kind: "industry", label: value, clear: () => toggle("industry", value) });
     for (const value of filters.workplace) chips.push({ kind: "workplace", label: value, clear: () => toggle("workplace", value) });
@@ -1094,10 +1122,6 @@ export function JobsExplorer({
               What that costs, stated rather than buried: the wordmark no longer links home. If it
               should, the honest shape is a link that navigates AND shimmers, not one that swallows
               its own navigation. */}
-          {/* The entrance rides on this wrapper, never on .wordmark-link itself: an animation with
-              fill-mode `both` outranks normal declarations, so `transform: none` from the finished
-              entrance would permanently beat the :hover transform and the tilt would never fire. */}
-          <span className="page-enter block">
           <button
             type="button"
             aria-label="Aboard"
@@ -1122,9 +1146,8 @@ export function JobsExplorer({
                 key changes. */}
             {shimmer > 0 && <span key={shimmer} className="wordmark-shimmer" aria-hidden="true" />}
           </button>
-          </span>
           <h1
-            className="page-enter page-enter--2 mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
+            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
             {/* The one number on the page that changes under the reader's eyes -- every filter, every
@@ -1156,9 +1179,7 @@ export function JobsExplorer({
         </div>
 
         {/* No panel chrome behind the filter row — the pills carry their own hairline shadow. */}
-        {/* Third and last step of the entrance, so the header resolves wordmark -> headline ->
-            controls as one downward movement instead of four independent fades. */}
-        <div className="page-enter page-enter--3">
+        <div>
           <FilterDropdownBar
             filters={filters}
             update={update}
@@ -1174,7 +1195,7 @@ export function JobsExplorer({
           <div className={`row-collapse ${activeChips.length > 0 ? "is-open" : ""}`}>
             <div inert={activeChips.length === 0 ? true : undefined}>
               <div className="rule-dashed mt-3 flex flex-wrap items-center gap-[10px] pt-3 pb-2">
-                {shownChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
+                {shownChips.map((chip) => <FilterChip key={chipId(chip)} chip={chip} />)}
                 {/* Last in the row and wearing the chip's own dashed pill, because it belongs to the
                     filters rather than to the page -- it is the "and clear all of these" at the end
                     of the list, not a separate control parked on the right. Save view stays right:
@@ -2817,7 +2838,18 @@ const JobCells = memo(function JobCells({
     <>
       <td className="px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          <CompanyLogo job={job} />
+          {/* The mark filters by its company, same as the name beneath it. It is the largest, most
+              obviously clickable thing in the row and it did nothing, which reads as a dead target
+              -- and the two halves of one identity should not behave differently. */}
+          <button
+            type="button"
+            onClick={() => onFilter({ company: job.company })}
+            aria-label={`Show only jobs at ${job.company}`}
+            title={`Show only jobs at ${job.company}`}
+            className="shrink-0 rounded-[10px] transition-transform duration-[120ms] ease-[var(--ease-out)] hover:scale-[1.06] active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+          >
+            <CompanyLogo job={job} />
+          </button>
           <div className="min-w-0">
             {/* A real anchor, which is the only thing on this row that opens the posting for anyone
                 not using a mouse. The whole action used to be an onClick on the <tr>: no tabIndex,
