@@ -85,17 +85,59 @@ testWithBuild("a LIKE filter escapes the caller's wildcards", async () => {
   );
 });
 
-testWithBuild("the location filter narrows through the FTS index first", async () => {
+testWithBuild("an FTS filter JOINS the index rather than probing it per row", async () => {
   const statements = await capture("location=new%20york");
   const rows = rowQuery(statements);
 
   // A leading-wildcard LIKE over an expression cannot use any index, so this was a scan of every
   // active row: 3.5s in production against 0.52s for the indexed ?city=Berlin. jobs_fts has indexed
   // the location column since the first migration.
-  assert.match(rows.sql, /jobs_fts WHERE jobs_fts MATCH \?/);
+  //
+  // A JOIN, and NOT `j.rowid IN (SELECT rowid FROM jobs_fts ...)`, which is what this used to be.
+  // The subquery form reads correct and plans backwards -- SQLite walked every active row and asked
+  // a materialised rowid list whether to keep it:
+  //
+  //   SEARCH j USING INDEX jobs_company_sort_idx (is_active=?)
+  //   LIST SUBQUERY 1 / SCAN jobs_fts VIRTUAL TABLE / CREATE BLOOM FILTER
+  //
+  // As a join it is SCAN jobs_fts then SEARCH j USING INTEGER PRIMARY KEY. Measured on production,
+  // ?title=Anesthesiologist's count went from 1,806,289 rows read to 968. Asserted on the SQL text
+  // because nothing else in the suite can see a query plan.
+  assert.match(rows.sql, /JOIN jobs_fts ON jobs_fts\.rowid = j\.rowid/);
+  assert.doesNotMatch(rows.sql, /rowid IN \(SELECT rowid FROM jobs_fts/);
   assert.ok(
     rows.bindings.some((value) => value === 'location:("new" AND "york"*)'),
     `expected a location-scoped MATCH, got ${JSON.stringify(rows.bindings)}`,
+  );
+});
+
+testWithBuild("two FTS filters share one join and one MATCH", async () => {
+  const statements = await capture("title=Nurse&location=Berlin");
+  const rows = rowQuery(statements);
+
+  // FTS5 allows one MATCH per table reference, so stacking filters cannot mean stacking joins. They
+  // are ANDed into a single expression instead -- and each side is bracketed, because ftsQuery
+  // returns a bare `"a"* AND "b"*` chain that would otherwise regroup against its neighbour.
+  assert.equal(rows.sql.match(/JOIN jobs_fts/g)?.length, 1);
+  assert.equal(rows.sql.match(/jobs_fts MATCH \?/g)?.length, 1);
+  assert.ok(
+    rows.bindings.some((value) => value === '(title:("nurse")) AND (location:("berlin"*))'),
+    `expected one combined MATCH, got ${JSON.stringify(rows.bindings)}`,
+  );
+});
+
+testWithBuild("the company filter stays on its own index and out of FTS", async () => {
+  const statements = await capture("company=Stripe");
+  const rows = rowQuery(statements);
+
+  // Company is an exact equality against the expression jobs_company_filter_idx indexes, so it
+  // already has the best plan available and routing it through FTS only adds work: measured,
+  // ?company=Stripe's count is 1,041 rows / 0ms on the index alone against 2,081 / 169ms with a
+  // join. The FTS narrowing it used to carry predates that index (migration 0017).
+  assert.doesNotMatch(rows.sql, /JOIN jobs_fts/);
+  assert.ok(
+    !rows.bindings.some((value) => typeof value === "string" && value.includes("company_identifier company_name")),
+    `company must not bind an FTS match, got ${JSON.stringify(rows.bindings)}`,
   );
 });
 
@@ -190,10 +232,15 @@ testWithBuild("the unfiltered browse count comes from provider_health, not a cor
   const exact = countQuery(statements);
   assert.ok(exact, "expected the exact count as the zero fallback");
 
-  // Any real filter puts the count back on the jobs table, where its index bounds the work.
+  // Any real filter puts the count back on the jobs table -- and BOUNDED, which every filtered
+  // count now is rather than only a text search's. A filtered count has no limit to stop at
+  // otherwise, and the ones no index can serve walked the whole active table to produce a number
+  // nobody reads precisely: ?title=Nurse counted 50,107 by reading 1,859,105 rows in 5,065ms, and
+  // 260,503 in 139ms once capped. Below the cap the LIMIT is never reached, so the count stays
+  // exact -- only the broad ones become "5,000+".
   const filtered = await capture("workplace=Remote&limit=1");
   assert.equal(filtered.some((s) => /sum\(active_jobs\)/.test(s.sql)), false);
-  assert.match(countQuery(filtered).sql, /count\(\*\) AS total FROM jobs j/);
+  assert.match(countQuery(filtered).sql, /count\(\*\) AS total FROM \(SELECT 1 FROM jobs j .* LIMIT 5001\)/s);
 });
 
 testWithBuild("the company filter compares against the shared display expression", async () => {

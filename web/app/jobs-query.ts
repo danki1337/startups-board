@@ -159,14 +159,96 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // lookup. `product manager` plus postedWithin=7 took over 33s that way and returned a 500;
   // driving from FTS it takes 0.5s and reads 27k rows. Browse keeps its indexes, where they are
   // exactly what makes the keyset page fast.
+  // Every FTS-backed constraint is resolved BEFORE the conditions are built, because they now share
+  // one join and one MATCH instead of each contributing its own `j.rowid IN (SELECT rowid FROM
+  // jobs_fts WHERE ...)` subquery.
+  //
+  // That subquery form was the single most expensive thing in the API, and the plan says why:
+  //
+  //   SEARCH j USING INDEX jobs_company_sort_idx (is_active=?)
+  //   LIST SUBQUERY 1 / SCAN jobs_fts VIRTUAL TABLE / CREATE BLOOM FILTER
+  //
+  // SQLite walked EVERY active row and asked a materialised rowid list whether to keep it, rather
+  // than letting FTS produce the handful of rows that match. As a join it is the other way round --
+  // `SCAN jobs_fts` then `SEARCH j USING INTEGER PRIMARY KEY (rowid=?)` -- and the difference is not
+  // marginal. Measured on production:
+  //
+  //   ?title=Anesthesiologist  count  1,806,289 rows / 307ms  ->     968 rows /   3ms
+  //   ?title=Nurse             count  1,859,306 rows / 1548ms -> 106,964 rows / 219ms
+  //   ?title=Nurse             rows      57,868 rows / 23ms   ->   4,461 rows /  92ms
+  //
+  // A filter on a title nobody else uses was reading the entire active index -- 1.8M rows -- to
+  // return 480.
+  // Title and location only. Company is deliberately NOT here even though it used to be: it is an
+  // exact equality against the expression jobs_company_filter_idx indexes, so it already has the
+  // best possible plan and dragging it through FTS only adds work. Measured, ?company=Stripe count:
+  // 1,041 rows / 0ms on the index alone, 2,081 rows / 169ms with the join. The FTS narrowing dates
+  // from before that index existed (migration 0017) and outlived its reason.
+  const locationValue = params.get("location");
+  const locationMatch = locationFtsQuery(locationValue);
+  const companyValue = params.get("company");
+  const titleValue = params.get("title");
+  const titleMatch = titleFtsQuery(titleValue);
+  const ftsTerms = [search, titleMatch, locationMatch]
+    .filter((term): term is string => term !== null);
+
+  // Whether anything ELSE narrows the rows, and the reason the join is conditional rather than
+  // always on.
+  //
+  // FTS5 cannot be the inner table of a join with a MATCH on it -- answering "does this one row
+  // match?" means intersecting doclists, not a point lookup -- so writing the join at all decides
+  // the plan: FTS drives. That is exactly right when the text constraint is the only one, and
+  // exactly wrong when a b-tree index could have done the narrowing instead. The cost does not show
+  // up in rows read, which is why it is worth writing down. Measured on production:
+  //
+  //   ?title=Cashier&country=us          count  863,798 rows / 153ms -> 858,759 rows / 3,079ms
+  //   ?location=London&workplace=Remote  count   95,909 rows /  21ms ->  69,748 rows / 1,796ms
+  //
+  // Same rows, 20-85x the CPU: FTS5 doclist work is far more expensive per row than walking
+  // (country, is_active, published_at) and rejecting against a bloom filter. So the join is taken
+  // only when nothing else can narrow, and otherwise the old subquery form stands -- with its count
+  // capped, which is what makes that path affordable (?title=Nurse: 1,859,105 rows / 5,065ms
+  // uncapped against 260,503 / 139ms capped).
+  //
+  // A text SEARCH is the exception in the other direction: there the `+` markers deliberately force
+  // FTS to drive whatever else is present, because the alternative is the 33s timeout described
+  // below. So search always joins.
+  const hasOtherFilters = isSearch
+    ? false
+    : ["country", "provider", "city", "roleFamily", "industry", "workplace", "employmentType",
+       "company", "companies", "postedWithin", "watchlist"]
+      .some((key) => (params.get(key) ?? "").trim() !== "");
+  const usesFts = ftsTerms.length > 0 && !hasOtherFilters;
+  // The FTS constraints that did NOT get a join, and so still need their own narrowing subquery.
+  const subqueryFtsTerms = ftsTerms.length > 0 && hasOtherFilters ? ftsTerms : [];
+
+  // The `+` markers stay gated on isSearch, NOT on usesFts, and that distinction is measured too.
+  // They make every jobs-side predicate unusable by an index so FTS is the only possible driver,
+  // which is what rescues a text search (33s to 0.5s, see below). Applied to a filter-only query it
+  // does the opposite: it also costs the (is_active, published_at DESC, key) index that satisfies
+  // the ORDER BY, so the page can no longer stop early. Same ?title=Nurse page, forcing the driver:
+  // 157,140 rows against 4,461 for letting the planner keep the date index.
   const filtered = (expression: string) => (isSearch ? `+${expression}` : expression);
   const conditions = [`${filtered("j.is_active")} = 1`];
   const bindings: unknown[] = [];
-  const from = search ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid" : "jobs j";
+  const from = usesFts ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid" : "jobs j";
+
+  if (usesFts) {
+    conditions.push("jobs_fts MATCH ?");
+    // Bracketed when there is more than one. ftsQuery returns a bare `"a"* AND "b"*` chain, so
+    // ANDing it against a column filter unbracketed would regroup the whole expression.
+    bindings.push(ftsTerms.length === 1
+      ? ftsTerms[0]
+      : ftsTerms.map((term) => `(${term})`).join(" AND "));
+  }
+  // The other shape: one narrowing subquery per term, which SQLite is free to use or ignore per its
+  // own costing rather than being committed to FTS by the join.
+  for (const term of subqueryFtsTerms) {
+    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
+    bindings.push(term);
+  }
 
   if (search) {
-    conditions.push("jobs_fts MATCH ?");
-    bindings.push(search);
     // Punctuation tech terms (c++, c#, ...) ride alongside the FTS match as a substring filter, so
     // "c++ engineer" narrows to engineer via the index and then keeps only the C++ titles. Applied
     // only with a normal FTS term present, which keeps the LIKE bounded to that narrowed set.
@@ -175,29 +257,13 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       bindings.push(`%${term}%`, `%${term}%`);
     }
   }
-  // Narrowed through FTS first, exactly as title and company are, and for the same reason -- this
-  // was the last unindexed filter left, and the slowest: ?location=new%20york took 3.5s against
-  // 0.52s for the indexed ?city=Berlin, because a leading-wildcard LIKE over an expression cannot
-  // use any index and the accompanying count has nothing to stop at. jobs_fts has indexed the
-  // location column since the first migration; it was simply never used.
-  const locationValue = params.get("location");
-  const locationMatch = locationFtsQuery(locationValue);
-  if (locationMatch) {
-    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
-    bindings.push(locationMatch);
-  }
+  // The LIKE that follows each FTS constraint above. FTS ignores word order and punctuation and the
+  // last token is often a prefix match, so the MATCH deliberately over-selects and these remove what
+  // it let through. They are cheap here precisely BECAUSE the join has already narrowed the set --
+  // a leading-wildcard LIKE cannot use an index, and on its own this was a scan of every active row
+  // (?location=new%20york took 3.5s against 0.52s for the indexed ?city=Berlin).
   addLikeFilter(conditions, bindings, "lower(coalesce(j.location, ''))", locationValue);
-  // Narrowed through the FTS index first, exactly as the title filter is, and for the same reason:
-  // a leading-wildcard LIKE over an expression cannot use any index, so this was a full scan of
-  // every active row. Measured on production, ?company=Revolut took 13.4s and ?company=Stripe 3.8s
-  // for result sets of a few hundred rows. jobs_fts already indexes both company columns.
-  const companyValue = params.get("company");
-  const companyMatch = companyFtsQuery(companyValue);
-  if (companyMatch) {
-    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
-    bindings.push(companyMatch);
-  }
-  // Then matched EXACTLY, not as a substring. A substring match on the raw columns meant picking
+  // Company is then matched EXACTLY, not as a substring. A substring match on the raw columns meant picking
   // "Mercury" returned Mercury (56), Mercuryinsurance (43) and even Masco (1) -- the last because
   // the string appears somewhere in its identifier. Company is always chosen from a fixed set (the
   // dropdown, a chip, or a click on the table), so there is no partial to support; free-text company
@@ -212,19 +278,8 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     bindings.push(normalizeCompanyValue(companyValue));
   }
   // Role and company are separate fields: searching "stripe" as a role should not match every
-  // posting at Stripe, and vice versa.
-  // The title filter is a substring match, which means a leading wildcard and therefore an
-  // unindexable scan of every active row. The page query survived that (the date index lets it stop
-  // once it has 20 matches) but the accompanying COUNT has no limit to stop at, so filtering by a
-  // title cost ~4s -- and the Title dropdown only just became usable enough for people to do it.
-  // Narrowing on the FTS title column first cuts that to ~0.2s for an identical result; the LIKE
-  // stays as the exactness check, since FTS ignores word order and punctuation.
-  const titleValue = params.get("title");
-  const titleMatch = titleFtsQuery(titleValue);
-  if (titleMatch) {
-    conditions.push(`${filtered("j.rowid")} IN (SELECT rowid FROM jobs_fts WHERE jobs_fts MATCH ?)`);
-    bindings.push(titleMatch);
-  }
+  // posting at Stripe, and vice versa. The title's own exactness check, for the same reason as the
+  // location one above -- the MATCH is word-based, this is the substring the reader actually picked.
   addLikeFilter(conditions, bindings, "lower(j.title)", titleValue);
 
   // One budget shared by every set filter, spent in declaration order. Each filter alone caps at
@@ -394,11 +449,14 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // 12-row sum. Every filtered or searched count still runs against jobs, where the filter's own
   // index (or the search cap) bounds the work.
   const isBareBrowse = !isSearch && countConditions.length === 1;
+  // Every count that is not the homepage's is now bounded, not just a text search's. A filtered
+  // count had no limit to stop at, and the ones that cannot be served by an index walked the whole
+  // active table to produce a number nobody reads precisely: ?title=Nurse counted 50,107 by reading
+  // 1,859,105 rows in 5,065ms. Capped, that is 260,503 rows in 139ms and the badge says "5,000+".
+  // Below the cap nothing changes -- the count is still exact, because the LIMIT is never reached.
   const count = isBareBrowse
     ? db.prepare("SELECT coalesce(sum(active_jobs), 0) AS total FROM provider_health")
-    : isSearch
-      ? db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings)
-      : db.prepare(`SELECT count(*) AS total FROM ${from} WHERE ${countWhere}`).bind(...countBindings);
+    : db.prepare(`SELECT count(*) AS total FROM (SELECT 1 FROM ${from} WHERE ${countWhere} LIMIT ${COUNT_CAP + 1})`).bind(...countBindings);
 
   // Only the first page of a result set needs the total. The infinite scroll keeps the count it got
   // from that page and never reads `total` off a cursor response -- but every scroll page was still
@@ -419,7 +477,10 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
       .bind(...countBindings).first<{ total: number }>();
     rawTotal = Number(exact?.total ?? 0);
   }
-  const totalCapped = withCount && isSearch && rawTotal > COUNT_CAP;
+  // !isBareBrowse, not isSearch: the cap applies to every filtered count now, and the homepage's
+  // total comes from provider_health rather than a capped subquery, so 1.8M must not be read as
+  // "5,000+".
+  const totalCapped = withCount && !isBareBrowse && rawTotal > COUNT_CAP;
   // null, not 0: a cursor page has no opinion about the total, and 0 would read as "no results" to
   // anything that trusted it.
   const total = withCount ? (totalCapped ? COUNT_CAP : rawTotal) : null;
@@ -804,14 +865,6 @@ function columnFtsQuery(columns: string, value: string | null, prefixLast: boole
   const phrases = tokens.map((token, index) =>
     prefixLast && index === tokens.length - 1 ? `"${token}"*` : `"${token}"`);
   return `${columns}:(${phrases.join(" AND ")})`;
-}
-
-// Company names are matched across BOTH indexed company columns -- the display name when a provider
-// supplied one, the identifier when it did not. The final token is a prefix match so a partial name
-// still narrows correctly (a hand-typed ?company=revolut has to keep reaching Revolut), and the
-// LIKE that follows removes anything the widening let through.
-function companyFtsQuery(value: string | null) {
-  return columnFtsQuery("{company_identifier company_name}", value, true);
 }
 
 // Not prefix-matched: the title filter is an exact phrase the user picked from a list, not something
