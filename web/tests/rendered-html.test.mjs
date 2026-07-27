@@ -270,15 +270,15 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // one family and what guarantees the text clears contrast on its own wash.
   assert.match(explorer, /color: `hsl\(\$\{hue\} 52% 42%\)`/);
   assert.match(explorer, /background: `hsl\(\$\{hue\} 66% 95%\)`/);
-  // Their logo-bearing counterparts wear the shared hairline-ring-plus-lift instead of a stroke.
-  // One property draws both the edge and the lift, so the two can never disagree -- and no tile
-  // holding a real logo carries a neutral outline any more.
-  assert.doesNotMatch(explorer, /outline-\[var\(--border\)\]/);
-  // Matched on the tile's own signature (a white ground carrying the shadow) rather than on the
-  // token alone -- --shadow-control is the shared pill/field treatment and is used elsewhere in
-  // this file, so counting bare occurrences would pin an unrelated number.
-  // Matched on each tile's own signature -- --shadow-control is the shared pill/field treatment and
-  // is used elsewhere in this file, so counting bare occurrences would pin an unrelated number.
+  // A tile holding SOMEONE ELSE'S mark wears a plain grey hairline and nothing else -- not the
+  // pill/field shadow, which read as a second frame around a logo that already has its own edges.
+  assert.equal(explorer.match(/outline-\[var\(--border\)\]/g)?.length, 2);
+  assert.doesNotMatch(explorer, /rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  // And every one of these hairlines is drawn INSIDE its box. An outline is painted outside the
+  // border box by default, so the monogram's own ring escaped from under the opaque logo stacked on
+  // top of it and every company logo wore a ring in its monogram's colour. -outline-offset-1 is what
+  // puts it where the tile above can cover it.
+  assert.doesNotMatch(explorer, /outline outline-1 outline-offset-0/);
   // The dropdown tile is 20px on a 6px radius; the table's is 36px on 12px. Both are now an OVERLAY
   // on top of the monogram rather than the tile itself, so the wrapper carries the size and the
   // white logo ground is absolutely positioned inside it. That layering is the fix for the
@@ -291,8 +291,8 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // That shipped once.
   assert.match(explorer, /relative block size-5 shrink-0/);
   assert.match(explorer, /relative block size-9 shrink-0/);
-  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[6px\] bg-white shadow-\[var\(--shadow-control\)\]/);
-  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[6px\] bg-white outline outline-1 -outline-offset-1 outline-\[var\(--border\)\]/);
+  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[12px\] bg-white outline outline-1 -outline-offset-1 outline-\[var\(--border\)\]/);
   // And no skeleton left on either -- that class was the visible symptom.
   assert.doesNotMatch(explorer, /skeleton skeleton-pulse absolute inset-0/);
   // A social card at last: the image had been sitting unreferenced in public/, so every link to the

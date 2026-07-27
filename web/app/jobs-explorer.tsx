@@ -1824,7 +1824,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
         // The ring is new here. The logo-bearing tile beside it in the same list has always had one,
         // so a bare monogram was the only mark in the dropdown without an edge -- it read as a
         // floating blob among framed tiles. Same hairline, tinted with the letter, like the table.
-        className="absolute inset-0 flex items-center justify-center rounded-[6px] text-[12px] font-bold leading-none outline outline-1 outline-offset-0"
+        className="absolute inset-0 flex items-center justify-center rounded-[6px] text-[12px] font-bold leading-none outline outline-1 -outline-offset-1"
         style={monogramTint(initialsOf(name))}
       >
         {initialsOf(name)}
@@ -1834,7 +1834,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
           // Both conditions, not just `painted`: a logo whose shape turns out to be unusable is
           // replaced by the monogram on the very next render, and revealing it the instant its
           // pixels land would show the wrong mark for one frame on the way there.
-          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-control)] ${painted && outcome === "ok" ? fade : "opacity-0"}`}
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[6px] bg-white outline outline-1 -outline-offset-1 outline-[var(--border)] ${painted && outcome === "ok" ? fade : "opacity-0"}`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -3297,7 +3297,7 @@ function CompanyLogo({ job }: { job: Job }) {
         // The tint comes from the letter (see monogramTint), so this column stops being one pink
         // stripe. 13px rather than 11: on a 36px tile an 11px letter left a lot of empty fill around
         // it, and the letter is the tinted tile's only strong mark.
-        className="absolute inset-0 flex items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 outline-offset-0"
+        className="absolute inset-0 flex items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 -outline-offset-1"
         style={monogramTint(job.companyMark)}
         aria-hidden="true"
       >
@@ -3305,7 +3305,7 @@ function CompanyLogo({ job }: { job: Job }) {
       </span>
       {job.companyLogoUrl && !failed ? (
         <span
-          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[12px] bg-white shadow-[var(--shadow-control)] ${loaded ? fade : "opacity-0"}`}
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 -outline-offset-1 outline-[var(--border)] ${loaded ? fade : "opacity-0"}`}
         >
           {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
