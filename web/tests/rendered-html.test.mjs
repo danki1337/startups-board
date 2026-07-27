@@ -302,7 +302,10 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // shimmers. An href here would be a claim the control does not honour: it would promise the
   // unfiltered view to a middle-click, a copied link and a crawler, and deliver a shimmer.
   const wordmark = explorer.slice(explorer.indexOf('aria-label="Aboard"'), explorer.indexOf("</button>", explorer.indexOf('aria-label="Aboard"')));
-  assert.match(wordmark, /aboard-wordmark\.webp/);
+  // The image itself is <Wordmark />, a component rather than an inline <img>, because it owns three
+  // density sources and a reveal of its own. What it resolves to is asserted in the density test
+  // below; what matters here is that the button still contains the mark and nothing else.
+  assert.match(wordmark, /<Wordmark \/>/);
   assert.match(wordmark, /setShimmer/);
   assert.doesNotMatch(wordmark, /href=/);
   assert.doesNotMatch(wordmark, /setFilters/);
@@ -347,23 +350,45 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   assert.match(query, /total: number \| null/);
 });
 
-test("the wordmark is a lossless WebP that still carries its alpha", async () => {
+test("every wordmark density is a lossless WebP that still carries its alpha", async () => {
   // The logo sits on the page background with a soft drop shadow, so losing the alpha channel would
   // put a white box behind it, and a lossy encode would ring around every letter edge. Both are the
-  // kind of thing that looks fine in a thumbnail and wrong at 3x, so they are asserted from the
+  // kind of thing that looks fine in a thumbnail and wrong at 3x, so they are asserted from each
   // file's own header rather than trusted to the conversion command.
-  const bytes = await readFile(new URL("../public/aboard-wordmark.webp", import.meta.url));
-  assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF");
-  assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP");
-  // VP8L is the lossless codec. VP8 (no L) would mean someone re-encoded it lossy.
-  const chunk = bytes.subarray(12, 16).toString("ascii");
-  assert.equal(chunk, "VP8L", `expected lossless VP8L, got ${chunk}`);
-  // After VP8L comes the chunk size, then a 0x2f signature byte at 20, then ONE 32-bit LE field:
-  // width-1 (14 bits), height-1 (14 bits), alpha_is_used (1 bit), version (3 bits). Reading it from
-  // 22 instead of 21 puts every field a byte out and the alpha flag reads 0 on an image that has one.
-  assert.equal(bytes[20], 0x2f, "VP8L signature byte");
-  const header = bytes.readUInt32LE(21);
-  assert.equal((header & 0x3fff) + 1, 707, "intrinsic width, which the markup declares");
-  assert.equal(((header >> 14) & 0x3fff) + 1, 303, "intrinsic height");
-  assert.ok((header >> 28) & 1, "the alpha channel must survive the conversion");
+  //
+  // All three densities, because the SIZES are the point now and not just the encoding: the browser
+  // drops to a cheap downsample filter whenever a transform is in play, so a source much larger than
+  // the box it lands in aliases under the hover tilt. Each file has to be the size it claims, or the
+  // srcset is handing some screen a source it will have to shrink by 3x again.
+  const densities = [
+    { file: "aboard-wordmark.webp", width: 119, height: 51 },
+    { file: "aboard-wordmark@2x.webp", width: 238, height: 102 },
+    { file: "aboard-wordmark@3x.webp", width: 357, height: 153 },
+  ];
+  for (const { file, width, height } of densities) {
+    const bytes = await readFile(new URL(`../public/${file}`, import.meta.url));
+    assert.equal(bytes.subarray(0, 4).toString("ascii"), "RIFF", file);
+    assert.equal(bytes.subarray(8, 12).toString("ascii"), "WEBP", file);
+    // VP8L is the lossless codec. VP8 (no L) would mean someone re-encoded it lossy.
+    const chunk = bytes.subarray(12, 16).toString("ascii");
+    assert.equal(chunk, "VP8L", `${file}: expected lossless VP8L, got ${chunk}`);
+    // After VP8L comes the chunk size, then a 0x2f signature byte at 20, then ONE 32-bit LE field:
+    // width-1 (14 bits), height-1 (14 bits), alpha_is_used (1 bit), version (3 bits). Reading it
+    // from 22 instead of 21 puts every field a byte out and the alpha flag reads 0 on an image that
+    // has one.
+    assert.equal(bytes[20], 0x2f, `${file}: VP8L signature byte`);
+    const header = bytes.readUInt32LE(21);
+    assert.equal((header & 0x3fff) + 1, width, `${file}: intrinsic width`);
+    assert.equal(((header >> 14) & 0x3fff) + 1, height, `${file}: intrinsic height`);
+    assert.ok((header >> 28) & 1, `${file}: the alpha channel must survive the conversion`);
+  }
+
+  // The markup must declare the 1x intrinsics, so the reserved box matches what actually loads on a
+  // 1x screen and the headline beneath it never jumps.
+  const explorer = await readFile(new URL("../app/jobs-explorer.tsx", import.meta.url), "utf8");
+  const mark = explorer.slice(explorer.indexOf("function Wordmark"), explorer.indexOf("function Wordmark") + 900);
+  assert.match(mark, /width=\{119\}/);
+  assert.match(mark, /height=\{51\}/);
+  assert.match(mark, /aboard-wordmark@2x\.webp 2x/);
+  assert.match(mark, /aboard-wordmark@3x\.webp 3x/);
 });

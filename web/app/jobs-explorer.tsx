@@ -13,6 +13,9 @@ import {
 import { countryFlag, countryName, COUNTRY_OPTIONS } from "./countries";
 import { CITY_OPTIONS, INDUSTRY_OPTIONS } from "./taxonomies";
 import { AtsMark, warmAtsIcons } from "./ats-marks";
+// One owner for "reveal an image once its pixels are actually here" -- see the note in that file
+// for the cached-image trap it exists to keep out of five separate <img>s.
+import { useImagePainted } from "./image-fade";
 // Shared with the ingestion worker, which decides whether to STORE a logo using exactly these
 // numbers. They used to be written out here and agree with the server by coincidence; the cost of
 // that coincidence was 324,728 stored Workday URLs the server had no idea this file would reject.
@@ -21,7 +24,7 @@ import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 import { placeTip } from "./place-tip.mjs";
 // Display normalisation for the free text a dozen ATSs return -- see the note in that file.
 import { splitLocations, tidyEmploymentType, normalizeEmploymentKey } from "./format.mjs";
-import { columnWidths, COLUMN_KEYS } from "./column-widths.mjs";
+import { columnWidths } from "./column-widths.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -172,6 +175,7 @@ const countryOptions = COUNTRY_OPTIONS.map((entry) => ({
 function Flag({ code }: { code?: string | null }) {
   const cc = (code ?? "").trim().toLowerCase();
   const [failed, setFailed] = useState(false);
+  const { paint, fade } = useImagePainted();
   // Two ASCII letters, not merely two characters. `code` is job.country, ingested from a dozen ATS
   // payloads, and it goes straight into a URL below -- so what it is allowed to contain has to be
   // stated here rather than assumed of every upstream normalizer forever.
@@ -187,8 +191,48 @@ function Flag({ code }: { code?: string | null }) {
       width={18}
       height={13}
       decoding="async"
+      ref={paint}
+      onLoad={(event) => paint(event.currentTarget)}
       onError={() => setFailed(true)}
-      className="inline-block h-[13px] w-[18px] shrink-0 rounded-[3px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10"
+      className={`inline-block h-[13px] w-[18px] shrink-0 rounded-[3px] object-cover align-[-2px] outline outline-1 -outline-offset-1 outline-black/10 ${fade}`}
+    />
+  );
+}
+
+// Served at the three densities it is actually displayed at rather than as one large master, and
+// that is a SHARPNESS fix before it is a bytes one.
+//
+// Chrome downsamples an image with high-quality filtering while it is painted untransformed, and
+// drops to a cheaper filter the moment a transform is involved. The old 707px master had to come
+// down 2.97x to reach the 238 device pixels it occupies on a 2x screen, and under the hover tilt
+// that cheap filter aliased it visibly -- the wordmark went soft the instant you pointed at it,
+// which is the one moment it is being looked at closely. Measured side by side at the same
+// transform: 707px source soft, 238px source crisp, 357px source crisp. Hand the browser a source
+// close to the size it will paint and there is no downsample left for the cheap filter to spoil.
+//
+// Still lossless, for the reason it always was -- at q92 the 2x encodes LARGER (12,952 against
+// 9,248 bytes), because lossy spends its bits on exactly the sharp flat-colour edges a logo is made
+// of and pays for them in ringing around every letter. The bytes are a bonus either way: a 2x
+// screen now fetches 9KB where it used to fetch 57KB.
+//
+// The 707px master is kept out of public/ at web/design/, so it is never served but all three
+// densities can be regenerated from it. width/height are the 1x intrinsics, so the box is reserved
+// from the ratio and the headline beneath never jumps.
+// alt is the brand name, not empty: this is the only place the product names itself on screen, and
+// a wordmark that reads as nothing is a wordmark that is not there.
+function Wordmark() {
+  const { paint, fade } = useImagePainted();
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      src="/aboard-wordmark.webp"
+      srcSet="/aboard-wordmark.webp 1x, /aboard-wordmark@2x.webp 2x, /aboard-wordmark@3x.webp 3x"
+      alt="Aboard"
+      width={119}
+      height={51}
+      ref={paint}
+      onLoad={(event) => paint(event.currentTarget)}
+      className={`block h-[51px] w-auto ${fade}`}
     />
   );
 }
@@ -862,37 +906,26 @@ export function JobsExplorer({
   const [shimmer, setShimmer] = useState(0);
 
   const widths = columnWidthsFor(jobs);
-  // The badge tweens its width between "157,212 jobs" and "Updating…"; both need measuring.
-  const countSwapRef = useSwapWidth(isLoading ? 1 : 0, `${formatTotal(total, totalCapped)} ${total === 1 ? "job" : "jobs"}`);
+  // Which of the badge's three states is showing. isLoading wins over isPaging: a new query replaces
+  // the whole result set, so the total is stale and saying "loading more" of a set that is about to
+  // be discarded would be the wrong claim. In practice they do not overlap -- loadMore returns early
+  // while a page is in flight -- but the order states which one matters if they ever do.
+  const badgeState = isLoading ? 1 : isPaging ? 2 : 0;
+  // The badge tweens its width between its states; each needs measuring.
+  const countSwapRef = useSwapWidth(badgeState, `${formatTotal(total, totalCapped)} ${total === 1 ? "job" : "jobs"}`);
   // Memoised because Virtuoso re-renders its header whenever this identity changes, and an inline
   // arrow here would hand it a new function on every parent render.
   const renderHeader = useCallback(() => <TableHeader widths={widths} />, [widths]);
+  // "Loading more…" reports from the count badge rather than from a row pinned under the last one.
+  // The badge already floats at the foot of the card -- exactly where the reader is looking when
+  // they hit the bottom -- and it is already the surface that says what the table is doing, so a
+  // second status strip 14px below it was two answers to one question.
   // Both hoisted out of the JSX. react-virtuoso republishes every prop into its stream system from
   // an effect with no dependency array, so an inline arrow here is a new identity on each parent
   // render and forces the item list to re-render all ~34 mounted rows -- which is exactly what
   // memoising the row is meant to prevent. `now` is in the deps because the row's "5m ago" label
   // depends on it; it ticks once a minute, which is a re-render the rows genuinely need.
   const computeItemKey = useCallback((_index: number, job: Job) => job.id, []);
-  // Only changes when the flag does, so Virtuoso is not handed a new context object every render.
-  const virtuosoContext = useMemo(() => ({ isPaging }), [isPaging]);
-  // Reaching the end of the rows while the next page is in flight used to look like the list had
-  // simply stopped -- no spinner, no message, just an edge. This lives INSIDE the scroller, which
-  // is the only place it can be seen: the table card has its own overflow, so anything below it is
-  // off-screen at the bottom of the list.
-  // fixedFooterContent, so it is sticky -- you see it the moment the fetch starts rather than only
-  // once you have scrolled onto it. Null while idle, which renders no <tfoot> at all.
-  const renderPagingFooter = useCallback(() => (
-    isPaging ? (
-      <tr>
-        <td colSpan={COLUMN_KEYS.length} className="bg-white/85 px-5 py-3 text-center text-[13px] font-bold text-[var(--muted)] backdrop-blur-sm">
-          <span className="inline-flex items-center gap-2" role="status">
-            <span className="search-spinner" aria-hidden="true" />
-            Loading more jobs…
-          </span>
-        </td>
-      </tr>
-    ) : null
-  ), [isPaging]);
   const renderRow = useCallback(
     (_index: number, job: Job) => <JobCells job={job} onFilter={update} now={now} />,
     [update, now],
@@ -994,8 +1027,6 @@ export function JobsExplorer({
             style={{ height: "100%" }}
             data={jobs}
             components={virtuosoComponents}
-            context={virtuosoContext}
-            fixedFooterContent={renderPagingFooter}
             computeItemKey={computeItemKey}
             fixedHeaderContent={renderHeader}
             itemContent={renderRow}
@@ -1044,15 +1075,27 @@ export function JobsExplorer({
             new text once when it settles instead of twice as the pair cross-fades. */}
         <p aria-live="polite" className="jobs-count-badge">
           <span ref={countSwapRef} className="t-morph">
-            <span data-active={isLoading ? undefined : ""}>
+            <span data-active={badgeState === 0 ? "" : undefined}>
               <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
               {total === 1 ? "job" : "jobs"}
             </span>
             {/* transitions.dev shimmer-text (15). A status label claiming work is happening should
                 look like it. data-text duplicates the string because ::before masks the gradient
                 onto the same glyphs -- keep the two in step if the copy ever changes. */}
-            <span data-active={isLoading ? "" : undefined}>
+            <span data-active={badgeState === 1 ? "" : undefined}>
               <span className="t-shimmer" data-text="Updating…">Updating…</span>
+            </span>
+            {/* The third state, and the only one that is hidden from the live region. "Updating…"
+                follows a deliberate act -- a filter, a keystroke -- and happens once; this follows a
+                scroll and happens on every page, so announcing it would read the badge aloud a dozen
+                times during one pass down the list. The rows it is fetching land in the table either
+                way, which is what a screen reader is actually following. A spinner rather than the
+                shimmer because this is work with an end, not a value in flux. */}
+            <span data-active={badgeState === 2 ? "" : undefined} aria-hidden="true">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="search-spinner search-spinner-sm" />
+                Loading more…
+              </span>
             </span>
           </span>
         </p>
@@ -1121,21 +1164,6 @@ export function JobsExplorer({
               size buys: the clamp has a low floor precisely so a 390px phone can still fit the
               sentence rather than breaking it. Inter, not the pixel face -- a display face is for
               three or four words, and this is a sentence with a number in it. */}
-          {/* The wordmark, as a lossless WebP with alpha (VP8L). Lossless rather than lossy is not
-              caution: at q92 the same image encodes LARGER (23,340 vs 22,618 bytes), because lossy
-              spends its bits on exactly the sharp flat-colour edges a logo is made of, and pays for
-              them in ringing artefacts around every letter.
-              Served at the source's NATIVE 707px, with no resampling anywhere in the pipeline. That
-              is not the obvious call and the numbers are why: downscaling to 590px produced a
-              LARGER file than the native 707 (65,356 against 57,444 bytes), because resampling
-              turns the crisp flat-colour regions a logo is made of into interpolated gradients,
-              which lossless compresses far worse. The first version of this went through sips at
-              354px and lost real detail -- the same 354px through cwebp's own filter came out 23%
-              bigger, which is the detail sips had thrown away. Downscaling cost quality AND bytes.
-              width/height are the INTRINSIC size and the display size is CSS, so the browser
-              reserves the right box from the ratio and the headline beneath never jumps.
-              alt is the brand name, not empty: this is the only place the product names itself on
-              screen, and a wordmark that reads as nothing is a wordmark that is not there. */}
           {/* A button, not a link, and that changed when the click stopped resetting the filters.
               It was a <Link href="/"> whose click was intercepted to clear them -- the href carried
               real weight there: middle-click, copy-link and crawlers all got the unfiltered view,
@@ -1155,14 +1183,7 @@ export function JobsExplorer({
             }}
             className="wordmark-link mx-auto mb-5 block w-fit rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--focus)]"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/aboard-wordmark.webp"
-              alt="Aboard"
-              width={707}
-              height={303}
-              className="block h-[51px] w-auto"
-            />
+            <Wordmark />
             {/* Keyed on the run counter so every click replays it: a CSS animation on an element
                 that never unmounts fires once and never again, and React reuses the node unless the
                 key changes. */}
@@ -1704,6 +1725,9 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   // be unusable. The table had been remembering that per URL since the virtualizer forced the issue;
   // the dropdown simply never got the same treatment.
   const { outcome, settle } = useLogoOutcome(logoUrl);
+  // The dropdown's mark had no reveal at all while the table's row had one, which is the opposite of
+  // what this component is for -- a company is supposed to look the same in the list as in the rows.
+  const { painted, paint, fade } = useImagePainted();
   if (logoUrl && outcome !== "bad") {
     return (
       <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-control)]">
@@ -1716,8 +1740,12 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
           loading="eager"
           decoding="async"
           referrerPolicy="no-referrer"
-          className="size-full object-contain"
+          // Both conditions, not just `painted`: a logo whose shape turns out to be unusable is
+          // replaced by the monogram on the very next render, and revealing it the instant its
+          // pixels land would show the wrong mark for one frame on the way there.
+          className={`size-full object-contain ${painted && outcome === "ok" ? fade : "opacity-0"}`}
           ref={(node) => {
+            paint(node);
             if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
               settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
             }
@@ -1725,6 +1753,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
           onError={() => settle("bad")}
           onLoad={(event) => {
             const img = event.currentTarget;
+            paint(img);
             settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
           }}
         />
@@ -2726,7 +2755,7 @@ function VirtuosoRow({ item, ...rowProps }: React.ComponentPropsWithoutRef<"tr">
 const virtuosoComponents = {
   Table: VirtuosoTable,
   TableRow: VirtuosoRow,
-} satisfies TableComponents<Job, { isPaging?: boolean }>;
+} satisfies TableComponents<Job>;
 
 // The six widths used to be hard-coded percentages -- 30/20/12/11/12/15 -- chosen once against an
 // imagined result set. They were right for some queries and wrong for most: three quarters of the
@@ -3140,7 +3169,14 @@ function CompanyLogo({ job }: { job: Job }) {
   // which is what keeps the hydrated markup identical.
   const { outcome, settle } = useLogoOutcome(job.companyLogoUrl);
   const failed = outcome === "bad";
-  const loaded = outcome === "ok";
+  // Two different questions, and conflating them was a bug you could only see on a second visit.
+  // `outcome` is the SHAPE verdict for a URL and it is remembered across sessions in localStorage;
+  // `painted` is whether THIS <img> element has its pixels right now. Revealing on `outcome === "ok"`
+  // alone meant that every row mounted after the outcome cache had hydrated -- so every row on every
+  // repeat visit -- rendered at full opacity with nothing in it, skipped the skeleton entirely, and
+  // popped the moment the bytes landed. The fade was only ever visible on a cold first visit.
+  const { painted, paint, fade } = useImagePainted();
+  const loaded = painted && outcome === "ok";
 
   // A URL already known to be unusable renders the monogram directly -- no <img>, so no request,
   // no decode, no skeleton flash on the way to the same result.
@@ -3173,10 +3209,11 @@ function CompanyLogo({ job }: { job: Job }) {
           // No inset: the logo fills the tile edge to edge. object-contain still keeps a
           // not-quite-square mark whole rather than cropping it -- only genuinely square logos
           // reach all four edges, which is the most that can be done without cutting a mark.
-          className={`relative size-full object-contain transition-opacity duration-[120ms] ease-[var(--ease-out)] ${loaded ? "opacity-100" : "opacity-0"}`}
+          className={`relative size-full object-contain ${loaded ? fade : "opacity-0"}`}
           // A cached image can finish before React attaches onLoad, which would leave the row stuck
           // on its placeholder. The ref catches that case on mount.
           ref={(node) => {
+            paint(node);
             if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
               settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
             }
@@ -3187,6 +3224,7 @@ function CompanyLogo({ job }: { job: Job }) {
           // failed logo so it falls back to the clean monogram.
           onLoad={(event) => {
             const img = event.currentTarget;
+            paint(img);
             settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
           }}
         />

@@ -905,6 +905,36 @@ button:disabled,
   animation: search-spin 620ms linear infinite;
 }
 
+/* Every image on the page reveals with this. An ANIMATION, not a transition, and that is the whole
+   point of it: a transition needs a previously PAINTED frame at opacity 0 to move away from, and an
+   image served from cache can go from mounting to decoded inside a single commit -- React flips the
+   class in the same frame the element first appears, the browser has no earlier frame to interpolate
+   from, and the image simply arrives. An animation carries its own start value and runs whenever it
+   is applied, warm cache or cold.
+   No fill-mode: the resting opacity is 1 either way, and a filling animation is what turned an
+   element into a stacking context here once before and trapped a dropdown behind the table. */
+.img-fade {
+  animation: img-fade 200ms var(--ease-out);
+}
+
+@keyframes img-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .img-fade { animation: none; }
+}
+
+/* The count badge's copy is 13px, and the field's 20px ring beside it reads as a second element
+   rather than as punctuation on the label. Border scaled with it, or a 12px ring at 2px is mostly
+   border. */
+.search-spinner-sm {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
 @keyframes search-spin {
   to { rotate: 360deg; }
 }
