@@ -257,10 +257,22 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // unreachable without production data. This is the only check that covers it.
   assert.match(styles, /--monogram-wash: color-mix\(in srgb, var\(--accent\) 15%, transparent\)/);
   assert.match(styles, /--monogram-stroke: color-mix\(in srgb, var\(--accent\) 30%, transparent\)/);
-  // Exactly two tiles wear the accent ring (the table's monogram and the dropdown's) and exactly two
-  // wear the neutral one (their logo-bearing counterparts).
+  // Exactly two tiles wear the accent ring -- the table's monogram and the dropdown's. That ring is
+  // what says "this square is ours and the company had no logo", so it belongs to the monogram
+  // alone and must not spread to the tiles that hold someone else's mark.
   assert.equal(explorer.match(/outline-\[var\(--monogram-stroke\)\]/g)?.length, 2);
-  assert.equal(explorer.match(/outline-\[var\(--border\)\]/g)?.length, 2);
+  // Their logo-bearing counterparts wear the shared hairline-ring-plus-lift instead of a stroke.
+  // One property draws both the edge and the lift, so the two can never disagree -- and no tile
+  // holding a real logo carries a neutral outline any more.
+  assert.doesNotMatch(explorer, /outline-\[var\(--border\)\]/);
+  // Matched on the tile's own signature (a white ground carrying the shadow) rather than on the
+  // token alone -- --shadow-control is the shared pill/field treatment and is used elsewhere in
+  // this file, so counting bare occurrences would pin an unrelated number.
+  // Matched on each tile's own signature -- --shadow-control is the shared pill/field treatment and
+  // is used elsewhere in this file, so counting bare occurrences would pin an unrelated number.
+  // The dropdown tile is 20px on a 6px radius; the table's is 36px on 12px.
+  assert.match(explorer, /size-5 shrink-0[^"]*rounded-\[6px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  assert.match(explorer, /size-9 shrink-0[^"]*rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
   // A social card at last: the image had been sitting unreferenced in public/, so every link to the
   // site anywhere unfurled as a bare URL.
   assert.match(layout, /openGraph/);

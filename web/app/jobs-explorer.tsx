@@ -1681,7 +1681,7 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   const { outcome, settle } = useLogoOutcome(logoUrl);
   if (logoUrl && outcome !== "bad") {
     return (
-      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
+      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-control)]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logoUrl}
@@ -3108,7 +3108,7 @@ function CompanyLogo({ job }: { job: Job }) {
     // The ring sits OUTSIDE the tile (offset 0, not -1) so it frames the logo rather than cropping
     // a pixel off it, and uses the shared border token so it matches every other hairline here.
     return (
-      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white outline outline-1 outline-offset-0 outline-[var(--border)]">
+      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white shadow-[var(--shadow-control)]">
         {/* Kept mounted and faded out rather than unmounted on load: removing it in the same frame
             the image appears left one blank frame between the two, which is the pop this is here to
             remove. Both sides run the same 120ms so they cross-fade. */}
