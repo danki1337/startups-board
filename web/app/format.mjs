@@ -189,3 +189,37 @@ export function splitLocations(location) {
     count: null,
   };
 }
+
+/* ---------------------------------------------------------------- compact counts */
+
+/**
+ * A job total short enough to survive a browser tab.
+ *
+ * A tab strip shows maybe fifteen characters before it truncates, and "1,802,032 jobs — Aboard"
+ * spends nine of them on digits nobody reads at that size -- the tab ends up saying "1,802,03…"
+ * and the brand, which is the part that identifies the tab, falls off the end entirely.
+ *
+ * One decimal place, and only while the whole part is a single digit. "1.8M" carries something
+ * "2M" does not; "44.6K" is a precision the reader has no use for, so that becomes "45K". Values
+ * under a thousand are exact, because at that size the real number is already short.
+ *
+ * Deliberately hand-rolled rather than Intl.NumberFormat's compact notation: this string is built
+ * in the Worker and asserted in Node, and the two only agree if their ICU data does. A dozen lines
+ * of arithmetic are the same everywhere.
+ *
+ * @param {number} value
+ * @returns {string} e.g. "1.8M", "45K", "721"
+ */
+export function compactCount(value) {
+  const total = Math.max(0, Math.round(Number(value) || 0));
+  if (total < 1_000) return String(total);
+  for (const [suffix, size] of [["B", 1e9], ["M", 1e6], ["K", 1e3]]) {
+    if (total < size) continue;
+    const scaled = total / size;
+    const rounded = scaled < 10 ? Math.round(scaled * 10) / 10 : Math.round(scaled);
+    // Rounding can carry into the next unit: 999,999 scales to 1000K, which should read "1M".
+    if (rounded >= 1_000) return compactCount(size * 1_000);
+    return `${rounded}${suffix}`;
+  }
+  return String(total);
+}

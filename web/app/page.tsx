@@ -1,5 +1,6 @@
 import { cache } from "react";
 
+import { compactCount } from "./format.mjs";
 import { JobsExplorer } from "./jobs-explorer";
 import { queryJobs, type JobsPage } from "./jobs-query";
 import { OG_IMAGES, TWITTER_IMAGES } from "./site-meta";
@@ -122,17 +123,28 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
     if (!total) return {};
     // "1 jobs" is the kind of thing a stub row in a test catches and nobody else does.
     const plural = total === 1 && !page?.totalCapped ? "job" : "jobs";
-    const count = `${total.toLocaleString()}${page?.totalCapped ? "+" : ""} ${plural}`;
+    const suffix = page?.totalCapped ? "+" : "";
+    // Two spellings of one number, because the two places it goes have different room.
+    //
+    // A browser tab truncates around fifteen characters, and "1,802,032 jobs — Aboard" spends nine
+    // of them on digits that are unreadable at that size -- the tab reads "1,802,03…" and drops the
+    // brand, which is the only part that tells you which tab it is. Compact keeps both: "1.8M jobs
+    // — Aboard".
+    //
+    // A share card has a whole line, and there the exact figure is the stronger claim: "1,802,032
+    // jobs" reads as a real, freshly-counted index in a way "1.8M jobs" does not.
+    const tabCount = `${compactCount(total)}${suffix} ${plural}`;
+    const cardCount = `${total.toLocaleString()}${suffix} ${plural}`;
     return {
-      title: { absolute: `${count} — Aboard` },
+      title: { absolute: `${tabCount} — Aboard` },
       // Relative, so it resolves against metadataBase -- which is aboard.cc. That is what makes the
       // workers.dev origin and www both point at the canonical host instead of competing with it as
       // duplicates of the same page.
       alternates: { canonical: "/" },
       // images spread in explicitly: Next replaces the layout's whole openGraph object rather than
       // merging into it, so omitting them here drops the card. See site-meta.ts.
-      openGraph: { title: `${count} — Aboard`, images: OG_IMAGES },
-      twitter: { title: `${count} — Aboard`, images: TWITTER_IMAGES },
+      openGraph: { title: `${cardCount} — Aboard`, images: OG_IMAGES },
+      twitter: { title: `${cardCount} — Aboard`, images: TWITTER_IMAGES },
     };
   }
   const description = `Open ${company ? `roles at ${company}` : heading.toLowerCase()}, collected from public Ashby, Greenhouse, Lever, Workday and other ATS job boards.`;

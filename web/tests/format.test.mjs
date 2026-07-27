@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { splitLocations, tidyEmploymentType, tidyLocation } from "../app/format.mjs";
+import { compactCount, splitLocations, tidyEmploymentType, tidyLocation } from "../app/format.mjs";
 
 /* --------------------------------------------------------------- employment type */
 
@@ -137,4 +137,35 @@ test("a remote entry in a middot or semicolon list leaves no dangling separator"
   assert.equal(list.primary, "Berlin");
   // Munich survives as the hidden count even though the remote entry was dropped mid-list.
   assert.equal(list.extra, 1);
+});
+
+test("a job total shortens to something a browser tab can hold", () => {
+  // The tab strip truncates around fifteen characters. "1,802,032 jobs — Aboard" loses the brand,
+  // which is the only part that identifies the tab; "1.8M jobs — Aboard" keeps it.
+  assert.equal(compactCount(1_802_032), "1.8M");
+  assert.equal(compactCount(1_244_681), "1.2M");
+  assert.equal(compactCount(157_212), "157K");
+  assert.equal(compactCount(44_557), "45K");
+
+  // One decimal only while the whole part is a single digit: "1.5K" says something "2K" does not,
+  // whereas "44.6K" is precision a tab cannot use.
+  assert.equal(compactCount(1_500), "1.5K");
+  assert.equal(compactCount(5_000), "5K");
+  assert.equal(compactCount(1_049), "1K");
+
+  // Under a thousand the real number is already short, so it stays exact -- including the singular
+  // the title's plural rule depends on.
+  assert.equal(compactCount(1), "1");
+  assert.equal(compactCount(721), "721");
+  assert.equal(compactCount(999), "999");
+
+  // Rounding that carries has to promote a unit, or 999,999 renders as the nonsense "1000K".
+  assert.equal(compactCount(999_999), "1M");
+  assert.equal(compactCount(9_999), "10K");
+  assert.equal(compactCount(1_000_000), "1M");
+
+  // Junk in, something renderable out -- this feeds a <title>, which must never read "NaN jobs".
+  assert.equal(compactCount(0), "0");
+  assert.equal(compactCount(Number.NaN), "0");
+  assert.equal(compactCount(-5), "0");
 });
