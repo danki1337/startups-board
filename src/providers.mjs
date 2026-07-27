@@ -966,6 +966,15 @@ function normalizeLeverJob(candidate, job, syncedAt) {
 function normalizeGreenhouseJob(candidate, job, syncedAt) {
   return normalizedJob(candidate, syncedAt, {
     sourceId: job.id,
+    // Greenhouse has been sending this on every job all along and we were throwing it away, so all
+    // 4,553 Greenhouse boards fell back to humanising their URL slug -- and a slug has no spaces in
+    // it. "paperlessparts" rendered as "Paperlessparts", one word, which meant the company read
+    // wrong in the table AND could not be found: ?company=Paperless%20Parts returned 0 of its 18
+    // jobs and a search for "paperless parts" returned nothing at all, while "paperlessparts"
+    // returned all 18. The board was never missing; its name was.
+    //
+    // No extra request for it -- it rides in the same /jobs payload the sync already reads.
+    companyName: job.company_name,
     title: job.title,
     location: job.location?.name,
     workplace: normalizeWorkplace(job.metadata?.find?.((item) => /workplace/i.test(item.name))?.value),

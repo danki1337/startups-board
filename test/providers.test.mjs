@@ -326,3 +326,37 @@ test("Workday still stops when a real total says it should", async () => {
   assert.equal(jobs.length, 20, "a full page that already meets the stated total ends the walk");
   assert.equal(call, 1);
 });
+
+test("Greenhouse reads the company name it was already being sent", () => {
+  // All 4,553 Greenhouse boards used to fall back to humanising their URL slug, because this field
+  // was in the payload and unread. A slug has no spaces: "paperlessparts" rendered as
+  // "Paperlessparts", which read wrong in the table AND could not be found --
+  // ?company=Paperless%20Parts returned 0 of its 18 jobs and a search for "paperless parts"
+  // returned nothing, while "paperlessparts" returned all 18. The board was never missing.
+  const candidate = parseAtsUrl("https://job-boards.greenhouse.io/paperlessparts");
+  const normalized = getProvider("greenhouse").normalizeJob(candidate, {
+    id: 4321,
+    title: "Senior Technical Consultant",
+    company_name: "Paperless Parts",
+    location: { name: "Boston, MA" },
+    absolute_url: "https://job-boards.greenhouse.io/paperlessparts/jobs/4321",
+    updated_at: "2026-07-20T00:00:00.000Z",
+  }, "2026-07-27T00:00:00.000Z");
+
+  assert.equal(normalized.companyName, "Paperless Parts");
+  // The identifier still rides along -- it is the board key and the fallback when a provider sends
+  // no name at all, which is still true of eight of the twelve.
+  assert.equal(normalized.companyIdentifier, "paperlessparts");
+});
+
+test("a Greenhouse board that sends no company name still falls back to its slug", () => {
+  const candidate = parseAtsUrl("https://job-boards.greenhouse.io/example");
+  const normalized = getProvider("greenhouse").normalizeJob(candidate, {
+    id: 1,
+    title: "Engineer",
+    absolute_url: "https://job-boards.greenhouse.io/example/jobs/1",
+  }, "2026-07-27T00:00:00.000Z");
+
+  assert.equal(normalized.companyName, null, "null, not an empty string -- the display coalesce tests for NULL");
+  assert.equal(normalized.companyIdentifier, "example");
+});
