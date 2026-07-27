@@ -226,7 +226,10 @@ function Wordmark() {
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
       src="/aboard-wordmark.webp"
-      srcSet="/aboard-wordmark.webp 1x, /aboard-wordmark@2x.webp 2x, /aboard-wordmark@3x.webp 3x"
+      // -2x, not @2x: Cloudflare's asset server normalises `@` to %40 and answers the literal name
+      // with a 307, so the conventional spelling cost the hero image an extra round trip on every
+      // retina screen. Verified against production -- @2x redirected, -2x is a straight 200.
+      srcSet="/aboard-wordmark.webp 1x, /aboard-wordmark-2x.webp 2x, /aboard-wordmark-3x.webp 3x"
       alt="Aboard"
       width={119}
       height={51}

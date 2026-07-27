@@ -362,8 +362,8 @@ test("every wordmark density is a lossless WebP that still carries its alpha", a
   // srcset is handing some screen a source it will have to shrink by 3x again.
   const densities = [
     { file: "aboard-wordmark.webp", width: 119, height: 51 },
-    { file: "aboard-wordmark@2x.webp", width: 238, height: 102 },
-    { file: "aboard-wordmark@3x.webp", width: 357, height: 153 },
+    { file: "aboard-wordmark-2x.webp", width: 238, height: 102 },
+    { file: "aboard-wordmark-3x.webp", width: 357, height: 153 },
   ];
   for (const { file, width, height } of densities) {
     const bytes = await readFile(new URL(`../public/${file}`, import.meta.url));
@@ -389,6 +389,6 @@ test("every wordmark density is a lossless WebP that still carries its alpha", a
   const mark = explorer.slice(explorer.indexOf("function Wordmark"), explorer.indexOf("function Wordmark") + 900);
   assert.match(mark, /width=\{119\}/);
   assert.match(mark, /height=\{51\}/);
-  assert.match(mark, /aboard-wordmark@2x\.webp 2x/);
-  assert.match(mark, /aboard-wordmark@3x\.webp 3x/);
+  assert.match(mark, /aboard-wordmark-2x\.webp 2x/);
+  assert.match(mark, /aboard-wordmark-3x\.webp 3x/);
 });
