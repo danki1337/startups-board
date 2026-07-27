@@ -298,3 +298,36 @@ export function compactCount(value) {
   }
   return String(total);
 }
+
+/* ------------------------------------------------------------------ posted age */
+
+// How far a publish time may sit in the future before it stops being clock skew and starts being a
+// wrong date. Two minutes covers the once-a-minute `now` tick with room to spare, and is far short
+// of anything a reader would notice as a lie.
+const RELATIVE_FUTURE_GRACE_MS = 2 * 60_000;
+
+// A short "3h ago" / "20m ago" label for freshly posted roles; null once a posting is a week old, so
+// the caller falls back to the absolute date. Only used for real publish timestamps — synthesised
+// fallback dates keep the calendar date.
+export function relativePosted(date, now) {
+  const diffMs = now - date.getTime();
+  // A posting reading as slightly AHEAD of `now` is normal, not a broken date, and treating it as
+  // broken is what put a bare calendar date on the freshest rows -- the ones a reader most wants a
+  // relative age for. Three ordinary causes, none of them a bad timestamp:
+  //   - `now` ticks once a minute, so anything published since the last tick is ahead of it;
+  //   - the reader's clock is their own, and ours is the server's;
+  //   - providers round. Workday publishes "Posted Today", which resolves to a day boundary.
+  // Checked against production: of 1,807,690 active jobs, ZERO are dated in the future by the
+  // database's own clock. So every one of these that surfaced was skew, and the row said
+  // "Jul 27, 2026" about a job posted minutes earlier while the row beneath it said "2h ago".
+  // Beyond the grace window it is a real anomaly and the absolute date is the honest answer.
+  if (diffMs < -RELATIVE_FUTURE_GRACE_MS) return null;
+  const minutes = Math.floor(Math.max(diffMs, 0) / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return null;
+}

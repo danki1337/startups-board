@@ -23,7 +23,7 @@ import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 // Its own module so a test can import and run it -- see the note there.
 import { placeTip } from "./place-tip.mjs";
 // Display normalisation for the free text a dozen ATSs return -- see the note in that file.
-import { splitLocations, tidyEmploymentType, normalizeEmploymentKey } from "./format.mjs";
+import { splitLocations, tidyEmploymentType, normalizeEmploymentKey, relativePosted } from "./format.mjs";
 import { columnWidths } from "./column-widths.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
@@ -108,21 +108,6 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
 });
 
-// A short "3h ago" / "20m ago" label for freshly posted roles; null once a posting is a week old, so
-// the caller falls back to the absolute date. Only used for real publish timestamps — synthesised
-// fallback dates keep the calendar date.
-function relativePosted(date: Date, now: number): string | null {
-  const diffMs = now - date.getTime();
-  if (diffMs < 0) return null; // clock skew / future date -> show the date instead
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
-  return null;
-}
 
 // A capped count (a broad text search) reads as "5,000+"; an exact count reads plainly.
 function formatTotal(total: number, capped: boolean): string {

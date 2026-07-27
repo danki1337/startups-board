@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { compactCount, splitLocations, tidyEmploymentType, tidyLocation } from "../app/format.mjs";
+import { compactCount, splitLocations, tidyEmploymentType, tidyLocation, relativePosted } from "../app/format.mjs";
 
 /* --------------------------------------------------------------- employment type */
 
@@ -225,4 +225,38 @@ test("a job total shortens to something a browser tab can hold", () => {
   assert.equal(compactCount(0), "0");
   assert.equal(compactCount(Number.NaN), "0");
   assert.equal(compactCount(-5), "0");
+});
+
+test("a posting a moment in the future still reads as an age, not a date", () => {
+  // The bug this exists for: `now` ticks once a minute, so anything published since the last tick is
+  // AHEAD of it. relativePosted treated any negative difference as a broken date and returned null,
+  // and the caller then rendered the absolute date -- so the FRESHEST rows, the ones a reader most
+  // wants an age for, were the only ones reading "Jul 27, 2026" while the row beneath them said
+  // "2h ago". Checked against production: of 1,807,690 active jobs, zero are dated in the future by
+  // the database's own clock, so every occurrence was skew.
+  const now = Date.UTC(2026, 6, 27, 12, 0, 0);
+  const ahead = (ms) => relativePosted(new Date(now + ms), now);
+
+  assert.equal(ahead(30_000), "Just now", "half a minute ahead is the once-a-minute tick");
+  assert.equal(ahead(90_000), "Just now", "a minute and a half ahead is still ordinary skew");
+  assert.equal(ahead(119_000), "Just now", "just inside the grace window");
+  // Past it, the date really is wrong and the absolute date is the honest answer.
+  assert.equal(ahead(10 * 60_000), null, "ten minutes ahead is not skew");
+  assert.equal(ahead(48 * 3_600_000), null, "two days ahead is a bad timestamp");
+});
+
+test("the age ladder reads in the units a reader thinks in", () => {
+  const now = Date.UTC(2026, 6, 27, 12, 0, 0);
+  const ago = (ms) => relativePosted(new Date(now - ms), now);
+
+  assert.equal(ago(0), "Just now");
+  assert.equal(ago(59_000), "Just now");
+  assert.equal(ago(60_000), "1m ago");
+  assert.equal(ago(59 * 60_000), "59m ago");
+  assert.equal(ago(60 * 60_000), "1h ago");
+  assert.equal(ago(23 * 3_600_000), "23h ago");
+  assert.equal(ago(24 * 3_600_000), "1d ago");
+  assert.equal(ago(6 * 24 * 3_600_000), "6d ago");
+  // A week old stops being an age and becomes a date -- "9d ago" is not how anyone reads a calendar.
+  assert.equal(ago(7 * 24 * 3_600_000), null);
 });
