@@ -1766,6 +1766,36 @@ function initialsOf(name: string) {
   return name.split(/[\s|_-]+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase() ?? "").join("");
 }
 
+// A monogram's colour comes from the letter it shows, so a column of them reads as a column of
+// distinct companies rather than a pink stripe.
+//
+// Every monogram used to be the accent, which made the avatar column the one place on the page
+// where identical-looking marks sat directly on top of each other -- and a logo-less company is the
+// common case, not the exception, so that column is mostly monograms.
+//
+// Keyed on the FIRST LETTER rather than a hash of the whole name, deliberately. It means the colour
+// and the glyph agree: every M is the same teal, so the pairing is learnable and two rows of the
+// same company never disagree with each other. A hash would scatter better but would make the same
+// letter a different colour in every row, which reads as noise.
+//
+// Hues, not free-form hex. One saturation and one lightness across the set is what keeps twelve
+// colours looking like one family and guarantees the text clears contrast on its own wash; picking
+// twelve hex triples by hand does neither. 55-80 is skipped because yellow at a readable lightness
+// goes muddy, and only one pink is included so the brand accent stays the brand's.
+const MONOGRAM_HUES = [340, 355, 20, 40, 100, 145, 172, 195, 215, 245, 275, 310];
+
+function monogramTint(initials: string) {
+  const code = initials.trim().toUpperCase().charCodeAt(0);
+  const hue = MONOGRAM_HUES[(Number.isNaN(code) ? 0 : code) % MONOGRAM_HUES.length];
+  return {
+    // The glyph carries the saturation; the tile stays near-white so a row of them does not become
+    // a column of colour blocks competing with the job titles beside them.
+    color: `hsl(${hue} 52% 42%)`,
+    background: `hsl(${hue} 66% 95%)`,
+    outlineColor: `hsl(${hue} 44% 82%)`,
+  };
+}
+
 // What a logo URL turned out to be, for this session and the next. Shared by the table's rows and
 // the Company dropdown's marks, which is the point: a company seen in one is already settled in the
 // other. Seeded synchronously from the module-level map so a remounting row or a re-opened panel
@@ -1793,49 +1823,53 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   // The dropdown's mark had no reveal at all while the table's row had one, which is the opposite of
   // what this component is for -- a company is supposed to look the same in the list as in the rows.
   const { painted, paint, fade } = useImagePainted();
-  if (logoUrl && outcome !== "bad") {
-    return (
-      <span className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-control)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={logoUrl}
-          alt=""
-          // Eager, like the table's. The panel is on screen the moment it opens, so a visibility
-          // check only delays a request that is about to happen anyway.
-          loading="eager"
-          decoding="async"
-          referrerPolicy="no-referrer"
+  // Same layering as the table's row, because the rule this component exists to hold is that a
+  // company looks the same in the list as in the rows: the monogram is the base and a logo fades in
+  // over it, so neither surface ever shows a placeholder for a logo that is not coming.
+  return (
+    <span className="relative size-5 shrink-0">
+      <span
+        aria-hidden="true"
+        // The ring is new here. The logo-bearing tile beside it in the same list has always had one,
+        // so a bare monogram was the only mark in the dropdown without an edge -- it read as a
+        // floating blob among framed tiles. Same hairline, tinted with the letter, like the table.
+        className="absolute inset-0 flex items-center justify-center rounded-[6px] text-[12px] font-bold leading-none outline outline-1 outline-offset-0"
+        style={monogramTint(initialsOf(name))}
+      >
+        {initialsOf(name)}
+      </span>
+      {logoUrl && outcome !== "bad" ? (
+        <span
           // Both conditions, not just `painted`: a logo whose shape turns out to be unusable is
           // replaced by the monogram on the very next render, and revealing it the instant its
           // pixels land would show the wrong mark for one frame on the way there.
-          className={`size-full object-contain ${painted && outcome === "ok" ? fade : "opacity-0"}`}
-          ref={(node) => {
-            paint(node);
-            if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
-              settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
-            }
-          }}
-          onError={() => settle("bad")}
-          onLoad={(event) => {
-            const img = event.currentTarget;
-            paint(img);
-            settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
-          }}
-        />
-      </span>
-    );
-  }
-  return (
-    <span
-      aria-hidden="true"
-      // The ring is new here. The logo-bearing tile beside it in the same list has always had one,
-      // so a bare monogram was the only mark in the dropdown without an edge -- it read as a
-      // floating blob among framed tiles. Same hairline, in the accent rather than grey, matching
-      // the table.
-      className="flex size-5 shrink-0 items-center justify-center rounded-[6px] text-[12px] font-bold leading-none text-[var(--accent)] outline outline-1 outline-offset-0 outline-[var(--monogram-stroke)]"
-      style={{ background: "var(--monogram-wash)" }}
-    >
-      {initialsOf(name)}
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[6px] bg-white shadow-[var(--shadow-control)] ${painted && outcome === "ok" ? fade : "opacity-0"}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoUrl}
+            alt=""
+            // Eager, like the table's. The panel is on screen the moment it opens, so a visibility
+            // check only delays a request that is about to happen anyway.
+            loading="eager"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="size-full object-contain"
+            ref={(node) => {
+              paint(node);
+              if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
+                settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
+              }
+            }}
+            onError={() => settle("bad")}
+            onLoad={(event) => {
+              const img = event.currentTarget;
+              paint(img);
+              settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
+            }}
+          />
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -3243,72 +3277,74 @@ function CompanyLogo({ job }: { job: Job }) {
   const { painted, paint, fade } = useImagePainted();
   const loaded = painted && outcome === "ok";
 
-  // A URL already known to be unusable renders the monogram directly -- no <img>, so no request,
-  // no decode, no skeleton flash on the way to the same result.
-  if (job.companyLogoUrl && !failed) {
-    // The ring sits OUTSIDE the tile (offset 0, not -1) so it frames the logo rather than cropping
-    // a pixel off it, and uses the shared border token so it matches every other hairline here.
-    return (
-      <span className="relative flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-[12px] bg-white shadow-[var(--shadow-control)]">
-        {/* Kept mounted and faded out rather than unmounted on load: removing it in the same frame
-            the image appears left one blank frame between the two, which is the pop this is here to
-            remove. Both sides run the same 120ms so they cross-fade. */}
-        <span
-          className={`skeleton skeleton-pulse absolute inset-0 transition-opacity duration-[120ms] ease-[var(--ease-out)] ${loaded ? "opacity-0" : "opacity-100"}`}
-          aria-hidden="true"
-        />
-        {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={job.companyLogoUrl}
-          alt=""
-          // Eager, not lazy: virtualization already means only the rows near the viewport exist in
-          // the DOM, so lazy loading added a second visibility check -- and its decode latency -- to
-          // images that are about to be on screen either way.
-          loading="eager"
-          decoding="async"
-          // Low priority: a logo is decoration next to the row text, and it must not compete with
-          // the jobs request that fills the table in the first place.
-          fetchPriority="low"
-          referrerPolicy="no-referrer"
-          // No inset: the logo fills the tile edge to edge. object-contain still keeps a
-          // not-quite-square mark whole rather than cropping it -- only genuinely square logos
-          // reach all four edges, which is the most that can be done without cutting a mark.
-          className={`relative size-full object-contain ${loaded ? fade : "opacity-0"}`}
-          // A cached image can finish before React attaches onLoad, which would leave the row stuck
-          // on its placeholder. The ref catches that case on mount.
-          ref={(node) => {
-            paint(node);
-            if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
-              settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
-            }
-          }}
-          onError={() => settle("bad")}
-          // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
-          // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
-          // failed logo so it falls back to the clean monogram.
-          onLoad={(event) => {
-            const img = event.currentTarget;
-            paint(img);
-            settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
-          }}
-        />
-      </span>
-    );
-  }
-  // Rounded-square mark for companies without a logo, matching the design's app-icon style logos.
-  // A pale tint of the accent carrying the accent itself, rather than solid pink carrying white:
-  // the row's real content is the job title, and a saturated 36px block in every logo-less row --
-  // which is most of them -- pulled the eye down the avatar column instead of down the titles.
-  // 13px rather than 11: on a 36px tile an 11px letter left a lot of empty fill around it, and now
-  // that the letter is the tinted tile's only strong mark it has to hold the middle of it.
+  // The monogram is the BASE layer, always drawn, and a logo fades in over it. It is not a fallback
+  // any more and there is no placeholder at all, which is the whole point.
+  //
+  // What this replaces: a pulsing skeleton that sat there until the logo request settled. That reads
+  // as "loading" and for most rows it was loading nothing -- /api/logo answers 404 for any company
+  // whose stored logo turns out to be a banner rather than a mark, and it takes ~2s cold and ~0.44s
+  // warm to say so (it is not edge-cached; the Next `vary` header defeats that). So a reader
+  // scrolling into fresh companies met a column of grey squares that would never become anything.
+  // Now every row shows its letter immediately and the ones that HAVE a logo quietly gain it.
+  //
+  // The base is still rendered when the logo succeeds -- it costs nothing, the white tile covers it
+  // completely, and keeping it mounted means the swap never passes through a blank frame.
   return (
-    <span
-      className="flex size-9 shrink-0 items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] text-[var(--accent)] outline outline-1 outline-offset-0 outline-[var(--monogram-stroke)]"
-      style={{ background: "var(--monogram-wash)" }}
-      aria-hidden="true"
-    >
-      {job.companyMark}
+    <span className="relative size-9 shrink-0">
+      <span
+        // Rounded-square mark, matching the design's app-icon style logos. A pale tint carrying its
+        // own letter rather than a solid block carrying white: the row's real content is the job
+        // title, and a saturated 36px block in every logo-less row -- which is most of them -- pulled
+        // the eye down the avatar column instead of down the titles.
+        // The tint comes from the letter (see monogramTint), so this column stops being one pink
+        // stripe. 13px rather than 11: on a 36px tile an 11px letter left a lot of empty fill around
+        // it, and the letter is the tinted tile's only strong mark.
+        className="absolute inset-0 flex items-center justify-center rounded-[12px] text-[13px] font-bold tracking-[-0.02em] outline outline-1 outline-offset-0"
+        style={monogramTint(job.companyMark)}
+        aria-hidden="true"
+      >
+        {job.companyMark}
+      </span>
+      {job.companyLogoUrl && !failed ? (
+        <span
+          className={`absolute inset-0 flex items-center justify-center overflow-hidden rounded-[12px] bg-white shadow-[var(--shadow-control)] ${loaded ? fade : "opacity-0"}`}
+        >
+          {/* Dynamic ATS logos are remote and cannot use a fixed Next image host allowlist. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={job.companyLogoUrl}
+            alt=""
+            // Eager, not lazy: virtualization already means only the rows near the viewport exist in
+            // the DOM, so lazy loading added a second visibility check -- and its decode latency --
+            // to images that are about to be on screen either way.
+            loading="eager"
+            decoding="async"
+            // Low priority: a logo is decoration next to the row text, and it must not compete with
+            // the jobs request that fills the table in the first place.
+            fetchPriority="low"
+            referrerPolicy="no-referrer"
+            // No inset: the logo fills the tile edge to edge. object-contain still keeps a
+            // not-quite-square mark whole rather than cropping it.
+            className="size-full object-contain"
+            // A cached image can finish before React attaches onLoad. The ref catches that on mount.
+            ref={(node) => {
+              paint(node);
+              if (node?.complete && node.naturalWidth > 0 && outcome === "pending") {
+                settle(isUsableLogoRatio(node.naturalWidth, node.naturalHeight) ? "ok" : "bad");
+              }
+            }}
+            onError={() => settle("bad")}
+            // Workday's /assets/logo (and some others) return a wide header banner, which shrinks to
+            // an invisible sliver inside the round avatar. Treat anything markedly non-square as a
+            // failed logo so it falls back to the clean monogram.
+            onLoad={(event) => {
+              const img = event.currentTarget;
+              paint(img);
+              settle(isUsableLogoRatio(img.naturalWidth, img.naturalHeight) ? "ok" : "bad");
+            }}
+          />
+        </span>
+      ) : null}
     </span>
   );
 }

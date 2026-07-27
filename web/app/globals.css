@@ -60,24 +60,17 @@
   /* Stays a pale tint, and is the one pink that cannot become #FF73E5: text is drawn ON it, so
      matching the two would leave the label invisible against its own fill. */
   --accent-wash: #ffe8f6;
-  /* The fallback avatar, for a company with no usable logo: a 15% fill inside a 30% ring, both the
-     accent, carrying an accent monogram. One colour at three strengths rather than pink-and-white.
-     ALPHA, not pre-mixed hexes, and that is the whole reason these are separate tokens from
-     --accent-wash: the tile sits on a row that changes underneath it (white, --canvas, and the
-     hover tint), and a solid pale pink would punch an opaque square through a hovered row. They are
-     also not interchangeable numerically -- --accent-wash is #ffe8f6, the fill composites to
-     #ffeafb on white and the ring to #ffd5f7.
-     The lighter 15% fill is what makes the letter readable AT ALL: the accent measures 2.08:1 on it
-     against 1.82:1 on the 30% it replaced, because a paler ground moves away from the text instead
-     of toward it. Still low, knowingly -- both monograms are aria-hidden and the company name sits
-     beside them as real text, so the letter is decoration and not content.
-     The ring is faint by construction, 1.30:1 against the page. That is roughly what the grey
-     hairline it replaces already measures (--border is 1.24:1), so this is the same weight of line
-     in a different hue, not a heavier one. It is deliberately NOT used on the tiles that hold a real
-     logo: those keep --border, because a coloured ring around someone else's mark reads as part of
-     their mark. The ring is what says "this square is ours, and the company had no logo". */
-  --monogram-wash: color-mix(in srgb, var(--accent) 15%, transparent);
-  --monogram-stroke: color-mix(in srgb, var(--accent) 30%, transparent);
+  /* The fallback avatar's colour is no longer a token, because it is no longer ONE colour: it comes
+     from the letter the monogram shows, so a column of logo-less companies reads as distinct
+     companies instead of one pink stripe. See monogramTint in jobs-explorer.
+     What that replaced, and why the reasoning does not carry over: this used to be a 15% accent fill
+     inside a 30% accent ring, stated in alpha rather than pre-mixed hex so the tile could sit over a
+     row whose background changes (white, --canvas, the hover tint) without punching an opaque square
+     through it. The tints are opaque hsl() now, which is affordable because the rows they sit on are
+     white or a near-white hover -- a pale tile at 95% lightness is indistinguishable from a
+     composited one there, and the alternative was three color-mix() calls per row.
+     Contrast is unchanged in kind: the glyph is aria-hidden and the company name sits beside it as
+     real text, so the letter is decoration and not content. */
   --success: #2f9b65;
   /* The ring is the brand colour. See the note above: at 2.38:1 it no longer clears the 3:1 WCAG
      1.4.11 asks of a focus indicator, and this is the one line to change if that matters more than

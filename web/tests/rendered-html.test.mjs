@@ -250,17 +250,26 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // and the rings are fixed; this pins the rings.
   assert.doesNotMatch(explorer, /#FF73E5/i);
   // The avatar's two states must not converge. A company with no usable logo gets OUR square -- a
-  // 15% accent fill inside a 30% accent ring -- and a company with a real logo keeps the neutral
-  // hairline, because a coloured ring around someone else's mark reads as part of that mark.
+  // tinted fill inside a tinted ring -- and a company with a real logo keeps the neutral hairline,
+  // because a coloured ring around someone else's mark reads as part of that mark.
   // Pinned in source rather than measured in the browser on purpose: the local dev dataset carries
   // no company_logo_url at all, so every tile renders as a monogram there and the logo branch is
   // unreachable without production data. This is the only check that covers it.
-  assert.match(styles, /--monogram-wash: color-mix\(in srgb, var\(--accent\) 15%, transparent\)/);
-  assert.match(styles, /--monogram-stroke: color-mix\(in srgb, var\(--accent\) 30%, transparent\)/);
-  // Exactly two tiles wear the accent ring -- the table's monogram and the dropdown's. That ring is
-  // what says "this square is ours and the company had no logo", so it belongs to the monogram
-  // alone and must not spread to the tiles that hold someone else's mark.
-  assert.equal(explorer.match(/outline-\[var\(--monogram-stroke\)\]/g)?.length, 2);
+  //
+  // Exactly two tiles take their colour from monogramTint -- the table's monogram and the
+  // dropdown's. The tint is what says "this square is ours and the company had no logo", so it
+  // belongs to the monogram alone and must not spread to the tiles holding someone else's mark.
+  assert.equal(explorer.match(/style=\{monogramTint\(/g)?.length, 2);
+  // Every monogram used to be the accent, which made the avatar column the one place on the page
+  // where identical-looking marks stacked -- and a logo-less company is the common case, so that
+  // column is mostly monograms. The hue comes from the LETTER, so the colour and the glyph agree
+  // and two rows of the same company never disagree with each other.
+  assert.match(explorer, /const MONOGRAM_HUES = \[/);
+  assert.match(explorer, /MONOGRAM_HUES\[\(Number\.isNaN\(code\) \? 0 : code\) % MONOGRAM_HUES\.length\]/);
+  // One saturation and one lightness across the set, which is what keeps twelve hues looking like
+  // one family and what guarantees the text clears contrast on its own wash.
+  assert.match(explorer, /color: `hsl\(\$\{hue\} 52% 42%\)`/);
+  assert.match(explorer, /background: `hsl\(\$\{hue\} 66% 95%\)`/);
   // Their logo-bearing counterparts wear the shared hairline-ring-plus-lift instead of a stroke.
   // One property draws both the edge and the lift, so the two can never disagree -- and no tile
   // holding a real logo carries a neutral outline any more.
@@ -270,9 +279,18 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // this file, so counting bare occurrences would pin an unrelated number.
   // Matched on each tile's own signature -- --shadow-control is the shared pill/field treatment and
   // is used elsewhere in this file, so counting bare occurrences would pin an unrelated number.
-  // The dropdown tile is 20px on a 6px radius; the table's is 36px on 12px.
-  assert.match(explorer, /size-5 shrink-0[^"]*rounded-\[6px\] bg-white shadow-\[var\(--shadow-control\)\]/);
-  assert.match(explorer, /size-9 shrink-0[^"]*rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  // The dropdown tile is 20px on a 6px radius; the table's is 36px on 12px. Both are now an OVERLAY
+  // on top of the monogram rather than the tile itself, so the wrapper carries the size and the
+  // white logo ground is absolutely positioned inside it. That layering is the fix for the
+  // placeholder that never resolved: /api/logo answers 404 for any company whose stored logo is a
+  // banner rather than a mark, taking ~2s cold to say so, and a skeleton waiting on that read as
+  // "loading" while loading nothing. The monogram is drawn immediately underneath instead.
+  assert.match(explorer, /relative size-5 shrink-0/);
+  assert.match(explorer, /relative size-9 shrink-0/);
+  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[6px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  assert.match(explorer, /absolute inset-0[^"`]*rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
+  // And no skeleton left on either -- that class was the visible symptom.
+  assert.doesNotMatch(explorer, /skeleton skeleton-pulse absolute inset-0/);
   // A social card at last: the image had been sitting unreferenced in public/, so every link to the
   // site anywhere unfurled as a bare URL.
   assert.match(layout, /openGraph/);
