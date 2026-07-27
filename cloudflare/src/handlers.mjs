@@ -5,6 +5,7 @@ import {
   CONSTRUCTED_LOGO_PROVIDERS,
 } from "../../src/company-logo.mjs";
 import { parseAtsUrl } from "../../src/providers.mjs";
+import { reportError, reportHealth } from "./alerts.mjs";
 import { syncBoard } from "../../src/jobs.mjs";
 import { requestWithRetry } from "../../src/validation.mjs";
 import { isRateLimitError, queueForProvider, rateLimitNextSyncAt } from "./config.mjs";
@@ -49,15 +50,22 @@ export async function scheduled(controller, env, ctx) {
       pruneFailedTasks(env.DB, dailyAt),
       refreshTitleSuggestions(env.DB, dailyAt),
       refreshCompanySuggestions(env.DB, dailyAt),
+      // The half of monitoring that exception reporting cannot cover. A provider rejecting every
+      // refresh throws nothing and returns nothing -- the site simply goes quietly stale. Only a
+      // periodic look at the numbers catches that, and only if something says so out loud.
+      reportHealth(env),
     );
   }
   // allSettled, not all: the daily tasks are independent, and Promise.all rejects on the first
   // failure, which settles waitUntil and lets the runtime tear the isolate down mid-flight. One R2
   // hiccup in the archive step could cancel the job_titles rebuild after its DELETE had run,
   // leaving the title typeahead empty for a day with nothing to retry it.
-  ctx.waitUntil(Promise.allSettled(work).then((results) => {
+  ctx.waitUntil(Promise.allSettled(work).then(async (results) => {
     for (const result of results) {
-      if (result.status === "rejected") console.error("Scheduled task failed", result.reason);
+      // Through the reporter rather than a bare console.error: one structured line the dashboard can
+      // index, and a push to whoever is meant to know. A cron failing is the case with no reader to
+      // notice it, which is why it needs telling more than a failed request does.
+      if (result.status === "rejected") await reportError(env, "scheduled task", result.reason);
     }
   }));
 }
@@ -111,14 +119,28 @@ async function stepAsideForRateLimit(db, board) {
   ).bind(rateLimitNextSyncAt(1, Date.parse(now)), now, board.key).run();
 }
 
-export async function handleOperatorRequest(request, env) {
-  const url = new URL(request.url);
-  if (url.pathname === "/api/health") return healthResponse(env);
-  if (!url.pathname.startsWith("/api/internal/admin/")) return null;
-
+function hasAdminToken(request, env) {
   const expected = env.ADMIN_TOKEN;
   const actual = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!expected || !actual || !timingSafeEqualString(actual, expected)) {
+  return Boolean(expected && actual && timingSafeEqualString(actual, expected));
+}
+
+export async function handleOperatorRequest(request, env) {
+  const url = new URL(request.url);
+  // Liveness for anyone; the numbers only for the operator. The detailed answer named every
+  // provider, how many of its refreshes had failed and the text of its last error -- a map of which
+  // upstreams are fragile and how the ingester is doing, published to whoever asked. An uptime
+  // monitor needs a 200 and nothing else, so the public half is exactly that, and it costs no
+  // database read at all rather than the five it used to.
+  if (url.pathname === "/api/health") {
+    if (!hasAdminToken(request, env)) {
+      return Response.json({ ok: true }, { headers: { "cache-control": "no-store" } });
+    }
+    return healthResponse(env);
+  }
+  if (!url.pathname.startsWith("/api/internal/admin/")) return null;
+
+  if (!hasAdminToken(request, env)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 

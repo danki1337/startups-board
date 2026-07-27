@@ -8,6 +8,7 @@ import {
   PROVIDER_QUEUE_BINDINGS,
 } from "../cloudflare/src/config.mjs";
 import { applyBoardSnapshot, suppressDuplicatedAggregatorJobs } from "../cloudflare/src/database.mjs";
+import { handleOperatorRequest } from "../cloudflare/src/handlers.mjs";
 import { parseAtsUrl } from "../src/providers.mjs";
 
 // A D1 stand-in that answers the two dedup probes from a fixed set of "active native" rows: the
@@ -408,4 +409,65 @@ test("a board that is invalid often enough does accept the empty snapshot", asyn
   });
 
   assert.equal(ran(db, /FROM jobs WHERE board_key/), true);
+});
+
+// A database that fails the test if it is touched at all. The public health answer must cost no
+// read: it used to run five queries -- including a scan of failed_tasks -- on an endpoint anyone can
+// poll at any rate they like.
+const forbiddenDb = {
+  batch() { throw new Error("the public health check must not query the database"); },
+  prepare() { throw new Error("the public health check must not query the database"); },
+};
+
+const healthRequest = (token) => new Request("https://aboard.cc/api/health", {
+  headers: token ? { authorization: `Bearer ${token}` } : {},
+});
+
+test("the public health check answers liveness and nothing else", async () => {
+  // It used to publish every provider, how many of its refreshes had failed, and the text of its
+  // last error -- a map of which upstreams are fragile and how the ingester is coping, to whoever
+  // asked. An uptime monitor needs a 200; that is all this is now.
+  const response = await handleOperatorRequest(healthRequest(null), { DB: forbiddenDb, ADMIN_TOKEN: "s3cret" });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(Object.keys(body), ["ok"]);
+  assert.equal(body.ok, true);
+});
+
+test("a wrong token gets the public answer, not an error and not the detail", async () => {
+  // Deliberately not a 401: liveness is public, so a bad token is simply not an operator rather
+  // than a failure, and an uptime monitor with a stale secret keeps working.
+  const response = await handleOperatorRequest(healthRequest("wrong"), { DB: forbiddenDb, ADMIN_TOKEN: "s3cret" });
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.keys(await response.json()), ["ok"]);
+});
+
+test("the operator's health check still reports the detail", async () => {
+  // healthResponse builds its five statements through prepare().bind() and hands them to batch(),
+  // so the stub has to offer both -- the results come from batch regardless of what prepare returns.
+  const statement = { bind: () => statement };
+  const db = {
+    prepare: () => statement,
+    batch: async () => [
+      { results: [{ count: 1_800_000 }] },
+      { results: [{ count: 55_000 }] },
+      { results: [{ count: 1_200 }] },
+      { results: [{ count: 3_399 }] },
+      { results: [{ provider: "workday", failed_runs: 1_570 }] },
+    ],
+  };
+  const response = await handleOperatorRequest(healthRequest("s3cret"), { DB: db, ADMIN_TOKEN: "s3cret" });
+  const body = await response.json();
+  assert.equal(body.activeJobs, 1_800_000);
+  assert.equal(body.unresolvedFailures, 3_399);
+  assert.equal(body.providers[0].provider, "workday");
+});
+
+test("the admin endpoints are still refused outright without the token", async () => {
+  // The health check softened to a public answer; these must NOT have come along with it.
+  const response = await handleOperatorRequest(
+    new Request("https://aboard.cc/api/internal/admin/run", { method: "POST" }),
+    { DB: forbiddenDb, ADMIN_TOKEN: "s3cret" },
+  );
+  assert.equal(response.status, 401);
 });
