@@ -70,12 +70,18 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
         loading="eager"
         decoding="async"
         fetchPriority="low"
+        // 36%, because that is the artwork's OWN corner radius -- measured off the alpha channel,
+        // all twelve icons go opaque 23px into a 64px canvas, and their edge midpoints are fully
+        // opaque, so they are rounded squares at 23/64. A box-shadow follows the border-radius, so
+        // at the old 4px (20% of a 20px mark) the shadow's corners sat outside the icon's rounder
+        // ones and drew a squarer outline around a rounder logo. A percentage keeps the two in step
+        // at both sizes the mark renders at.
         // The same hairline-ring-plus-lift the filter pills wear (--shadow-control), not a border:
         // these marks are square vendor icons on a white row, and several of them are themselves
         // near-white, so without an edge they float. A shadow rather than an outline because the
         // ring layer IS the first shadow (0 0 0 1px), so one property draws both the edge and the
         // lift and they can never disagree.
-        className={`${dimension} shrink-0 rounded-[4px] object-contain shadow-[var(--shadow-control)]`}
+        className={`${dimension} shrink-0 rounded-[36%] object-contain shadow-[var(--shadow-control)]`}
         onError={() => setFailed(true)}
       />
     );
@@ -85,7 +91,7 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[5px] text-[10px] font-bold tracking-[-0.02em] shadow-[var(--shadow-control)] ${mark.className}`}
+      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[36%] text-[10px] font-bold tracking-[-0.02em] shadow-[var(--shadow-control)] ${mark.className}`}
     >
       {mark.short}
     </span>

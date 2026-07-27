@@ -1223,7 +1223,10 @@ export function JobsExplorer({
             pixel it stops occupying above the card becomes another row inside it.
             The wrapper inherits the column layout the band's siblings used to get directly from the
             section, so the table still takes whatever height is left rather than its content's. */}
-        <div className="mt-3 flex min-h-0 flex-1 flex-col">{jobsTable}</div>
+        {/* 20px, not 12. This gap is the whole separation between the controls and the results when
+            no filter is applied -- with chips the collapsed row adds its own -- and at 12 the
+            table's top edge crowded the pills above it. */}
+        <div className="mt-5 flex min-h-0 flex-1 flex-col">{jobsTable}</div>
 
         {resultsFooter}
       </section>
@@ -1951,8 +1954,11 @@ function SidebarPills({
                 colour and reads heavier than the text beside it. Muting them to the same grey as
                 the category icons in the filter row keeps the label the emphasis. Selected pills
                 pass through, so the icon inverts to white with the text. */}
+            {/* No white ground behind the mark: the vendor icons are opaque rounded squares that
+                carry their own background now, so a square white tile behind them only showed at
+                the corners, where the icon curves away and the tile does not. */}
             {glyph === "ats" && (
-              <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
+              <span className="flex size-4 shrink-0 items-center justify-center">
                 <AtsMark source={option.value} size={4} />
               </span>
             )}
@@ -2032,8 +2038,9 @@ function FilterChip({ chip }: { chip: ActiveChip }) {
             {(() => { const Glyph = JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(value))]; return <Glyph />; })()}
           </span>
         )}
+        {/* Same as the option pill: no white tile behind an already-opaque rounded icon. */}
         {chip.kind === "source" && (
-          <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
+          <span className="flex size-4 shrink-0 items-center justify-center">
             <AtsMark source={value} size={4} />
           </span>
         )}
