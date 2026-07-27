@@ -285,8 +285,12 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // placeholder that never resolved: /api/logo answers 404 for any company whose stored logo is a
   // banner rather than a mark, taking ~2s cold to say so, and a skeleton waiting on that read as
   // "loading" while loading nothing. The monogram is drawn immediately underneath instead.
-  assert.match(explorer, /relative size-5 shrink-0/);
-  assert.match(explorer, /relative size-9 shrink-0/);
+  // `block` is load-bearing, not decoration: a <span> is an inline box and an inline box ignores
+  // width and height, so without it size-5/size-9 apply nothing, the absolute tile inside has a
+  // zero-sized containing block, and the monogram renders as a bare floating letter with no tile.
+  // That shipped once.
+  assert.match(explorer, /relative block size-5 shrink-0/);
+  assert.match(explorer, /relative block size-9 shrink-0/);
   assert.match(explorer, /absolute inset-0[^"`]*rounded-\[6px\] bg-white shadow-\[var\(--shadow-control\)\]/);
   assert.match(explorer, /absolute inset-0[^"`]*rounded-\[12px\] bg-white shadow-\[var\(--shadow-control\)\]/);
   // And no skeleton left on either -- that class was the visible symptom.

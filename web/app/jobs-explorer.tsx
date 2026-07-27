@@ -1826,8 +1826,10 @@ function CompanyMark({ name, logoUrl }: { name: string; logoUrl: string | null }
   // Same layering as the table's row, because the rule this component exists to hold is that a
   // company looks the same in the list as in the rows: the monogram is the base and a logo fades in
   // over it, so neither surface ever shows a placeholder for a logo that is not coming.
+  // `block` for the same reason the table's tile carries it: an inline <span> ignores width and
+  // height, so size-5 would apply nothing and the absolute tile would have no box to fill.
   return (
-    <span className="relative size-5 shrink-0">
+    <span className="relative block size-5 shrink-0">
       <span
         aria-hidden="true"
         // The ring is new here. The logo-bearing tile beside it in the same list has always had one,
@@ -3289,8 +3291,12 @@ function CompanyLogo({ job }: { job: Job }) {
   //
   // The base is still rendered when the logo succeeds -- it costs nothing, the white tile covers it
   // completely, and keeping it mounted means the swap never passes through a blank frame.
+  // `block`, not the default inline. A <span> is an inline box and an inline box IGNORES width and
+  // height, so size-9 applied nothing at all: the absolutely positioned tile inside it had a
+  // zero-sized containing block and the monogram rendered as a bare floating letter with no tile.
+  // The old markup got away with a bare <span> because it carried `flex`, which made it a block.
   return (
-    <span className="relative size-9 shrink-0">
+    <span className="relative block size-9 shrink-0">
       <span
         // Rounded-square mark, matching the design's app-icon style logos. A pale tint carrying its
         // own letter rather than a solid block carrying white: the row's real content is the job
