@@ -87,7 +87,45 @@ export function tidyLocation(value) {
     if (place && !STREET_NOISE.test(place)) return place;
   }
 
+  const breadcrumb = tidyBreadcrumb(text);
+  if (breadcrumb) return breadcrumb;
+
   return text.replace(/\s+/g, " ").replace(/\s*,\s*$/, "");
+}
+
+// Some Workday tenants publish their internal location TREE rather than a place:
+//   "INDIA > MAHARASHTRA > MUMBAI : Remote"
+//   "United States > Austin : 8701 Bee Caves Rd"
+//   "NCEE > Sweden > Arlandastad > Industrivagen 14"
+// 2,907 active postings carry one. They are not just ugly -- they are the widest strings in the
+// column, and the table sizes Title and Location from whichever is holding more text, so a page
+// with a few of these took 118px off Title and spent it drawing a breadcrumb that then truncated
+// anyway. Nobody could read either field.
+//
+// The place is the most specific segment: everything after the last ">", minus the street address
+// the colon introduces. Trailing segments that are plainly a street ("Industrivagen 14") are
+// dropped so the city behind them survives.
+const BREADCRUMB = /\s*>\s*/;
+const HAS_NUMBER = /\d/;
+
+function tidyBreadcrumb(text) {
+  if (!BREADCRUMB.test(text)) return null;
+  // The colon separates the location tree from a street address; keep only the tree.
+  const tree = text.split(":")[0];
+  const parts = tree.split(BREADCRUMB).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  // Walk back past anything that reads as a street rather than a place. A numbered street is
+  // obvious ("Industrivagen 14"); an unnumbered one is not ("Laan van Westenenk"), so depth is the
+  // second signal: a tree four levels deep with no colon has spent the last level on the address
+  // (region > country > city > street), which is the shape these tenants publish.
+  let index = parts.length - 1;
+  if (parts.length >= 4 && !text.includes(":")) index -= 1;
+  while (index > 0 && (STREET_NOISE.test(parts[index]) || HAS_NUMBER.test(parts[index]))) index -= 1;
+  const place = parts[index];
+  // Deliberately NOT re-cased. "MUMBAI" is loud, but recasing would also rewrite the acronyms these
+  // trees are full of (NCEE, WEMEA, GB) into something wrong, and this module's rule is that a
+  // location it mangles is worse than one it merely fails to prettify.
+  return place || null;
 }
 
 // "Remote" is not a place, and the row already says so.

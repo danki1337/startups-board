@@ -55,6 +55,28 @@ test("a facility code gives up the place inside it", () => {
   assert.equal(tidyLocation("USA10-2-Austin-1200 Main St"), "Austin");
 });
 
+test("a Workday location tree gives up the city inside it", () => {
+  // 2,907 active postings publish the tenant's internal location TREE instead of a place. They are
+  // the widest strings in the column, and the table sizes Title and Location from whichever holds
+  // more text -- measured, a page with a few of these took 118px off Title to draw a breadcrumb
+  // that then truncated anyway.
+  // The colon introduces a street address, so everything before it is the tree.
+  assert.equal(tidyLocation("Malaysia > Selangor : Imazium, No. 8, Jalan SS 21/37"), "Selangor");
+  assert.equal(tidyLocation("United States > Austin : 8701 Bee Caves Rd"), "Austin");
+  assert.equal(tidyLocation("Singapore > Singapore : DUO Tower"), "Singapore");
+  // ": Remote" is a workplace, which has its own column.
+  assert.equal(tidyLocation("INDIA > MAHARASHTRA > MUMBAI : Remote"), "MUMBAI");
+
+  // No colon: a numbered street is obvious, an unnumbered one is not, so depth is the second
+  // signal -- four levels with no colon spends the last on the address.
+  assert.equal(tidyLocation("NCEE > Sweden > Arlandastad > Industrivagen 14"), "Arlandastad");
+  assert.equal(tidyLocation("WEMEA > Netherlands > Apeldoorn > Laan van Westenenk"), "Apeldoorn");
+
+  // Deliberately not re-cased: these trees are full of acronyms (NCEE, WEMEA, GB) that a
+  // title-caser would rewrite into something wrong.
+  assert.equal(tidyLocation("Berlin, Germany"), "Berlin, Germany");
+});
+
 test("anything unrecognised is returned untouched", () => {
   // Conservative on purpose: a location this fails to parse still reads as a place, whereas one it
   // mangles does not.
