@@ -189,6 +189,12 @@ export default async function Home({
       initialQuery={clientQuery.toString()}
       // The server's clock, so the Posted column renders "6d ago" in the HTML itself instead of an
       // absolute date that flips to relative a few milliseconds after hydration.
+      //
+      // react-hooks/purity flags Date.now() during render because on the CLIENT an impure read makes
+      // a component non-idempotent -- two renders, two answers, and the reconciler is entitled to
+      // either. This is a Server Component on a force-dynamic route: it renders exactly once per
+      // request, to a string, and reading the clock at that moment is the whole point of the prop.
+      // eslint-disable-next-line react-hooks/purity
       serverNow={Date.now()}
     />
   );
