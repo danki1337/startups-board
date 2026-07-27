@@ -1206,7 +1206,13 @@ button:disabled,
      -- buttons looked sliced along the bottom, and the last one in the row along its right side.
      The padding is the room that shadow lands in; the negative margin keeps the content aligned
      where it was. */
-  padding: 0 8px 8px;
+  /* Side padding ONLY. The bottom 8px used to live here, and with border-box that floored the
+     collapsed track at 8px -- a grid item on a 0fr track still draws its own padding, so the row
+     never actually closed and left 8px of dead space above the table (24px across the three
+     instances). This is the documented "padding on a 0fr track leaves residual height" failure.
+     Left and right cost no height, so they stay; the bottom room the pill shadows need moved onto
+     the content itself, where it is clipped away with everything else at 0fr. */
+  padding: 0 8px;
   margin: 0 -8px;
 }
 .row-collapse.is-open {

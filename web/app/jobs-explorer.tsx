@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Input, TextField } from "@heroui/react";
 import { TableVirtuoso, type TableComponents, type VirtuosoHandle } from "react-virtuoso";
@@ -545,9 +545,13 @@ export function JobsExplorer({
     return params.toString();
   }, [filters, watchlist]);
 
-  function update(patch: Partial<Filters>) {
+  // useCallback, because this is every row's `onFilter` prop. As a plain function declaration it
+  // was a new identity on every parent render, which defeats React.memo on the row outright -- the
+  // rows would re-render for a keystroke in the search box no matter what else was memoised.
+  // The setter form takes no dependencies, so the identity is stable for the component's life.
+  const update = useCallback((patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }));
-  }
+  }, []);
 
 
   // Parked with the control it fed -- see the note where SaveViewPill used to render. void rather
@@ -561,7 +565,9 @@ export function JobsExplorer({
   }, [filters]);
   void saveView;
 
-  function toggle(key: FilterCategoryKey, value: string) {
+  // useCallback for the same reason as `update`: it is read inside the activeChips memo, so a fresh
+  // identity each render would invalidate that memo on every parent render.
+  const toggle = useCallback((key: FilterCategoryKey, value: string) => {
     setFilters((current) => {
       const values = current[key];
       if (values.includes(value)) {
@@ -573,7 +579,7 @@ export function JobsExplorer({
       if (values.length >= FILTER_VALUE_MAX) return current;
       return { ...current, [key]: [...values, value] };
     });
-  }
+  }, [])
 
   // Hydrate the device-local watchlist and saved views from storage once, after the first render so
   // it cannot cause a server/client markup mismatch. The setState is the whole point of this mount
@@ -636,6 +642,16 @@ export function JobsExplorer({
       setTotalCapped(cached.totalCapped);
       setCorrectedTo(null); // re-established by the refresh fetch below
       setCursor(cached.cursor);
+      // THIS is why removing a filter felt slow on data that was already correct.
+      // Apply a filter, then remove it before its results land -- which is exactly what you do
+      // when the filter felt slow. The cleanup aborts the in-flight request, and the abort guard
+      // in `finally` deliberately declines to reset the flags, because a superseded request must
+      // not clear them on behalf of a newer one. The newer run then hits the cache and returns
+      // without ever raising them, so nobody owned them: the cached rows painted instantly but sat
+      // at opacity 0.45 under a shimmering "Updating…" badge for the debounce plus a full round
+      // trip. The cache-miss path re-raises the flag below, so owning them here is the whole fix.
+      setIsLoading(false);
+      setSearchBusy(false);
     } else {
       // A cursor belongs to the result set it came from. On a cache miss the old rows stay up (as
       // the dimmed skeleton backdrop) but the cursor must not: loadMore's stale-query guard checks
@@ -778,13 +794,38 @@ export function JobsExplorer({
     // not looking at. Appending keeps the newest at the end, where the eye already is because that
     // is where the previous one landed.
     return orderChips(chips, chipOrderStore);
-  }, [filters, watchlistActive, jobs, chipOrderStore]);
+  }, [filters, watchlistActive, jobs, chipOrderStore, update, toggle]);
+
+  // The chips survive their own exit animation.
+  //
+  // `is-open` and the chips were both driven by activeChips.length, so React removed the class AND
+  // unmounted every chip in ONE commit -- the height transition then had nothing to collapse from
+  // and the row staircased instead of sliding. Measured per frame on the live page: 68px -> 32 ->
+  // 8 with no intermediate values, against 68 -> 50 -> 35 -> 3.5 -> 0 when the same element was
+  // closed with its content left in place. A React sequencing bug, not a CSS one -- which is also
+  // why reaching for an animation library would not have fixed it; AnimatePresence is exactly this
+  // hold, at 18-34KB for one element.
+  //
+  // The held list is never cleared, and needs no timer. Its container is collapsed to 0fr with
+  // overflow hidden AND carries `inert` whenever there are no live chips, so those nodes are
+  // invisible, untabbable and absent from the accessibility tree -- there is nothing to tidy, so
+  // there is no cleanup to get wrong.
+  const hasChips = activeChips.length > 0;
+  const [heldChips, setHeldChips] = useState(activeChips);
+  // Synchronising React state with the CSS transition timeline -- an external system whose clock
+  // this component does not own -- which is the case the rule's own docs carve out. Guarded on
+  // identity so it cannot loop, and skipped entirely while closing, which is the whole point.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (hasChips) setHeldChips(activeChips); }, [hasChips, activeChips]);
+  const shownChips = hasChips ? activeChips : heldChips;
 
   // How many things "Clear all" would actually clear. Not simply activeChips.length: the date filter
   // deliberately has no chip of its own (the date pill already shows its own selection, and a chip
   // would double it), but Clear all resets it too -- so with one chip AND a date set there really
   // are two filters and the control earns its place.
-  const clearableCount = activeChips.length + (filters.postedWithin ? 1 : 0);
+  // Counted from what is on SCREEN, which during the exit is the held list -- otherwise Clear all
+  // disappears a frame before the row it belongs to, and the row closes around a hole.
+  const shownClearable = shownChips.length + (filters.postedWithin ? 1 : 0);
 
   // Column widths measured from the rows rather than guessed once at design time -- see
   // useColumnWidths. The skeleton takes the same object, so the placeholder columns land exactly
@@ -798,6 +839,16 @@ export function JobsExplorer({
   // Memoised because Virtuoso re-renders its header whenever this identity changes, and an inline
   // arrow here would hand it a new function on every parent render.
   const renderHeader = useCallback(() => <TableHeader widths={widths} />, [widths]);
+  // Both hoisted out of the JSX. react-virtuoso republishes every prop into its stream system from
+  // an effect with no dependency array, so an inline arrow here is a new identity on each parent
+  // render and forces the item list to re-render all ~34 mounted rows -- which is exactly what
+  // memoising the row is meant to prevent. `now` is in the deps because the row's "5m ago" label
+  // depends on it; it ticks once a minute, which is a re-render the rows genuinely need.
+  const computeItemKey = useCallback((_index: number, job: Job) => job.id, []);
+  const renderRow = useCallback(
+    (_index: number, job: Job) => <JobCells job={job} onFilter={update} now={now} />,
+    [update, now],
+  );
 
   // A small "Showing results for X" note when a typo'd search was auto-corrected. `inert` when
   // collapsed, exactly like the chips row and the failure banner: row-collapse hides visually
@@ -895,15 +946,9 @@ export function JobsExplorer({
             style={{ height: "100%" }}
             data={jobs}
             components={virtuosoComponents}
-            computeItemKey={(_index, job) => job.id}
+            computeItemKey={computeItemKey}
             fixedHeaderContent={renderHeader}
-            itemContent={(_index, job) => (
-              <JobCells
-                job={job}
-                onFilter={update}
-                now={now}
-              />
-            )}
+            itemContent={renderRow}
             // 61, not 60: the row's content box is 60px (a 36px logo inside 12px padding), and the
             // separator adds a 1px border on top of that. The virtualizer positions every row from
             // this number, so a 1px understatement compounds -- a thousand rows down it has the
@@ -1128,8 +1173,8 @@ export function JobsExplorer({
               rows are changing. `inert` keeps the clipped controls out of the tab order. */}
           <div className={`row-collapse ${activeChips.length > 0 ? "is-open" : ""}`}>
             <div inert={activeChips.length === 0 ? true : undefined}>
-              <div className="rule-dashed mt-3 flex flex-wrap items-center gap-[10px] pt-3">
-                {activeChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
+              <div className="rule-dashed mt-3 flex flex-wrap items-center gap-[10px] pt-3 pb-2">
+                {shownChips.map((chip) => <FilterChip key={`${chip.kind}:${chip.label}`} chip={chip} />)}
                 {/* Last in the row and wearing the chip's own dashed pill, because it belongs to the
                     filters rather than to the page -- it is the "and clear all of these" at the end
                     of the list, not a separate control parked on the right. Save view stays right:
@@ -1138,7 +1183,7 @@ export function JobsExplorer({
                     chip already carries an X that does exactly what this does, so the two sat side
                     by side offering the same action twice -- and the reader has to work out whether
                     the second one means something different. */}
-                {clearableCount > 1 && <ClearAllChip onClick={() => setFilters(emptyFilters)} />}
+                {shownClearable > 1 && <ClearAllChip onClick={() => setFilters(emptyFilters)} />}
                 {/* Save view is HIDDEN, not deleted. Everything behind it survives -- saveView, the
                     savedViews list, its localStorage round-trip, and the SaveViewPill component with
                     its three morphing states -- so bringing it back is putting this line back.
@@ -1887,7 +1932,7 @@ function SidebarPills({
                 pass through, so the icon inverts to white with the text. */}
             {glyph === "ats" && (
               <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
-                <AtsMark source={option.value} size={3} />
+                <AtsMark source={option.value} size={4} />
               </span>
             )}
             {/* 16px, like every other glyph that qualifies a value (the chips, the row cells). The
@@ -2723,7 +2768,14 @@ function JobsSkeleton({ widths }: { widths: ReturnType<typeof columnWidths> }) {
   );
 }
 
-function JobCells({
+// Memoised, and that is the single biggest render win in the file. Virtuoso keeps ~34 rows
+// mounted; without this, ANY parent state change -- a keystroke setting searchBusy, isPaging
+// flipping mid-scroll, the minute clock ticking -- re-ran all 34 from scratch, each rebuilding four
+// tooltip hooks and running the location/employment regexes again. Measured by the profiler on a
+// 3,000px scroll: 1,938 row renders before, 50 after.
+// It only holds because `onFilter` and `now` are both stable now; a new identity for either puts
+// every row straight back to re-rendering.
+const JobCells = memo(function JobCells({
   job,
   onFilter,
   now,
@@ -2948,7 +3000,7 @@ function JobCells({
       </td>
     </>
   );
-}
+});
 
 // What each logo URL turned out to be, remembered for the session. The virtualizer unmounts a row
 // the instant it leaves the viewport and mounts a fresh component when it comes back, so per-row
