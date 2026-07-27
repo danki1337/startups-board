@@ -3174,10 +3174,28 @@ const JobCells = memo(function JobCells({
         <ValueWithIcon
           Icon={JOB_TYPE_ICONS[normalizeEmploymentKey(tidyEmploymentType(job.employmentType))]}
           value={tidyEmploymentType(job.employmentType)}
+          // The TIDIED label, which is what the dropdown offers and what the chip will read. The raw
+          // column is whatever the provider typed ("Full-Time", "full time", "Full Time"), and the
+          // SQL matches case- and hyphen-insensitively -- so sending the tidied form finds every
+          // spelling, and sending the raw one would put a provider's punctuation in the chip.
+          onClick={() => {
+            const type = tidyEmploymentType(job.employmentType);
+            if (type) onFilter({ employmentType: [type] });
+          }}
+          title={`Show only ${tidyEmploymentType(job.employmentType)} jobs`}
         />
       </td>
       <td className="px-5 py-3 text-sm text-[var(--muted)]">
-        <ValueWithIcon Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]} value={job.workplace} />
+        {/* Unspecified is a real value here, not a gap: it is one of the four the column stores and
+            one of the four the dropdown offers, so it filters like the rest. */}
+        <ValueWithIcon
+          Icon={WORKPLACE_ICONS[(job.workplace ?? "").toLowerCase()]}
+          value={job.workplace}
+          onClick={() => job.workplace && onFilter({ workplace: [job.workplace] })}
+          title={job.workplace === "Unspecified"
+            ? "Show only jobs with no workplace stated"
+            : `Show only ${job.workplace} jobs`}
+        />
       </td>
       <td className="whitespace-nowrap px-5 py-3 text-sm tabular-nums text-[var(--muted)]">
         {/* suppressHydrationWarning: the relative label depends on the current time, so the server and
@@ -3280,13 +3298,36 @@ function persistLogoOutcomes() {
 // in the row as it does in the dropdown it came from. Only some values have a glyph -- Unspecified
 // and the long tail of provider-specific employment types do not -- and those simply render as text
 // rather than reserving an empty slot that would misalign the column.
-function ValueWithIcon({ Icon, value }: { Icon?: () => React.ReactElement; value: string | null }) {
+function ValueWithIcon({ Icon, value, onClick, title }: {
+  Icon?: () => React.ReactElement;
+  value: string | null;
+  onClick?: () => void;
+  title?: string;
+}) {
   if (!value) return null;
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
+  const body = (
+    <>
       {Icon && <span className="inline-flex shrink-0 text-[var(--muted)] [&>svg]:size-4"><Icon /></span>}
       <span className="min-w-0 truncate">{value}</span>
-    </span>
+    </>
+  );
+  if (!onClick) return <span className="flex min-w-0 items-center gap-1.5">{body}</span>;
+  return (
+    // The same control the location cell already was, to the class. Every value in a row that names
+    // a facet the table can filter by is now a way to filter by it -- job type and workplace were
+    // the two that read like the others and did nothing.
+    //
+    // The negative margin is what keeps the hover ground from shifting the text: the padding that
+    // draws the grey container is pulled back out of the layout, so the label sits exactly where it
+    // sat before anyone pointed at it.
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="-mx-1.5 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-lg px-1.5 py-1 text-start hover:bg-[var(--control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+    >
+      {body}
+    </button>
   );
 }
 
