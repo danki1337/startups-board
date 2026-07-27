@@ -17,6 +17,9 @@ web/.openai/
 .claude/settings.local.json
 test/_icloud-conflicts/
 .claude/
+# Vendored third-party agent skills. Local tooling, not product code -- same reason .claude/ is
+# ignored. Keeping someone else's docs out of a PUBLIC repo also sidesteps their licensing.
+.agents/
 
 # transitions-refine's local relay. .refine-relay.json holds a pid and a port and is per-machine;
 # the log is transient. The relay spawns an agent with permission checks disabled, so neither of
