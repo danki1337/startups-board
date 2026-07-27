@@ -21,7 +21,7 @@ import { isUsableLogoRatio } from "../../src/logo-shape.mjs";
 import { placeTip } from "./place-tip.mjs";
 // Display normalisation for the free text a dozen ATSs return -- see the note in that file.
 import { splitLocations, tidyEmploymentType, normalizeEmploymentKey } from "./format.mjs";
-import { columnWidths } from "./column-widths.mjs";
+import { columnWidths, COLUMN_KEYS } from "./column-widths.mjs";
 
 // In local dev the Miniflare D1 binding is empty, so the server render falls back to the bundled
 // sample rows and the client reads the real index from the local SQLite API instead (npm run serve).
@@ -873,6 +873,26 @@ export function JobsExplorer({
   // memoising the row is meant to prevent. `now` is in the deps because the row's "5m ago" label
   // depends on it; it ticks once a minute, which is a re-render the rows genuinely need.
   const computeItemKey = useCallback((_index: number, job: Job) => job.id, []);
+  // Only changes when the flag does, so Virtuoso is not handed a new context object every render.
+  const virtuosoContext = useMemo(() => ({ isPaging }), [isPaging]);
+  // Reaching the end of the rows while the next page is in flight used to look like the list had
+  // simply stopped -- no spinner, no message, just an edge. This lives INSIDE the scroller, which
+  // is the only place it can be seen: the table card has its own overflow, so anything below it is
+  // off-screen at the bottom of the list.
+  // fixedFooterContent, so it is sticky -- you see it the moment the fetch starts rather than only
+  // once you have scrolled onto it. Null while idle, which renders no <tfoot> at all.
+  const renderPagingFooter = useCallback(() => (
+    isPaging ? (
+      <tr>
+        <td colSpan={COLUMN_KEYS.length} className="bg-white/85 px-5 py-3 text-center text-[13px] font-bold text-[var(--muted)] backdrop-blur-sm">
+          <span className="inline-flex items-center gap-2" role="status">
+            <span className="search-spinner" aria-hidden="true" />
+            Loading more jobs…
+          </span>
+        </td>
+      </tr>
+    ) : null
+  ), [isPaging]);
   const renderRow = useCallback(
     (_index: number, job: Job) => <JobCells job={job} onFilter={update} now={now} />,
     [update, now],
@@ -974,6 +994,8 @@ export function JobsExplorer({
             style={{ height: "100%" }}
             data={jobs}
             components={virtuosoComponents}
+            context={virtuosoContext}
+            fixedFooterContent={renderPagingFooter}
             computeItemKey={computeItemKey}
             fixedHeaderContent={renderHeader}
             itemContent={renderRow}
@@ -2060,7 +2082,9 @@ const IconSearchGlyph = () => (
   </svg>
 );
 const IconClearGlyph = () => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="shrink-0">
+  // 16px. It is a clear affordance inside a field, not the field's subject -- at 20 it weighed the
+  // same as the search glyph opposite it and read as a second control rather than a dismissal.
+  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className="size-4 shrink-0">
     <path d="M9.99969 0.791504C15.0662 0.791504 19.2085 4.93308 19.2087 9.99951C19.2087 15.0661 15.0663 19.2085 9.99969 19.2085C4.93326 19.2083 0.791687 15.066 0.791687 9.99951C0.791864 4.93319 4.93337 0.791681 9.99969 0.791504ZM7.58173 5.86084C7.10669 5.38588 6.33605 5.38587 5.86102 5.86084C5.386 6.33587 5.38605 7.10648 5.86102 7.58154L8.27899 9.99951L5.86102 12.4185C5.38629 12.8934 5.3864 13.6632 5.86102 14.1382C6.33608 14.6132 7.10667 14.6132 7.58173 14.1382L9.99969 11.7192L12.4186 14.1382C12.8937 14.6132 13.6633 14.6132 14.1384 14.1382C14.6134 13.6631 14.6134 12.8935 14.1384 12.4185L11.7194 9.99951L14.1384 7.58154C14.6134 7.10649 14.6134 6.33587 14.1384 5.86084C13.6634 5.38624 12.8936 5.38616 12.4186 5.86084L9.99969 8.27881L7.58173 5.86084Z" fill="currentColor" />
   </svg>
 );
@@ -2702,7 +2726,7 @@ function VirtuosoRow({ item, ...rowProps }: React.ComponentPropsWithoutRef<"tr">
 const virtuosoComponents = {
   Table: VirtuosoTable,
   TableRow: VirtuosoRow,
-} satisfies TableComponents<Job>;
+} satisfies TableComponents<Job, { isPaging?: boolean }>;
 
 // The six widths used to be hard-coded percentages -- 30/20/12/11/12/15 -- chosen once against an
 // imagined result set. They were right for some queries and wrong for most: three quarters of the

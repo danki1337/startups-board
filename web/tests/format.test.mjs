@@ -35,6 +35,41 @@ test("matching is on a whole leading word, not a substring", () => {
   assert.equal(tidyEmploymentType("Intern"), "Internship");
 });
 
+test("an employer's qualifier is separated by punctuation as often as by a space", () => {
+  // A space was the only accepted boundary, so these all fell through and rendered raw -- which in
+  // a column this narrow is a truncated fragment. Counts are live production rows.
+  assert.equal(tidyEmploymentType("Full time, non exempt"), "Full time");   // 698
+  assert.equal(tidyEmploymentType("Full-time/Part-time"), "Full time");     // 394
+  assert.equal(tidyEmploymentType("Full time (hourly)"), "Full time");      // 175
+  assert.equal(tidyEmploymentType("Full time: experienced"), "Full time");  // 161
+  assert.equal(tidyEmploymentType("Temps plein - permanent"), "Full time"); // 261
+  // A period is NOT a boundary, which is what keeps an abbreviation from eating a place name.
+  assert.equal(tidyEmploymentType("ft. lauderdale based"), "ft. lauderdale based");
+});
+
+test("the measured tail of employment types gets real labels", () => {
+  assert.equal(tidyEmploymentType("Variable time"), "Variable");            // 345
+  assert.equal(tidyEmploymentType("Fixed term"), "Fixed term");             // 376
+  assert.equal(tidyEmploymentType("Independent Contractor"), "Contract");   // 267
+  assert.equal(tidyEmploymentType("Contractual"), "Contract");              // 219
+  // US healthcare shorthand for the same shift-by-shift arrangement the index spells "per diem".
+  assert.equal(tidyEmploymentType("PRN"), "Per diem");                      // 340
+  // Abbreviations, whole-word only.
+  assert.equal(tidyEmploymentType("FTE"), "Full time");
+  assert.equal(tidyEmploymentType("FT"), "Full time");
+  // French, from Canadian and EU tenants.
+  assert.equal(tidyEmploymentType("CDI"), "Permanent");                     // 259
+});
+
+test("a workplace in the job-type field is shown as nothing, not as a job type", () => {
+  // Some tenants put these in the type column. Rendering "Remote" under JOB TYPE next to a
+  // WORKPLACE column already reading "Remote" says the same thing twice and answers the wrong
+  // question. Blank is what three quarters of the index already renders.
+  assert.equal(tidyEmploymentType("Remote"), null);
+  assert.equal(tidyEmploymentType("Hybrid"), null);
+  assert.equal(tidyEmploymentType("On-site"), null);
+});
+
 test("an unrecognised type is left exactly as the provider wrote it", () => {
   // These are real answers from the production tail. Inventing a mapping for them would be guessing.
   for (const raw of ["Regular", "Employee", "Statistician Network"]) {

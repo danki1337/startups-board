@@ -32,7 +32,34 @@ const EMPLOYMENT_LABELS = [
   ["volunteer", "Volunteer"],
   ["per diem", "Per diem"],
   ["casual", "Casual"],
+  // The tail, measured on production rather than imagined. Each of these renders raw today, which
+  // in a column this narrow means a truncated fragment: "Variable ti…", "Independent c…".
+  ["fixed term", "Fixed term"],
+  ["variable time", "Variable"],
+  ["variable hour", "Variable"],
+  ["independent contractor", "Contract"],
+  ["contractual", "Contract"],
+  ["fulltime", "Full time"],
+  ["parttime", "Part time"],
+  // US healthcare shorthand: pro re nata, "as needed" -- the same shift-by-shift arrangement the
+  // rest of the index spells "per diem". 340 postings.
+  ["prn", "Per diem"],
+  // Abbreviations. Whole-word only, which is what keeps "ft" from swallowing "ft. lauderdale".
+  ["fte", "Full time"],
+  ["ft", "Full time"],
+  ["pt", "Part time"],
+  // French, from Canadian and EU tenants.
+  ["temps plein", "Full time"],
+  ["temps partiel", "Part time"],
+  ["cdi", "Permanent"],
+  ["cdd", "Fixed term"],
 ];
+
+// Values that are a WORKPLACE, not an employment type. Some tenants put them in the type field, and
+// rendering "Remote" under JOB TYPE beside a WORKPLACE column already reading "Remote" says the
+// same thing twice and answers the wrong question. Shown as blank, which the column already handles
+// for the three quarters of the index that publish no type at all.
+const NOT_A_JOB_TYPE = new Set(["remote", "hybrid", "on site", "onsite", "in office", "office"]);
 
 export function normalizeEmploymentKey(value) {
   return String(value ?? "").toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
@@ -53,11 +80,21 @@ export function normalizeEmploymentKey(value) {
 export function tidyEmploymentType(value) {
   const key = normalizeEmploymentKey(value);
   if (!key) return value ?? null;
+  if (NOT_A_JOB_TYPE.has(key)) return null;
   for (const [prefix, label] of EMPLOYMENT_LABELS) {
-    if (key === prefix || key.startsWith(`${prefix} `)) return label;
+    // A SPACE was the only accepted boundary, so the employer's trailing qualifier had to be
+    // separated by one. Measured on production, it usually is not: "Full time, non exempt" (698),
+    // "Full-time/Part-time" (394), "Full time (hourly)" (175), "Full time: experienced" (161) all
+    // fell through and rendered raw, which in this column is a truncated fragment. Any punctuation
+    // that ends a word ends it here too.
+    if (key === prefix || BOUNDARY.test(key.slice(prefix.length)) && key.startsWith(prefix)) return label;
   }
   return String(value);
 }
+
+// What may follow a matched type: a space, or the punctuation employers separate qualifiers with.
+// Anchored, so "contract" cannot match inside "contractual" -- that has its own entry above.
+const BOUNDARY = /^[\s,;:/()[\]|+&-]/;
 
 /* -------------------------------------------------------------------- location */
 

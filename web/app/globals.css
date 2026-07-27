@@ -99,6 +99,12 @@
     0 1px 2px -1px #0000000f,
     0 2px 4px #0000000a;
   --shadow-lift: 0 4px 16px oklch(0 0 0 / 0.06);
+  /* --shadow-control without its `0 0 0 1px` ring. A hairline ring reads as an EDGE on a pale
+     surface and as a pale STROKE drawn around the artwork on a saturated one -- and the ATS marks
+     are mostly saturated. These two layers give the same lift with nothing outlining the logo. */
+  --shadow-mark:
+    0 1px 2px -1px #0000000f,
+    0 2px 4px #0000000a;
   /* Motion curves. The built-in CSS easings are too weak to read as intentional; these are the
      standard strong curves. Entering and exiting both use --ease-out, never ease-in: an ease-in
      start delays the exact moment the user is looking at. */

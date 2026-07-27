@@ -53,6 +53,9 @@ export function warmAtsIcons() {
 
 export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; size?: 4 | 5 }) {
   const [failed, setFailed] = useState(false);
+  // A cached icon is decoded before React attaches onLoad, so `complete` is checked on mount too --
+  // otherwise a warm mark would sit at opacity 0 forever waiting for an event that already fired.
+  const [loaded, setLoaded] = useState(false);
   const icon = ICONS[source];
   const dimension = size === 4 ? "size-4" : "size-5";
 
@@ -70,6 +73,12 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
         loading="eager"
         decoding="async"
         fetchPriority="low"
+        // --shadow-mark, which is the lift WITHOUT the hairline ring: on a dark icon that 1px ring
+        // read as a pale stroke drawn around the logo rather than as an edge, which is exactly what
+        // it is on a pale surface and exactly what it is not on a saturated one. The two soft
+        // layers do the job on both.
+        // Faded in over 200ms rather than appearing: twelve marks resolve at different moments as
+        // the table fills, and popping them in one at a time is the flicker this removes.
         // 36%, because that is the artwork's OWN corner radius -- measured off the alpha channel,
         // all twelve icons go opaque 23px into a 64px canvas, and their edge midpoints are fully
         // opaque, so they are rounded squares at 23/64. A box-shadow follows the border-radius, so
@@ -81,7 +90,9 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
         // near-white, so without an edge they float. A shadow rather than an outline because the
         // ring layer IS the first shadow (0 0 0 1px), so one property draws both the edge and the
         // lift and they can never disagree.
-        className={`${dimension} shrink-0 rounded-[36%] object-contain shadow-[var(--shadow-control)]`}
+        className={`${dimension} shrink-0 rounded-[36%] object-contain shadow-[var(--shadow-mark)] transition-opacity duration-200 ease-[var(--ease-out)] ${loaded ? "opacity-100" : "opacity-0"}`}
+        ref={(node) => { if (node?.complete && node.naturalWidth > 0 && !loaded) setLoaded(true); }}
+        onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
       />
     );
@@ -91,7 +102,7 @@ export function AtsMark({ source, size = 5 }: { source: Job["source"] | string; 
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[36%] text-[10px] font-bold tracking-[-0.02em] shadow-[var(--shadow-control)] ${mark.className}`}
+      className={`inline-flex ${dimension} shrink-0 items-center justify-center rounded-[36%] text-[10px] font-bold tracking-[-0.02em] shadow-[var(--shadow-mark)] ${mark.className}`}
     >
       {mark.short}
     </span>
