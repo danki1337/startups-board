@@ -199,25 +199,32 @@ function Flag({ code }: { code?: string | null }) {
   );
 }
 
-// Served at the three densities it is actually displayed at rather than as one large master, and
-// that is a SHARPNESS fix before it is a bytes one.
+// 357px wide for a 119px box, and that number is the whole point: it is the size that survives BOTH
+// the way this image gets painted. Neither larger nor smaller works, which took four comparisons to
+// establish.
 //
-// Chrome downsamples an image with high-quality filtering while it is painted untransformed, and
-// drops to a cheaper filter the moment a transform is involved. The old 707px master had to come
-// down 2.97x to reach the 238 device pixels it occupies on a 2x screen, and under the hover tilt
-// that cheap filter aliased it visibly -- the wordmark went soft the instant you pointed at it,
-// which is the one moment it is being looked at closely. Measured side by side at the same
-// transform: 707px source soft, 238px source crisp, 357px source crisp. Hand the browser a source
-// close to the size it will paint and there is no downsample left for the cheap filter to spoil.
+// Chrome downsamples with high-quality filtering while painting an image untransformed, and drops to
+// a cheaper filter the moment a transform is involved. So:
 //
-// Still lossless, for the reason it always was -- at q92 the 2x encodes LARGER (12,952 against
-// 9,248 bytes), because lossy spends its bits on exactly the sharp flat-colour edges a logo is made
-// of and pays for them in ringing around every letter. The bytes are a bonus either way: a 2x
-// screen now fetches 9KB where it used to fetch 57KB.
+//   - The old 707px master had to come down 2.97x to reach the 238 device pixels it occupies on a 2x
+//     screen. Sharp at rest, because the good filter handled it -- and visibly aliased under the
+//     hover tilt, which is the one moment the mark is being looked at closely.
+//   - Pre-scaling to exactly 238px fixed the hover and broke the rest, because cwebp's resizer is
+//     WORSE than Chrome's: side by side at rest, the 238px file was plainly softer and fatter than
+//     the master. Chrome one-step canvas and multi-step halving both came closer but neither matched
+//     it. That version shipped, and looked wrong.
+//   - 357px is sharp in both. At rest Chrome's 1.5x downscale is gentle enough to wash the encoder's
+//     softness out; under the transform there is only a 1.44x reduction left for the cheap filter to
+//     spoil.
 //
-// The 707px master is kept out of public/ at web/design/, so it is never served but all three
-// densities can be regenerated from it. width/height are the 1x intrinsics, so the box is reserved
-// from the ratio and the headline beneath never jumps.
+// One file, no srcset. A 2x screen fetches 16.6KB where it used to fetch 57KB, and a 3x screen gets
+// it 1:1. Still lossless, for the reason it always was: at q92 this encodes larger, because lossy
+// spends its bits on exactly the sharp flat-colour edges a logo is made of and pays for them in
+// ringing around every letter.
+//
+// The 707px master is kept out of public/ at web/design/, so it is never served but this can be
+// regenerated from it. width/height are the intrinsics, so the box is reserved from the ratio and
+// the headline beneath never jumps.
 // alt is the brand name, not empty: this is the only place the product names itself on screen, and
 // a wordmark that reads as nothing is a wordmark that is not there.
 function Wordmark() {
@@ -226,13 +233,9 @@ function Wordmark() {
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
       src="/aboard-wordmark.webp"
-      // -2x, not @2x: Cloudflare's asset server normalises `@` to %40 and answers the literal name
-      // with a 307, so the conventional spelling cost the hero image an extra round trip on every
-      // retina screen. Verified against production -- @2x redirected, -2x is a straight 200.
-      srcSet="/aboard-wordmark.webp 1x, /aboard-wordmark-2x.webp 2x, /aboard-wordmark-3x.webp 3x"
       alt="Aboard"
-      width={119}
-      height={51}
+      width={357}
+      height={153}
       ref={paint}
       onLoad={(event) => paint(event.currentTarget)}
       className={`block h-[51px] w-auto ${fade}`}

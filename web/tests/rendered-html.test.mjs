@@ -350,7 +350,7 @@ testWithBuild("ranks text search by relevance with a bounded count", async () =>
   assert.match(query, /total: number \| null/);
 });
 
-test("every wordmark density is a lossless WebP that still carries its alpha", async () => {
+test("the wordmark is a lossless WebP that still carries its alpha", async () => {
   // The logo sits on the page background with a soft drop shadow, so losing the alpha channel would
   // put a white box behind it, and a lossy encode would ring around every letter edge. Both are the
   // kind of thing that looks fine in a thumbnail and wrong at 3x, so they are asserted from each
@@ -361,9 +361,7 @@ test("every wordmark density is a lossless WebP that still carries its alpha", a
   // the box it lands in aliases under the hover tilt. Each file has to be the size it claims, or the
   // srcset is handing some screen a source it will have to shrink by 3x again.
   const densities = [
-    { file: "aboard-wordmark.webp", width: 119, height: 51 },
-    { file: "aboard-wordmark-2x.webp", width: 238, height: 102 },
-    { file: "aboard-wordmark-3x.webp", width: 357, height: 153 },
+    { file: "aboard-wordmark.webp", width: 357, height: 153 },
   ];
   for (const { file, width, height } of densities) {
     const bytes = await readFile(new URL(`../public/${file}`, import.meta.url));
@@ -387,8 +385,12 @@ test("every wordmark density is a lossless WebP that still carries its alpha", a
   // 1x screen and the headline beneath it never jumps.
   const explorer = await readFile(new URL("../app/jobs-explorer.tsx", import.meta.url), "utf8");
   const mark = explorer.slice(explorer.indexOf("function Wordmark"), explorer.indexOf("function Wordmark") + 900);
-  assert.match(mark, /width=\{119\}/);
-  assert.match(mark, /height=\{51\}/);
-  assert.match(mark, /aboard-wordmark-2x\.webp 2x/);
-  assert.match(mark, /aboard-wordmark-3x\.webp 3x/);
+  assert.match(mark, /width=\{357\}/);
+  assert.match(mark, /height=\{153\}/);
+  // ONE file, not a density set. Pre-scaling to the exact device size made it worse, not better:
+  // cwebp's resizer is softer than Chrome's own downscale, so a 238px file for a 2x screen shipped
+  // a visibly fatter mark than the 707px master had produced. 357 is the size that is sharp both at
+  // rest (Chrome's gentle 1.5x reduction hides the encoder) and under the hover tilt (little left
+  // for the transform's cheap filter to alias).
+  assert.doesNotMatch(mark, /srcSet/);
 });
