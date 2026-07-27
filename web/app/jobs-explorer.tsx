@@ -952,9 +952,12 @@ export function JobsExplorer({
   const [shimmer, setShimmer] = useState(0);
 
   const widths = columnWidthsFor(jobs);
-  // Both loading affordances are gated on the request outlasting two seconds -- see useSlowFlag.
-  // What that costs, stated rather than buried: for a query that settles inside the threshold the
-  // badge keeps showing the PREVIOUS count for up to two seconds, and that count is stale by
+  // The BADGE's loading states -- and only the badge's -- wait for the request to outlast two
+  // seconds. See useSlowFlag. The table's own dim still reacts immediately, because it says
+  // something different: not "work is happening" but "these rows are already stale", which is true
+  // from the first millisecond.
+  // What the delay costs, stated rather than buried: for a query that settles inside the threshold
+  // the badge keeps showing the PREVIOUS count for up to two seconds, and that count is stale by
   // definition while a query is in flight. The judgement is that a number a second or two out of
   // date, which then morphs into the right one, is a smaller lie than a badge that blinks on every
   // keystroke and every scroll page.
@@ -1035,14 +1038,16 @@ export function JobsExplorer({
         <div className="jobs-skeleton t-skel-skeleton is-pulsing" aria-hidden="true">
           <JobsSkeleton widths={widths} />
         </div>
-        {/* A refetch with rows already present -- the skeleton layer behind this one covers a first
-            load and is already faded out by now. See .jobs-refreshing: the rows dim while the answer
-            is in flight rather than being replaced between frames with nothing said in between.
-            Gated on the SLOW flag, not the raw one, and this is the most visible place that matters:
-            dimming the whole table to 45% and back for a query that answers in 270ms is a flinch
-            across the largest element on the page. Below the threshold the old rows simply hold
-            still until the new ones replace them. */}
-        <div className={`t-skel-content relative ${slowLoading && jobs.length > 0 ? "jobs-refreshing" : "jobs-settled"}`}>
+        {/* isLoading with rows already present means a REFETCH, not a first load -- the skeleton
+            layer behind this one covers that case and is already faded out by now. See
+            .jobs-refreshing: the rows dim while the answer is in flight rather than being replaced
+            between frames with nothing said in between.
+            The RAW flag, deliberately, while the badge below waits two seconds. The dim is not an
+            announcement that work is happening -- it is a statement that the rows you are looking at
+            are already stale, and that is true from the first millisecond of the request. Delaying
+            it would leave a filtered table looking settled while showing the previous filter's
+            results. Its own 90ms fade is what keeps it from reading as a flicker. */}
+        <div className={`t-skel-content relative ${isLoading && jobs.length > 0 ? "jobs-refreshing" : "jobs-settled"}`}>
           <TableVirtuoso
             ref={tableRef}
             aria-label="Startup jobs from public ATS pages"
