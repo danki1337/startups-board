@@ -933,9 +933,8 @@ export function JobsExplorer({
           child of the element that dims and blurs during a refetch, so the one thing that is
           supposed to stay readable was dimmed to 0.45 and blurred with everything else -- and
           z-index could not save it, because an element with a `filter` becomes a containing block
-          and its children are rendered INTO the filtered surface. As a sibling it stays crisp.
-          While the table is dimmed it also moves to the middle of it: at the foot it was reading
-          as a caption on rows nobody can read, and the centre is where the eye already is. */}
+          and its children are rendered INTO the filtered surface. As a sibling it stays crisp
+          while they dim, and it stays exactly where it is -- the pill does not travel. */}
       {/* Resting, it floats over the foot of the card. It lands in the same 64px the bottom fade
           already dims, so it reads over emptying rows rather than over live ones, and
           pointer-events:none keeps the row underneath clickable through it. */}
@@ -948,7 +947,7 @@ export function JobsExplorer({
             nothing resizes as it flips.
             aria-live on the wrapper rather than on either state, so a screen reader is told the
             new text once when it settles instead of twice as the pair cross-fades. */}
-        <p aria-live="polite" className={`jobs-count-badge ${isLoading && jobs.length > 0 ? "is-centred" : ""}`}>
+        <p aria-live="polite" className="jobs-count-badge">
           <span ref={countSwapRef} className="t-morph">
             <span data-active={isLoading ? undefined : ""}>
               <span className="tabular-nums text-[var(--ink)]">{formatTotal(total, totalCapped)}</span>{" "}
@@ -1050,6 +1049,10 @@ export function JobsExplorer({
               What that costs, stated rather than buried: the wordmark no longer links home. If it
               should, the honest shape is a link that navigates AND shimmers, not one that swallows
               its own navigation. */}
+          {/* The entrance rides on this wrapper, never on .wordmark-link itself: an animation with
+              fill-mode `both` outranks normal declarations, so `transform: none` from the finished
+              entrance would permanently beat the :hover transform and the tilt would never fire. */}
+          <span className="page-enter block">
           <button
             type="button"
             aria-label="Aboard"
@@ -1074,8 +1077,9 @@ export function JobsExplorer({
                 key changes. */}
             {shimmer > 0 && <span key={shimmer} className="wordmark-shimmer" aria-hidden="true" />}
           </button>
+          </span>
           <h1
-            className="mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
+            className="page-enter page-enter--2 mx-auto whitespace-nowrap text-[clamp(15px,3.15vw,28px)] font-bold leading-[1.15] tracking-[-0.02em]"
           >
             Find{" "}
             {/* The one number on the page that changes under the reader's eyes -- every filter, every
@@ -1107,7 +1111,9 @@ export function JobsExplorer({
         </div>
 
         {/* No panel chrome behind the filter row — the pills carry their own hairline shadow. */}
-        <div>
+        {/* Third and last step of the entrance, so the header resolves wordmark -> headline ->
+            controls as one downward movement instead of four independent fades. */}
+        <div className="page-enter page-enter--3">
           <FilterDropdownBar
             filters={filters}
             update={update}
@@ -1880,11 +1886,18 @@ function SidebarPills({
                 the category icons in the filter row keeps the label the emphasis. Selected pills
                 pass through, so the icon inverts to white with the text. */}
             {glyph === "ats" && (
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-white">
-                <AtsMark source={option.value} size={4} />
+              <span className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-white">
+                <AtsMark source={option.value} size={3} />
               </span>
             )}
-            {OptionIcon && <span className={checked ? "" : "text-[var(--muted)]"}><OptionIcon /></span>}
+            {/* 16px, like every other glyph that qualifies a value (the chips, the row cells). The
+                icons ship as 20px SVGs, so the size has to be forced here -- at 20 they outweighed
+                the 13px label they sit beside and the pill read as an icon with a caption. */}
+            {OptionIcon && (
+              <span className={`inline-flex shrink-0 [&>svg]:size-4 ${checked ? "" : "text-[var(--muted)]"}`}>
+                <OptionIcon />
+              </span>
+            )}
             {option.label}
           </button>
         );

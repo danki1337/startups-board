@@ -315,20 +315,19 @@ a {
    this exact element to reveal it after the skeleton, at specificity (0,3,0) -- a bare
    `.jobs-refreshing` is (0,1,0) and loses to it silently, which is exactly what happened first: the
    class applied, the computed opacity stayed 1, and nothing moved. */
+/* Dim only -- no blur. Blurring a table of text puts every row through a filter the reader is
+   still trying to read, and it costs a full-surface repaint on the largest element on the page.
+   Opacity alone says "this is stale" just as clearly and composites on the GPU. Dropping `filter`
+   also un-does the containing block it created, which is what forced the count badge out of this
+   element in the first place. */
 .t-skel.is-revealed .t-skel-content.jobs-refreshing {
   opacity: 0.45;
-  filter: blur(1.5px);
-  transition:
-    opacity 90ms var(--ease-out),
-    filter 90ms var(--ease-out);
+  transition: opacity 90ms var(--ease-out);
 }
 
 .t-skel.is-revealed .t-skel-content.jobs-settled {
   opacity: 1;
-  filter: blur(0);
-  transition:
-    opacity 220ms var(--ease-out),
-    filter 220ms var(--ease-out);
+  transition: opacity 220ms var(--ease-out);
 }
 
 /* Dimming is the whole message for anyone who has asked for less motion; the blur is the part that
@@ -572,11 +571,20 @@ a {
 }
 
 .wordmark-link:hover {
-  transform: scale(1.04) rotate(1.6deg);
+  /* Lift and tilt, but do NOT scale up.
+     The mark is a 707x303 raster drawn at 119x51, so it has ~3x the pixels the screen needs -- the
+     hover blur was never a resolution problem. It is that a transformed element is resampled from
+     the texture the compositor already rasterized, and scale(1.04) stretched that texture 4% past
+     the size it was rasterized for. On a sticker whose whole design is a hard white outline, 4% of
+     bilinear stretch is exactly the softness you can see.
+     translateY resamples nothing (it is a whole-pixel-friendly offset, not a rescale) and reads as
+     the same "picked up off the page" the scale was there for. The tilt stays, because rotation of
+     a texture with 3x headroom is where the extra pixels actually get spent. */
+  transform: translateY(-2px) rotate(1.6deg);
 }
 
 .wordmark-link:active {
-  transform: scale(0.98) rotate(0deg);
+  transform: translateY(0) scale(0.98) rotate(0deg);
   transition-duration: 90ms;
 }
 
@@ -998,12 +1006,8 @@ button:disabled,
   translate: -50% calc(-100% - 14px);
   /* Above .t-skel-content (z-index 2), which it is now a sibling of rather than a child. */
   z-index: 4;
-  /* The move to centre and back. A documented exception to transform/opacity-only, like the
-     badge's width tween: `top` is the one property that can carry this trip (top: 100% -> 50% has
-     a real interpolation; bottom-to-top does not), the element is a lone absolutely-positioned
-     pill, and the alternative -- teleporting between foot and centre -- is exactly the "jumping
-     badge" that was reported as a bug. */
-  transition: top 240ms var(--ease-out), translate 240ms var(--ease-out);
+  /* No position transition: the badge is anchored at the foot and never travels, so there is no
+     layout property being animated here at all. */
   pointer-events: none;
   padding: 5px 14px;
   border-radius: 999px;
@@ -1019,14 +1023,9 @@ button:disabled,
   white-space: nowrap;
 }
 
-/* While the rows are dimmed for a refetch the badge sits at the CENTRE of the table -- at the foot
-   it read as a caption on rows nobody can read, and the centre is where the eye already is. It can
-   sit over the content without being washed out because it is a sibling of the filtered element,
-   not a child (a `filter` makes a containing block and renders children into the blurred surface). */
-.jobs-count-badge.is-centred {
-  top: 50%;
-  translate: -50% -50%;
-}
+/* The badge does NOT move. It sits at the foot of the card and stays there: the count changing
+   and the pill travelling are two things to follow at once, and the travel was the part that read
+   as a glitch. Only the text inside it swaps. */
 
 .tip-bubble {
   position: fixed;
@@ -1175,7 +1174,7 @@ button:disabled,
 .row-collapse {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 160ms var(--ease-out);
+  transition: grid-template-rows 130ms var(--ease-out);
 }
 .row-collapse > * {
   overflow: hidden;
@@ -1191,12 +1190,18 @@ button:disabled,
        ceiling, on a 40px-tall strip.
      translateY is in px, not %, because the block's height is what is being animated -- a
      percentage of a collapsing height is a moving target. */
-  transform: translateY(-6px);
-  filter: blur(2px);
+  transform: translateY(-4px);
+  filter: blur(1.5px);
+  /* Every property lands on the SAME frame as the track it rides in. They used to finish at 100,
+     120, 160 and 200ms, so the row arrived in four instalments -- the fade completing a tenth of a
+     second before the height settled is exactly what reads as loose rather than quick. One end
+     time, and a shorter travel and softer blur to match, is what makes it feel fast AND smooth
+     instead of merely short. Opacity is the one deliberate lead: the content is legible slightly
+     before it stops moving, which is what stops a fast enter from feeling like a flash. */
   transition:
-    opacity 100ms var(--ease-out),
-    transform 160ms var(--ease-out),
-    filter 120ms var(--ease-out);
+    opacity 90ms var(--ease-out),
+    transform 130ms var(--ease-out),
+    filter 90ms var(--ease-out);
   /* The pills inside cast a shadow ~6px past their own edges, and overflow:hidden cropped it flat
      -- buttons looked sliced along the bottom, and the last one in the row along its right side.
      The padding is the room that shadow lands in; the negative margin keeps the content aligned
@@ -1207,15 +1212,23 @@ button:disabled,
 .row-collapse.is-open {
   grid-template-rows: 1fr;
   /* Enter is the slower half: the exit should get out of the way, not perform. */
-  transition-duration: 200ms;
-}
-.row-collapse.is-open > * {
-  transform: translateY(0);
-  filter: blur(0);
+  transition-duration: 180ms;
 }
 .row-collapse.is-open > * {
   opacity: 1;
-  transition-duration: 140ms;
+  transform: translateY(0);
+  filter: blur(0);
+  /* Per property, NOT the `transition-duration: 140ms` shorthand this used to carry. That shorthand
+     silently flattened all three durations to one number -- so the enter's timing could be tuned in
+     the base rule all day and the open state would overwrite it. It was also split across two
+     identical selectors, which is how it stayed invisible.
+     Transform lands on the same frame as the 180ms track above, so the content and the space being
+     made for it stop together; opacity and blur finish earlier so the row is readable while it is
+     still settling. */
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 180ms var(--ease-out),
+    filter 120ms var(--ease-out);
 }
 
 
@@ -1338,4 +1351,39 @@ button:disabled,
 
 @media (prefers-reduced-motion: reduce) {
   .t-resize { transition: none; }
+}
+
+
+/* A small entrance for the things that make up the page.
+
+   Deliberately a keyframe rather than a transition: Emil's transitions-over-keyframes rule is about
+   RAPID triggers, where an interruptible transition is what keeps a re-trigger from restarting mid
+   way. This fires once per navigation, so an animation with `both` is the simpler tool -- and it
+   needs no mount-flag state in React, which would cost a second render and a frame of blank page.
+
+   Short and shallow on purpose. 4px and 260ms is enough to read as "this arrived" without making
+   anyone wait to use the page; the stagger is 40ms, the same step the empty state's lines use, so
+   the header resolves top-down as one movement rather than four independent fades.
+
+   The TABLE is deliberately excluded. It has its own skeleton-to-content reveal, and stacking a
+   second fade on top of that would animate the same pixels twice. */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.page-enter {
+  animation: page-enter 260ms var(--ease-out) both;
+}
+.page-enter--2 { animation-delay: 40ms; }
+.page-enter--3 { animation-delay: 80ms; }
+
+/* Decoration with no information in it, so for someone who has asked for less motion the correct
+   amount is none -- the content is simply there. */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .page-enter--2,
+  .page-enter--3 {
+    animation: none;
+  }
 }
