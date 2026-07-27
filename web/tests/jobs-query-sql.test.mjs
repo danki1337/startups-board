@@ -126,6 +126,24 @@ testWithBuild("two FTS filters share one join and one MATCH", async () => {
   );
 });
 
+testWithBuild("the company filter names the index it needs", async () => {
+  const statements = await capture("company=Stripe");
+
+  // jobs_company_filter_idx exists for this equality and SQLite would not choose it: given
+  // ORDER BY published_at DESC, key it preferred jobs_active_published_idx, which satisfies the sort
+  // outright, then evaluated the company expression on every active row until it had a page. Fine
+  // for a big company, catastrophic for one with NO postings -- ?company=atrium%20health read
+  // 1,806,987 rows in 35.7 seconds to return nothing, against 1 row and 0ms with the hint. The
+  // largest company in the index (dollartree, 24,179) also improves, 50,459 rows to 319.
+  assert.match(rowQuery(statements).sql, /FROM jobs j INDEXED BY jobs_company_filter_idx/);
+  assert.match(countQuery(statements).sql, /FROM jobs j INDEXED BY jobs_company_filter_idx/);
+
+  // NOT on the search path. There the `+` markers make every jobs-side predicate index-unusable so
+  // FTS drives, and naming an index the plan may not use is a hard error, not a hint.
+  const searched = await capture("search=engineer&company=Stripe");
+  assert.doesNotMatch(rowQuery(searched).sql, /INDEXED BY/);
+});
+
 testWithBuild("the company filter stays on its own index and out of FTS", async () => {
   const statements = await capture("company=Stripe");
   const rows = rowQuery(statements);

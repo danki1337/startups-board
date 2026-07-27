@@ -231,7 +231,32 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const filtered = (expression: string) => (isSearch ? `+${expression}` : expression);
   const conditions = [`${filtered("j.is_active")} = 1`];
   const bindings: unknown[] = [];
-  const from = usesFts ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid" : "jobs j";
+
+  // INDEXED BY, which is a bigger hammer than anything else here and earns it.
+  //
+  // jobs_company_filter_idx exists for exactly this equality, and SQLite would not use it: given
+  // `ORDER BY published_at DESC, key` it preferred jobs_active_published_idx, which satisfies the
+  // sort outright, and then evaluated the company expression on every active row until it had a
+  // page. That is fine for a company with thousands of postings and catastrophic for one with none,
+  // because "none" means walking the entire index before answering. Measured on the row query:
+  //
+  //   ?company=atrium%20health  (0 rows)      1,806,987 rows / 35,705ms -> 1 row     / 0ms
+  //   ?company=Stripe           (1,040 rows)    192,942 rows /  1,255ms -> 1,143 rows/ 3ms
+  //   ?company=dollartree      (24,179 rows)     50,459 rows /    126ms -> 319 rows  / 2ms
+  //
+  // No case is worse, including the largest company in the index: the index is
+  // (expr, is_active, published_at DESC), so with both equalities fixed it is ALREADY in the page's
+  // sort order and SQLite still stops after a page rather than sorting the company's whole run.
+  //
+  // Only off the search path. There the `+` markers deliberately make every jobs-side predicate
+  // index-unusable so FTS drives, and naming an index the plan is not allowed to use is a hard error
+  // rather than a hint. Gated on the same condition that pushes the equality, for the same reason:
+  // INDEXED BY with no usable constraint does not fall back, it fails the query.
+  const hasCompanyFilter = Boolean(companyValue?.trim());
+  const companyIndexHint = hasCompanyFilter && !isSearch ? " INDEXED BY jobs_company_filter_idx" : "";
+  const from = usesFts
+    ? "jobs j JOIN jobs_fts ON jobs_fts.rowid = j.rowid"
+    : `jobs j${companyIndexHint}`;
 
   if (usesFts) {
     conditions.push("jobs_fts MATCH ?");
@@ -273,7 +298,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   // Workday identifiers are "tenant|wdN|site" and only the tenant is the company -- and both sides
   // are normalised the same way, because the dropdown titlecases "acme-corp" to "Acme Corp" before
   // offering it and the value has to find its way back to the stored form.
-  if (companyValue?.trim()) {
+  if (hasCompanyFilter) {
     conditions.push(`${filtered(COMPANY_DISPLAY_SQL)} = ?`);
     bindings.push(normalizeCompanyValue(companyValue));
   }
