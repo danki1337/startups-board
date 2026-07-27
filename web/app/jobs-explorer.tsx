@@ -3082,7 +3082,14 @@ const JobCells = memo(function JobCells({
                 // The 52% cap existed to leave room for the category beside it; with that gone the
                 // company gets the whole line, so names stop truncating for no reason.
                 {...companyTip.tipProps}
-                className="-mx-1 min-w-0 truncate rounded-md px-1 hover:bg-[var(--row-control-hover)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
+                // No hover ground on this one, where the other in-row controls have one. The line
+                // is pinned to line-height 16px because the title-over-company stack has to come to
+                // exactly the height of the avatar beside it, so there is no room to pad a container
+                // out to something that reads as a container -- it came out as a grey strip hugging
+                // the letters, tight to the ascenders, right under a title with nothing behind it.
+                // The colour shift alone is the affordance here; the three cells that CAN afford the
+                // padding still draw the ground.
+                className="min-w-0 truncate rounded-md hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]"
               >
                 {job.company}
               </button>
