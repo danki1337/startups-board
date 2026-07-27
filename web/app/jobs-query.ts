@@ -216,7 +216,7 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
   const hasOtherFilters = isSearch
     ? false
     : ["country", "provider", "city", "roleFamily", "industry", "workplace", "employmentType",
-       "company", "companies", "postedWithin", "watchlist"]
+       "company", "companies", "postedWithin"]
       .some((key) => (params.get(key) ?? "").trim() !== "");
   const usesFts = ftsTerms.length > 0 && !hasOtherFilters;
   // The FTS constraints that did NOT get a join, and so still need their own narrowing subquery.
@@ -340,15 +340,19 @@ export async function queryJobs(params: URLSearchParams): Promise<JobsPage> {
     (value) => value.toLowerCase().replaceAll("-", " "),
   );
 
-  // Company watchlist. Newline-separated (not comma) because company names frequently contain commas
-  // ("Alphabet, Inc."), and capped so the clause and request URL stay bounded. Matched the same
-  // lenient way as the single-company filter (substring against name-or-identifier) so a starred
-  // company and its clickable link return the same jobs -- including Workday boards whose display
-  // name is a humanized slice of a piped identifier ("Aaco" from "aaco|wd1|site").
-  // The watchlist is the last and by far the largest group of bindings, so it is what pushes a query
+  // Several companies at once. Newline-separated (not comma) because company names frequently
+  // contain commas ("Alphabet, Inc."), and capped so the clause and request URL stay bounded.
+  // Matched the same lenient way as the single-company filter (substring against name-or-identifier)
+  // so a company picked here and its clickable link return the same jobs -- including Workday boards
+  // whose display name is a humanized slice of a piped identifier ("Aaco" from "aaco|wd1|site").
+  //
+  // Nothing in the UI sends this today: it was the starred-companies list, which has been removed.
+  // It is kept because it is the filter a multi-select Company picker needs, and because it is the
+  // one clause with a real bind-budget hazard -- worth keeping tested rather than rediscovered.
+  // This is the last and by far the largest group of bindings, so it is what pushes a query
   // over D1's 100-parameter ceiling -- and a query that exceeds it does not degrade, it throws, so
-  // /api/jobs returned 500 on every request for that user until they cleared filters. 60 starred
-  // companies plus a dozen cities and a dozen countries was enough to do it, all within the caps the
+  // /api/jobs returned 500 on every request for that user until they cleared filters. 60 companies
+  // plus a dozen cities and a dozen countries was enough to do it, all within the caps the
   // UI itself offers. Taking whatever budget is left rather than a fixed 60 keeps the statement
   // legal no matter how the other filters are combined; the trailing binds (posted-within, cursor,
   // limit/offset) are what the headroom is reserved for.

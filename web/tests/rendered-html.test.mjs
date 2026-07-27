@@ -153,7 +153,6 @@ testWithBuild("keeps HeroUI controls and table-first filters", async () => {
   // Date posted is a FilterDropdown like every other pill, not a HeroUI Select.
   assert.match(explorer, /<DateDropdown/);
   assert.doesNotMatch(explorer, /<Select\.Trigger/);
-  assert.match(explorer, /watchlistOnly/);
   // Cropped values get their full text back on hover/focus. The tooltip is portalled to <body> and
   // measures the element first: the previous ::after version was clipped out of existence by the
   // same overflow:hidden that truncated the text, and it fired on values that were never cropped.
@@ -415,25 +414,4 @@ test("the wordmark is a lossless WebP that still carries its alpha", async () =>
   // rest (Chrome's gentle 1.5x reduction hides the encoder) and under the hover tilt (little left
   // for the transform's cheap filter to alias).
   assert.doesNotMatch(mark, /srcSet/);
-});
-
-testWithBuild("the starred-companies view renders no count rather than the wrong one", async () => {
-  // `watchlist=1` is an intent, not a filter: the starred companies live in the reader's own
-  // localStorage, so the client expands the flag into `companies=<list>` before it fetches. The
-  // server cannot see that list, and queryJobs does not recognise `watchlist` -- so rendering
-  // anyway answered the UNFILTERED total. Measured on production: the page painted "1,836,709 jobs"
-  // and the client dropped it to a couple of thousand a moment later.
-  const html = await (await render("?watchlist=1")).text();
-
-  // The sentence still reads, with nothing missing from it.
-  assert.match(html, /open roles, straight from the source/);
-  // But no figure in it, and no figure in the tab either. The stub answers 1, which is what a
-  // rendered count would say here.
-  assert.doesNotMatch(html, /Find\s*(<[^>]*>)*\s*1\s*(<[^>]*>)*\s*open roles/);
-  assert.doesNotMatch(html, /<title>1 job/);
-
-  // And the ordinary shape is untouched -- this must not become "the server stops rendering".
-  const plain = await (await render()).text();
-  assert.match(plain, /<title>1 job — Aboard/);
-  assert.match(plain, /Staff Platform Engineer/, "rows still server-render for every other URL");
 });

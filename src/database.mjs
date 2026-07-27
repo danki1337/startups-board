@@ -467,7 +467,7 @@ export async function queryActiveJobs(filters = {}, databasePath = "data/jobs.db
     (value) => value.toLowerCase().replaceAll("-", " "),
   );
 
-  // Company watchlist. Newline-separated because company names frequently contain commas, which the
+  // Several companies at once. Newline-separated because company names frequently contain commas, which the
   // comma-based set filters would split on. Matched the same lenient way as the single-company
   // filter (substring against name-or-identifier), so a starred company and its clickable link
   // return exactly the same jobs -- including Workday boards whose display name is a humanized slice

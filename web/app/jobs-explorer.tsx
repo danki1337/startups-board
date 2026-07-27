@@ -268,9 +268,6 @@ type Filters = {
   employmentType: string[];
   postedWithin: string;
   sort: string;
-  // Show only jobs at companies on the local watchlist. The actual company list is stored in
-  // localStorage (device-local), so only this on/off intent lives in the filter state and URL.
-  watchlistOnly: boolean;
 };
 
 // The order chips are shown in: first applied, first in the row.
@@ -289,7 +286,7 @@ type Filters = {
 // new React key -- the chip unmounted and remounted, replaying its entrance animation on each
 // character, and chipOrder saw an unfamiliar id and re-appended it, so it also jumped to the end of
 // the row while you typed.
-const SINGLETON_CHIPS = new Set(["search", "title", "company", "location", "roleFamily", "watchlist"]);
+const SINGLETON_CHIPS = new Set(["search", "title", "company", "location", "roleFamily"]);
 
 function chipId(chip: ActiveChip) {
   return SINGLETON_CHIPS.has(chip.kind) ? chip.kind : `${chip.kind}:${chip.label}`;
@@ -323,7 +320,6 @@ const emptyFilters: Filters = {
   employmentType: [],
   postedWithin: "",
   sort: "newest",
-  watchlistOnly: false,
 };
 
 function filtersFromSearchParams(query: string): Filters {
@@ -350,7 +346,6 @@ function filtersFromSearchParams(query: string): Filters {
     employmentType: list("employmentType"),
     postedWithin: params.get("postedWithin") ?? "",
     sort: params.get("sort") ?? "newest",
-    watchlistOnly: params.get("watchlist") === "1",
   };
 }
 
@@ -358,7 +353,7 @@ function filtersFromSearchParams(query: string): Filters {
 // preserved verbatim.
 const FILTER_PARAM_KEYS = [
   "search", "title", "location", "company", "country", "city", "roleFamily", "industry",
-  "workplace", "provider", "employmentType", "postedWithin", "sort", "watchlist",
+  "workplace", "provider", "employmentType", "postedWithin", "sort",
 ];
 
 function filtersToSearchParams(filters: Filters) {
@@ -376,7 +371,6 @@ function filtersToSearchParams(filters: Filters) {
   if (filters.employmentType.length) params.set("employmentType", filters.employmentType.join(","));
   if (filters.postedWithin) params.set("postedWithin", filters.postedWithin);
   if (filters.sort !== "newest") params.set("sort", filters.sort);
-  if (filters.watchlistOnly) params.set("watchlist", "1");
   return params;
 }
 
@@ -385,22 +379,20 @@ function filtersToSearchParams(filters: Filters) {
 // after the word "is"; `kind` picks the category icon and the value glyph.
 type ChipKind =
   | "search" | "location" | "title" | "company" | "country" | "city" | "roleFamily"
-  | "industry" | "workplace" | "source" | "employmentType" | "watchlist";
+  | "industry" | "workplace" | "source" | "employmentType";
 type ActiveChip = { kind: ChipKind; label: string; value?: string; code?: string; logoUrl?: string | null; clear: () => void };
 
-// The storage keys carry the OLD name on purpose. They are invisible to the reader, and renaming
-// them would orphan every watchlist and saved view already on a device -- a rename is a cosmetic
-// change and must not cost anyone their data. readStored() below reads the new key first and falls
-// back to the old one, so a future rename can migrate rather than discard.
-const WATCHLIST_KEY = "aboard:watchlist";
-const WATCHLIST_KEY_LEGACY = "startups-board:watchlist";
+// The storage key carries the OLD name on purpose. It is invisible to the reader, and renaming it
+// would orphan every saved view already on a device -- a rename is a cosmetic change and must not
+// cost anyone their data. readStored() below reads the new key first and falls back to the old one,
+// so a future rename can migrate rather than discard.
 const SAVED_VIEWS_KEY = "aboard:saved-views";
 const SAVED_VIEWS_KEY_LEGACY = "startups-board:saved-views";
 
 type SavedView = { name: string; query: string };
 
 // `legacyKey` is what makes a rename free. Storage keys are invisible to the reader, so changing one
-// buys nothing -- but every watchlist and saved view already on a device is written under the old
+// buys nothing -- but every saved view already on a device is written under the old
 // key, and dropping it would cost people their data for a cosmetic change. New key first, old key
 // as a fallback; the next write lands under the new name and the old entry simply stops being read.
 function readStored<T>(key: string, fallback: T, legacyKey?: string): T {
@@ -633,10 +625,9 @@ export function JobsExplorer({
   // below then keeps it fresh. The page is force-dynamic and no-store, so this timestamp is never
   // served stale from a cache.
   const [now, setNow] = useState(serverNow);
-  // Watchlist (company names) and saved views (named filter query strings) are device-local, so they
-  // live in localStorage rather than the URL or the server. Seeded empty so the server and the first
-  // client render match, then hydrated from storage in an effect below.
-  const [watchlist, setWatchlist] = useState<string[]>([]);
+  // Saved views (named filter query strings) are device-local, so they live in localStorage rather
+  // than the URL or the server. Seeded empty so the server and the first client render match, then
+  // hydrated from storage in an effect below.
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const storageHydrated = useRef(false);
   // The server already rendered page one for the current URL, so the first filter effect must not
@@ -664,29 +655,14 @@ export function JobsExplorer({
   // The results scroller, captured from virtuoso so the overlay scrollbar can measure it.
   const [scroller, setScroller] = useState<HTMLElement | null>(null);
 
-  // watchlistSet and toggleWatch were the row star's two consumers. Kept out of the render for now
-  // rather than deleted -- see the note where the star used to be. eslint would flag them as unused,
-  // and a void reference is a clearer marker than a disable comment that says nothing.
-  void watchlist;
-
-  // The URL carries the on/off intent (watchlist=1); the fetch expands it into the actual company
-  // list so "only jobs from the list" is complete across pagination, not just the current page.
-  // Only actually filter by the watchlist when it has entries; an empty list would send no companies
-  // and silently show everything, so the toggle stays inert until the first company is starred.
-  const watchlistActive = filters.watchlistOnly && watchlist.length > 0;
+  // The URL and the fetch ask for exactly the same thing, and that is worth keeping true. They used
+  // to differ: the URL carried `watchlist=1` while the fetch expanded it into `companies=<the
+  // starred list>`, because the list itself lived in this browser's localStorage. The server could
+  // see the first and not the second, so it rendered a total the client immediately contradicted --
+  // the count painted 1,836,709 and dropped to a couple of thousand a moment later. Any future
+  // filter resolved on the client will bring that back unless it is kept out of the URL entirely.
   const urlQuery = useMemo(() => filtersToSearchParams(filters).toString(), [filters]);
-  const queryString = useMemo(() => {
-    const params = filtersToSearchParams(filters);
-    if (filters.watchlistOnly && watchlist.length > 0) {
-      params.delete("watchlist");
-      // 60 matches the query's own cap; sending 100 meant the last 40 starred companies were
-      // dropped server-side with nothing telling the user their watchlist was incomplete.
-      params.set("companies", watchlist.slice(0, 60).join("\n"));
-    } else {
-      params.delete("watchlist");
-    }
-    return params.toString();
-  }, [filters, watchlist]);
+  const queryString = urlQuery;
 
   // useCallback, because this is every row's `onFilter` prop. As a plain function declaration it
   // was a new identity on every parent render, which defeats React.memo on the row outright -- the
@@ -724,24 +700,20 @@ export function JobsExplorer({
     });
   }, [])
 
-  // Hydrate the device-local watchlist and saved views from storage once, after the first render so
-  // it cannot cause a server/client markup mismatch. The setState is the whole point of this mount
-  // effect, so the cascading-render lint rule does not apply.
+  // Hydrate the device-local saved views from storage once, after the first render so it cannot
+  // cause a server/client markup mismatch. The setState is the whole point of this mount effect, so
+  // the cascading-render lint rule does not apply.
   useEffect(() => {
     // Not a setState -- it fills the module-level logo cache, and must run before the first rows
     // mount so recycled rows can read it.
     hydrateLogoOutcomes();
     warmAtsIcons();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setWatchlist(readStored<string[]>(WATCHLIST_KEY, [], WATCHLIST_KEY_LEGACY));
     setSavedViews(readStored<SavedView[]>(SAVED_VIEWS_KEY, [], SAVED_VIEWS_KEY_LEGACY));
     setNow(Date.now());
     storageHydrated.current = true;
   }, []);
 
-  useEffect(() => {
-    if (storageHydrated.current) window.localStorage.setItem(WATCHLIST_KEY, JSON.stringify(watchlist));
-  }, [watchlist]);
   useEffect(() => {
     if (storageHydrated.current) window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
   }, [savedViews]);
@@ -941,7 +913,6 @@ export function JobsExplorer({
     for (const value of filters.employmentType) chips.push({ kind: "employmentType", label: value, clear: () => toggle("employmentType", value) });
     // postedWithin deliberately gets no chip: the date pill already displays its own selection
     // ("Last 7 days"), so a chip would double it. "Any time" in the same dropdown clears it.
-    if (watchlistActive) chips.push({ kind: "watchlist", label: "★ Watchlist", clear: () => update({ watchlistOnly: false }) });
     // Ordered by WHEN each filter was applied, not by the order the branches above happen to run in.
     // The list above is a fixed sequence -- search, location, title, company, country, … -- so
     // picking a country after a source pushed the country chip in front of the source that was
@@ -949,7 +920,7 @@ export function JobsExplorer({
     // not looking at. Appending keeps the newest at the end, where the eye already is because that
     // is where the previous one landed.
     return orderChips(chips, chipOrderStore);
-  }, [filters, watchlistActive, jobs, chipOrderStore, update, toggle]);
+  }, [filters, jobs, chipOrderStore, update, toggle]);
 
   // The chips survive their own exit animation.
   //
@@ -1679,7 +1650,7 @@ function FilterCheckbox({ checked }: { checked: boolean }) {
 type FilterCategoryKey = "industry" | "city" | "country" | "workplace" | "employmentType" | "source";
 
 // How many values one facet may carry. addSetFilter() in jobs-query.ts keeps the first 12 and drops
-// the rest, and the D1 statement has a 100-parameter ceiling that the watchlist shares -- so this is
+// the rest, and the D1 statement has a 100-parameter ceiling shared across every filter -- so this is
 // the API's cap surfaced in the UI rather than a preference.
 const FILTER_VALUE_MAX = 12;
 
@@ -3096,13 +3067,12 @@ const JobCells = memo(function JobCells({
             </a>
             {titleTip.tip}
             <span className="job-meta-line flex min-w-0 items-center gap-1 text-[14px] text-[var(--muted)]">
-              {/* The watchlist star used to sit here. HIDDEN, not deleted: everything behind it is
-                  intact -- the localStorage list, the toggle, the ?watchlist=1 filter and its chip
-                  all still work, so turning it back on is putting this button back.
-                  It went because it was the one control on the row that promised something the
-                  product does not yet do. Starring a company stored a name in this browser and
-                  nothing else: no alerts, no digest, no sync to another device. A star that appears
-                  to follow a company and does not is worse than no star. */}
+              {/* A watchlist star used to sit here, and the rest of the watchlist went with it.
+                  It promised something the product does not do: starring a company stored a name in
+                  this browser and nothing else -- no alerts, no digest, no sync to another device.
+                  A star that appears to follow a company and does not is worse than no star.
+                  Removed rather than left dormant, because half a feature is a thing to trip over.
+                  It is in the history whole if it comes back. */}
               <button
                 type="button"
                 onClick={() => onFilter({ company: job.company })}

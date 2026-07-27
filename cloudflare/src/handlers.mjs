@@ -5,7 +5,7 @@ import {
   CONSTRUCTED_LOGO_PROVIDERS,
 } from "../../src/company-logo.mjs";
 import { parseAtsUrl } from "../../src/providers.mjs";
-import { reportError, reportHealth } from "./alerts.mjs";
+import { reportError, reportHealth, sendTestAlert } from "./alerts.mjs";
 import { syncBoard } from "../../src/jobs.mjs";
 import { requestWithRetry } from "../../src/validation.mjs";
 import { isRateLimitError, queueForProvider, rateLimitNextSyncAt } from "./config.mjs";
@@ -142,6 +142,12 @@ export async function handleOperatorRequest(request, env) {
 
   if (!hasAdminToken(request, env)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Deliberately POST, not GET: it sends real mail, and a GET that has an effect is one a crawler,
+  // a link preview or a browser prefetch can fire on your behalf.
+  if (url.pathname === "/api/internal/admin/test-alert" && request.method === "POST") {
+    return Response.json(await sendTestAlert(env));
   }
 
   if (url.pathname === "/api/internal/admin/run" && request.method === "POST") {

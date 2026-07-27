@@ -62,7 +62,6 @@ const HEADER_TRACKING = 0.05;
 
 // What sits beside the text in each cell and takes width the string does not account for.
 const LOGO_AND_GAP = 48; // 36px avatar + 12px gap, the Title cell
-const STAR_AND_GAP = 17; // the watchlist star on the company line
 const FLAG_AND_GAP = 24; // the country flag in Location
 const EXTRA_BADGE = 32; // the "+3" badge when a posting lists several places
 const GLYPH_AND_GAP = 22; // a 16px icon + 6px gap, in Job type and Workplace
@@ -159,7 +158,10 @@ export function columnWidths(rows) {
     // The Title cell stacks two lines beside one avatar, so it needs whichever of them is longer --
     // not their sum, and not the title alone. A short role at a long company crops the company.
     const titleLine = textWidth(row.title, BODY_SIZE);
-    const companyLine = textWidth(row.company, BODY_SIZE) + STAR_AND_GAP;
+    // No allowance beside it any more: the 17px this used to add was for a watchlist star that
+    // was hidden before the rest of the watchlist was removed, so the company line has been
+    // reserving room for a control that is not drawn.
+    const companyLine = textWidth(row.company, BODY_SIZE);
     samples.title.push(Math.max(titleLine, companyLine) + LOGO_AND_GAP);
 
     samples.location.push(textWidth(row.location, BODY_SIZE)

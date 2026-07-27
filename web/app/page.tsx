@@ -118,10 +118,6 @@ export async function generateMetadata({ searchParams }: { searchParams: SearchP
   // to find again than another line of prose. The query is the one the page component is about to
   // run anyway -- cache() above makes them the same call, not two.
   if (!heading) {
-    // Same reason the page component skips it: with `watchlist=1` the server would count the whole
-    // index and put "1.8M jobs" in the tab of a view showing a couple of thousand. No count is
-    // better than a wrong one, and it saves the read that produced it.
-    if (resolved.watchlist) return {};
     const page = await loadFirstPage(firstPageParams(resolved));
     const total = page?.total ?? 0;
     if (!total) return {};
@@ -173,20 +169,7 @@ export default async function Home({
   const resolved = await searchParams;
   const params = firstPageParams(resolved);
 
-  // `watchlist=1` is an INTENT, not a filter. The starred companies live in the reader's own
-  // localStorage, so the client expands the flag into `companies=<list>` before it fetches -- and
-  // the server, which cannot see that list, has no way to answer the same question.
-  //
-  // Rendering anyway is what made the count jump. queryJobs does not recognise `watchlist`, so it
-  // answered the UNFILTERED total: the page painted "1,836,709 jobs", the client then fetched the
-  // real starred set, and the number dropped to a couple of thousand a moment later. Measured on
-  // production, exactly that pair.
-  //
-  // So this shape is left to the client entirely. No server query at all -- which also means the D1
-  // read that produced the wrong answer is no longer paid for -- and hasServerData=false tells the
-  // explorer to fetch immediately and to treat the total as unknown rather than as zero.
-  const clientResolvedOnly = Boolean(resolved.watchlist);
-  const initialPage = clientResolvedOnly ? null : await loadFirstPage(params);
+  const initialPage = await loadFirstPage(params);
 
   // `limit` is a transport detail, not a filter, so it must not leak into the client's filter state.
   // Deleted from a COPY: `params` is the object firstPageParams memoises and hands to every caller

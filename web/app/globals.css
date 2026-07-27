@@ -346,7 +346,7 @@ a {
    One thing deliberately NOT carried over: the original's `will-change`. It is right for a handful
    of rows on a portfolio page and wrong here, where ~34 rows are on screen inside a virtualized
    scroller -- 68 compositor layers held permanently to serve a transition that runs for whichever
-   single row the cursor is over. Same reasoning as the watchlist star below. */
+   single row the cursor is over. Same reasoning as the icon swap below. */
 .row-swap {
   display: inline-grid;
 }
@@ -388,10 +388,10 @@ a {
 
 /* One documented deviation from the snippet, and only inside the table.
    will-change is a PERMANENT compositor-layer hint, and 09-icon-swap.md is written for a swap or
-   two on a page. The watchlist star puts one in every row: ~34 on screen at once, two children
+   two on a page. A per-row control puts one in every row: ~34 on screen at once, two children
    each, so 68 promoted layers held for the life of the scroll -- to serve a transition that runs
-   only when somebody clicks a star. The hint is dropped here and kept everywhere else, where the
-   count is one. */
+   only when somebody clicks one of them. The hint is dropped here and kept everywhere else, where
+   the count is one. */
 .jobs-table .t-icon-swap .t-icon { will-change: auto; }
 
 /* Shimmer text (15-shimmer-text.md), for the "Updating…" label beside the count.

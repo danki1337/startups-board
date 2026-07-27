@@ -6,8 +6,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const page = await queryJobs(url.searchParams);
 
-  // A watchlist request carries the user's own list of employers in the URL; `public` would invite
-  // shared caches to keep a personal document. Everything else is the same for everyone.
+  // A request naming a list of employers is one the reader assembled; `public` would invite shared
+  // caches to keep what is effectively a personal document. Everything else is the same for
+  // everyone.
   const personal = url.searchParams.has("companies");
   return Response.json(page, {
     headers: {

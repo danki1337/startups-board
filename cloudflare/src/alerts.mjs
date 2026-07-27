@@ -125,6 +125,39 @@ async function deliver(env, subject, body, extra = {}) {
   });
 }
 
+/**
+ * Send one alert on purpose and report what each channel did.
+ *
+ * Alerting is the one feature whose whole job is to work on a day nobody is watching, so "we think
+ * it is configured" is not a state worth being in. This is how you find out -- and it reports the
+ * channels it did NOT try, which is what catches the real mistake: a secret set on the wrong name,
+ * or an email binding that was never added, both of which look exactly like silence.
+ */
+export async function sendTestAlert(env) {
+  const channels = {
+    "email (Cloudflare)": Boolean(env?.SEND_EMAIL && env?.ALERT_EMAIL_TO && env?.ALERT_EMAIL_FROM),
+    "email (Resend)": Boolean(!env?.SEND_EMAIL && env?.RESEND_API_KEY && env?.ALERT_EMAIL_TO && env?.ALERT_EMAIL_FROM),
+    webhook: Boolean(env?.ALERT_WEBHOOK),
+  };
+  const attempted = Object.entries(channels).filter(([, on]) => on).map(([name]) => name);
+  if (!attempted.length) return { ok: false, attempted, reason: "no alert channel is configured" };
+
+  const results = {};
+  for (const name of attempted) {
+    try {
+      if (name === "email (Cloudflare)") await sendViaEmailRouting(env, "aboard: test alert", TEST_BODY);
+      if (name === "email (Resend)") await sendViaResend(env, "aboard: test alert", TEST_BODY);
+      if (name === "webhook") await sendViaWebhook(env, "aboard: test alert", TEST_BODY, { test: true });
+      results[name] = "sent";
+    } catch (error) {
+      results[name] = `failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
+  return { ok: Object.values(results).every((value) => value === "sent"), attempted, results };
+}
+
+const TEST_BODY = "This is a test. Alerting is wired up; nothing is wrong.";
+
 function shouldSend(key, now) {
   const previous = lastSent.get(key);
   if (previous && now - previous < ALERT_COOLDOWN_MS) return false;
