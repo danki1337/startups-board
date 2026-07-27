@@ -70,6 +70,83 @@ export async function releaseBoards(db, keys, now = new Date().toISOString()) {
     "UPDATE boards SET queue_state = 'idle', updated_at = ? WHERE key = ?",
   ).bind(now, key)));
 }
+// Hoisted out of applyBoardSnapshot and exported so a test can run it against a real SQLite rather
+// than assert on the string. The repost rule below is date arithmetic inside a CASE inside an
+// upsert -- exactly the shape that reads correct and behaves otherwise, and the recording-stub
+// tests elsewhere in this file can only check what was passed, never what SQLite did with it.
+export const JOB_UPSERT_SQL = `
+        INSERT INTO jobs (
+          key, source_id, board_key, provider, company_identifier, company_name,
+          company_logo_url, title, location, country, city, role_family, company_industry, workplace,
+          employment_type, category, published_at, url, fingerprint, seen_run_id, is_active,
+          first_seen_at, updated_at, closed_at, reposted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL)
+        ON CONFLICT(key) DO UPDATE SET
+          source_id = excluded.source_id,
+          board_key = excluded.board_key,
+          provider = excluded.provider,
+          company_identifier = excluded.company_identifier,
+          company_name = excluded.company_name,
+          company_logo_url = excluded.company_logo_url,
+          title = excluded.title,
+          location = excluded.location,
+          country = excluded.country,
+          city = excluded.city,
+          role_family = excluded.role_family,
+          company_industry = excluded.company_industry,
+          workplace = excluded.workplace,
+          employment_type = excluded.employment_type,
+          category = excluded.category,
+          -- A posting we had closed is back on the board. That is a new availability event, and if
+          -- the ATS is re-serving the date it always carried, that date now understates the job:
+          -- it would sink to wherever it sat months ago instead of surfacing as open again.
+          --
+          -- Two guards, both load-bearing.
+          --
+          -- The three-day floor is the important one. Reactivation does NOT mean "reposted" -- it
+          -- much more often means WE closed it wrongly and recovered: a truncated page, a bot
+          -- challenge answered with a 200, the Workday pagination bug that cost 1,509 boards
+          -- everything past job 40. Those recover on the next refresh, which is now at most 12h
+          -- away, so anything back inside three days is treated as a correction and its date is
+          -- left exactly as it was. Without this, the day a fetch bug is fixed the whole front
+          -- page fills with jobs claiming to be brand new that never went anywhere.
+          --
+          -- The second guard trusts the source when the source is doing its job: a repost that
+          -- comes back carrying a date LATER than the closure has already been re-dated upstream,
+          -- so that date wins. Only a date older than the closure gets overridden.
+          published_at = CASE
+            WHEN jobs.is_active = 0
+             AND jobs.closed_at IS NOT NULL
+             AND julianday(excluded.updated_at) - julianday(jobs.closed_at) >= 3
+             AND (excluded.published_at IS NULL OR excluded.published_at < jobs.closed_at)
+              THEN excluded.updated_at
+            -- A later EDIT must not quietly undo the above. published_at is deliberately outside
+            -- the fingerprint, so the next genuine content change would otherwise restore the stale
+            -- source date and the repost would lose its freshness weeks after the fact.
+            WHEN jobs.reposted_at IS NOT NULL
+             AND (excluded.published_at IS NULL OR excluded.published_at < jobs.reposted_at)
+              THEN jobs.published_at
+            ELSE excluded.published_at
+          END,
+          -- Why published_at moved, kept separately so the override is auditable rather than
+          -- indistinguishable from a date the ATS supplied.
+          reposted_at = CASE
+            WHEN jobs.is_active = 0
+             AND jobs.closed_at IS NOT NULL
+             AND julianday(excluded.updated_at) - julianday(jobs.closed_at) >= 3
+              THEN excluded.updated_at
+            ELSE jobs.reposted_at
+          END,
+          url = excluded.url,
+          fingerprint = excluded.fingerprint,
+          seen_run_id = excluded.seen_run_id,
+          is_active = 1,
+          updated_at = excluded.updated_at,
+          closed_at = NULL
+        WHERE jobs.fingerprint <> excluded.fingerprint
+           OR jobs.is_active = 0
+      `;
+
 
 export async function applyBoardSnapshot(db, result, options = {}) {
   const now = result.board.syncedAt;
@@ -203,39 +280,7 @@ export async function applyBoardSnapshot(db, result, options = {}) {
 
   for (const group of chunks(jobsToWrite, 35)) {
     const responses = await db.batch(group.map((job) => {
-      return db.prepare(`
-        INSERT INTO jobs (
-          key, source_id, board_key, provider, company_identifier, company_name,
-          company_logo_url, title, location, country, city, role_family, company_industry, workplace,
-          employment_type, category, published_at, url, fingerprint, seen_run_id, is_active,
-          first_seen_at, updated_at, closed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
-        ON CONFLICT(key) DO UPDATE SET
-          source_id = excluded.source_id,
-          board_key = excluded.board_key,
-          provider = excluded.provider,
-          company_identifier = excluded.company_identifier,
-          company_name = excluded.company_name,
-          company_logo_url = excluded.company_logo_url,
-          title = excluded.title,
-          location = excluded.location,
-          country = excluded.country,
-          city = excluded.city,
-          role_family = excluded.role_family,
-          company_industry = excluded.company_industry,
-          workplace = excluded.workplace,
-          employment_type = excluded.employment_type,
-          category = excluded.category,
-          published_at = excluded.published_at,
-          url = excluded.url,
-          fingerprint = excluded.fingerprint,
-          seen_run_id = excluded.seen_run_id,
-          is_active = 1,
-          updated_at = excluded.updated_at,
-          closed_at = NULL
-        WHERE jobs.fingerprint <> excluded.fingerprint
-           OR jobs.is_active = 0
-      `).bind(
+      return db.prepare(JOB_UPSERT_SQL).bind(
         job.key, job.sourceId, job.boardKey, job.provider,
         job.companyIdentifier, job.companyName, job.companyLogoUrl, job.title, job.location,
         job.country, job.city, job.roleFamily, job.companyIndustry, job.workplace,

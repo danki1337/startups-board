@@ -1,0 +1,13 @@
+-- When a posting we had already closed comes back, that is a new availability event, and the date
+-- the table shows should say so.
+--
+-- The effective date is written into published_at itself rather than derived at query time, and
+-- that is forced rather than chosen: ELEVEN indexes on jobs carry `published_at DESC` as their sort
+-- key (jobs_active_published_idx and every filter index beside it). Sorting on
+-- coalesce(reposted_at, published_at) matches none of them, and jobs-query.ts already records what
+-- that costs -- a coalesce in the ORDER BY turned ?sort=oldest into a full sort of 1.24M rows at
+-- 5.9s. So published_at stays the one sortable column and reposted_at records WHY it moved.
+--
+-- Nullable and written only on a genuine repost, so this is a schema-only change: SQLite's ADD
+-- COLUMN without a default does not rewrite the 1.8M existing rows.
+ALTER TABLE jobs ADD COLUMN reposted_at TEXT;
