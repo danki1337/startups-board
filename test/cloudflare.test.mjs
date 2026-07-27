@@ -471,3 +471,75 @@ test("the admin endpoints are still refused outright without the token", async (
   );
   assert.equal(response.status, 401);
 });
+
+// --- alert delivery ------------------------------------------------------------------------
+// reportError runs inside catch blocks and inside waitUntil, so the property that matters most is
+// that it cannot itself throw. Everything else is about reaching the channels that are configured
+// and none that are not.
+const { reportError: report } = await import("../cloudflare/src/alerts.mjs");
+
+function captureFetch() {
+  const calls = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null, headers: init?.headers });
+    return new Response("{}", { status: 200 });
+  };
+  return { calls, restore: () => { globalThis.fetch = original; } };
+}
+
+test("an alert reaches every configured channel and no others", async () => {
+  const { calls, restore } = captureFetch();
+  try {
+    await report(
+      { ALERT_WEBHOOK: "https://hooks.example/abc", RESEND_API_KEY: "re_k", ALERT_EMAIL_TO: "me@example.com", ALERT_EMAIL_FROM: "alerts@aboard.cc" },
+      "fetch GET /api/jobs",
+      new Error("D1 exploded"),
+    );
+  } finally { restore(); }
+
+  const hosts = calls.map((call) => new URL(call.url).host).sort();
+  assert.deepEqual(hosts, ["api.resend.com", "hooks.example"], "both the email and the chat ping");
+
+  const email = calls.find((call) => call.url.includes("resend"));
+  assert.equal(email.body.to[0], "me@example.com");
+  assert.match(email.body.subject, /fetch GET \/api\/jobs/);
+  assert.match(email.body.text, /D1 exploded/);
+
+  // Slack reads `text`, Discord reads `content`. Both are sent so either works with no config.
+  const chat = calls.find((call) => call.url.includes("hooks.example"));
+  assert.match(chat.body.text, /D1 exploded/);
+  assert.equal(chat.body.text, chat.body.content);
+});
+
+test("with nothing configured an alert still logs and sends nowhere", async () => {
+  const { calls, restore } = captureFetch();
+  try {
+    await report({}, "scheduled", new Error("cron died"));
+  } finally { restore(); }
+  assert.equal(calls.length, 0);
+});
+
+test("a channel that is down cannot take down the request it is reporting on", async () => {
+  // The whole point of the reporter: it runs where something has ALREADY gone wrong.
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("webhook host unreachable"); };
+  try {
+    await report({ ALERT_WEBHOOK: "https://hooks.example/abc" }, "fetch GET /", new Error("first fault"));
+  } finally { globalThis.fetch = original; }
+  // Reaching here without throwing IS the assertion.
+  assert.ok(true);
+});
+
+test("the same fault repeated is announced once, not once per request", async () => {
+  // A burst of thousands of identical errors must not turn the channel into a denial of service
+  // against itself.
+  const { calls, restore } = captureFetch();
+  try {
+    const env = { ALERT_WEBHOOK: "https://hooks.example/abc" };
+    for (let i = 0; i < 5; i += 1) await report(env, "fetch GET /api/jobs", new Error("same fault"));
+    // A DIFFERENT fault is its own message -- the damper is per-message, not a global mute.
+    await report(env, "fetch GET /api/jobs", new Error("another fault"));
+  } finally { restore(); }
+  assert.equal(calls.length, 2);
+});
