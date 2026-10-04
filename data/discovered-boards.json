@@ -1410370,7 +1410370,8 @@
       "apiUrl": "https://wd3.myworkdaysite.com/wday/cxs/iubh/IUBH_WD_Jobboard/jobs",
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/iubh/IUBH_WD_Jobboard/job/Remote/Vertriebsmitarbeiter-Studienberatung--m-w-d--remote_R012927/apply",
@@ -1423540,7 +1423541,8 @@
         "common-crawl:CC-MAIN-2025-47:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-18:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-18:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd1.myworkdaysite.com/en-US/recruiting/maximintegratedproducts/MaximCareers/job/INDIA-GANDHINAGAR/Yield-Engineer_R10299",
@@ -1432671,7 +1432673,8 @@
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/nantmedia/LATimesCareers/job/El-Segundo-CA/Senior-Editor--Features_REQ_001506",
@@ -1461735,7 +1461738,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd1.myworkdaysite.com/en-US/recruiting/scu/scurobots.txt"
@@ -1499592,5 +1499596,5 @@
       "validation": null
     }
   ],
-  "shardMergedAt": "2026-09-27T08:05:16.716Z"
+  "shardMergedAt": "2026-10-04T09:42:48.373Z"
 }
