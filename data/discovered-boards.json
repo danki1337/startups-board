@@ -354086,7 +354086,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2026-04:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rewritingthecode.bamboohr.com/robots.txt",
@@ -354237,7 +354238,8 @@
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://reynoldsrestorationservices.bamboohr.com/robots.txt",
@@ -354388,7 +354390,8 @@
         "common-crawl:CC-MAIN-2026-21:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-51:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rhapsody.bamboohr.com/robots.txt",
@@ -354472,7 +354475,8 @@
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rhinolabs.bamboohr.com/robots.txt",
@@ -354598,7 +354602,8 @@
       "apiUrl": "https://rhubique.bamboohr.com/careers/list",
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-08:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rhubique.bamboohr.com/careers",
@@ -354620,7 +354625,8 @@
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rhythmsnowsports.bamboohr.com/careers",
@@ -354659,7 +354665,8 @@
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://ri.bamboohr.com/robots.txt",
@@ -354690,7 +354697,8 @@
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rica.bamboohr.com/robots.txt",
@@ -354836,7 +354844,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-33:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://richmondindiana.bamboohr.com/careers",
@@ -354926,7 +354935,8 @@
         "common-crawl:CC-MAIN-2025-13:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-05:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://richtech.bamboohr.com/robots.txt",
@@ -354954,7 +354964,8 @@
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-08:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rickengineering.bamboohr.com/robots.txt",
@@ -355003,7 +355014,8 @@
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rickhansenfoundation.bamboohr.com/robots.txt",
@@ -355365,7 +355377,8 @@
       "apiUrl": "https://rigicon.bamboohr.com/careers/list",
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-26:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-51:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-51:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rigicon.bamboohr.com/robots.txt",
@@ -355440,7 +355453,8 @@
         "common-crawl:CC-MAIN-2024-51:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://ringofire.bamboohr.com/robots.txt",
@@ -355477,7 +355491,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-18:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-08:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://riparide.bamboohr.com/robots.txt",
@@ -355589,7 +355604,8 @@
         "common-crawl:CC-MAIN-2025-51:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-18:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://risecpa.bamboohr.com/robots.txt",
@@ -355632,7 +355648,8 @@
         "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://risevest.bamboohr.com/careers",
@@ -355843,7 +355860,8 @@
         "common-crawl:CC-MAIN-2026-08:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://riverkeeper.bamboohr.com/robots.txt",
@@ -355883,7 +355901,8 @@
         "common-crawl:CC-MAIN-2025-13:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-51:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://riverstonewellness.bamboohr.com/robots.txt",
@@ -356083,7 +356102,8 @@
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rlg.bamboohr.com/robots.txt",
@@ -356144,7 +356164,8 @@
       "boardUrl": "https://rma.bamboohr.com/careers",
       "apiUrl": "https://rma.bamboohr.com/careers/list",
       "discoverySources": [
-        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rma.bamboohr.com/jobs/",
@@ -356183,7 +356204,8 @@
         "common-crawl:CC-MAIN-2026-21:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-13:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-08:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-08:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rmgcllc.bamboohr.com/robots.txt",
@@ -356223,7 +356245,8 @@
       "apiUrl": "https://rmhmn.bamboohr.com/careers/list",
       "discoverySources": [
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rmhmn.bamboohr.com/careers/32",
@@ -356521,7 +356544,8 @@
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2025-47:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://robo.bamboohr.com/robots.txt",
@@ -356545,7 +356569,8 @@
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://robotiq.bamboohr.com/robots.txt",
@@ -356705,7 +356730,8 @@
         "common-crawl:CC-MAIN-2026-04:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-39:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rockinrudys.bamboohr.com/robots.txt",
@@ -356787,7 +356813,8 @@
         "common-crawl:CC-MAIN-2025-05:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rockpoint.bamboohr.com/robots.txt",
@@ -356951,7 +356978,8 @@
         "common-crawl:CC-MAIN-2026-08:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2024-38:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-34:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://roclub.bamboohr.com/robots.txt",
@@ -357107,7 +357135,8 @@
         "common-crawl:CC-MAIN-2025-13:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-17:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2026-30:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-42:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://rogii.bamboohr.com/robots.txt",
@@ -357127,7 +357156,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2026-21:*.bamboohr.com/careers/*",
         "common-crawl:CC-MAIN-2025-08:*.bamboohr.com/careers/*",
-        "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*"
+        "common-crawl:CC-MAIN-2024-46:*.bamboohr.com/careers/*",
+        "common-crawl:CC-MAIN-2025-38:*.bamboohr.com/careers/*"
       ],
       "sampleUrls": [
         "https://roguedisposal.bamboohr.com/robots.txt",
@@ -1328154,7 +1328184,8 @@
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/accaglobal/ACCA",
@@ -1340657,7 +1340688,8 @@
         "common-crawl:CC-MAIN-2025-43:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/asd/ASD20?q=Color+guard",
@@ -1349704,7 +1349736,8 @@
         "common-crawl:CC-MAIN-2024-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/bluescope/careers/job/Cilegon-Indonesia/Innovation---Commercialization-Lead_R-2510151?Country=b31234dbcdda4da9ba8fa073c5944e36",
@@ -1353109,7 +1353142,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/bsigroup/BSI_Careers/job/Canada/Medical-Device-QMS-Auditor_JR0017711?mode=job&iis=Job%20Board&iisn=Indeed.com&Country=a30a87ed25634629aa6c3958aa2b91ea",
@@ -1356183,7 +1356217,8 @@
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd12.myworkdaysite.com/recruiting/carislifesciences/CLS/job/Irving-TX---75039/Accounts-Payable-Coordinator_JR103464",
@@ -1358802,11 +1358837,13 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-51:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-38:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-38:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/charlestonsc/External/job/Data-Analyst_JR100953",
-        "https://wd5.myworkdaysite.com/en-US/recruiting/charlestonsc/External/job/Police-Forensic-Services/Crime-Scene-Investigator_JR100895"
+        "https://wd5.myworkdaysite.com/en-US/recruiting/charlestonsc/External/job/Police-Forensic-Services/Crime-Scene-Investigator_JR100895",
+        "https://wd5.myworkdaysite.com/en-US/recruiting/charlestonsc/External/job/Parks-Department/Keep-Charleston-Beautiful-Volunteer-and-Events-Coordinator_JR100378"
       ],
       "firstDiscoveredAt": "2026-07-23T13:51:33.779Z",
       "validation": null
@@ -1361985,7 +1362022,8 @@
         "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd12.myworkdaysite.com/en-US/recruiting/cloudbreak/Equiti/jobs",
@@ -1363348,7 +1363386,8 @@
         "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/coloradomtn/ColoradoMountainCollege",
@@ -1368087,7 +1368126,9 @@
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/de-DE/recruiting/daher/Daher",
@@ -1370730,7 +1370771,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/devonenergy/Careers",
@@ -1373098,7 +1373140,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/easyservice/bon_secours_careers/job/Bon-Secours-Hospital-Cork/Occupational-Therapist_R198491?locations=a5b92b28f68b0100a8d94a7d1fb40000",
@@ -1373121,7 +1373164,8 @@
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/easyservice/BonSecoursCareers",
@@ -1373143,7 +1373187,8 @@
         "common-crawl:CC-MAIN-2025-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-43:*.myworkdayjobs.com/*",
-        "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/easyservice/BonSecoursMercyHealthCareers/job/Youngstown-OH/Special-Events-Coordinator---Foundation---Youngstown_R226932",
@@ -1373219,7 +1373264,8 @@
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-47:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/easyservice/RoperStFrancisHealthcare?utm_source=rsfh_site&utm_medium=button_to_workday&utm_campaign=rsfh_open_jobs",
@@ -1375400,7 +1375446,8 @@
         "common-crawl:CC-MAIN-2025-43:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/endemolshine/Banijay_USA/job/ESNA-5161-Lankershim/Manager--Publicity---Cast-Management_R757",
@@ -1381331,7 +1381378,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/enterprisecommunity/EnterpriseCareers/details/Director--Climate-Policy_REQ2456",
@@ -1382878,7 +1382926,8 @@
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/everestre/careers",
@@ -1385012,7 +1385061,9 @@
         "common-crawl:CC-MAIN-2026-17:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/federation/Federation_Careers/job/Ballarat-Victoria/Casual-Customer-Service-Opportunities_JR100508-1",
@@ -1390024,7 +1390075,8 @@
         "common-crawl:CC-MAIN-2026-12:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-04:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-51:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-51:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/freeths/Freeths_External/details/Planning---Environmental-Managing-Associate--6---PQE--Bristol-or-Sheffield_JR100441",
@@ -1390493,7 +1390545,8 @@
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/ftsi/AlpineSilica"
@@ -1390543,7 +1390596,8 @@
       "apiUrl": "https://wd5.myworkdaysite.com/wday/cxs/ftsi/Livewire/jobs",
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-38:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/ftsi/Livewire"
@@ -1393749,7 +1393803,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/gflenv/Careers/job/Kitchener-Ontario/AZ-DZ-Driver--Emergency-Response-Services_R26150?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic",
@@ -1396036,7 +1396091,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/golubcapital/GCIM"
@@ -1399089,7 +1399145,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/de-DE/recruiting/hamilton/Hamilton_Jobs_Berufsbildung",
@@ -1400174,7 +1400231,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/havas/HealthYouExternalCareerSite?q=Account%20Managment",
@@ -1400569,7 +1400627,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/hcahealthcare/hcacareers/job/The-Christie-Private-Care/Specialist-Clinical-Pharmacist_0046148/apply",
@@ -1401830,7 +1401889,8 @@
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd12.myworkdaysite.com/recruiting/heihotels/External_Career_Site",
@@ -1405776,7 +1405836,8 @@
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/ibtx/Independent_Bank/job/TX---Houston---77025---4120-Bellaire-Boulevard/Executive-Banking-Assistant_R3920",
@@ -1416898,7 +1416959,8 @@
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd10.myworkdaysite.com/recruiting/leduc/EXT",
@@ -1419615,7 +1419677,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd103.myworkdaysite.com/en-US/recruiting/loregroup/LoreGroupExternal?jobFamily=19505b7d96631012984d5f8abb580000&jobFamily=19505b7d96631012984d6025df410000&jobFamily=19505b7d96631012984d60c0bef10000",
@@ -1423645,7 +1423708,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/mazdausa/Mazda/details/Parsippany-NJ/Region-Marketing-Specialist_R1058",
@@ -1425221,7 +1425285,8 @@
         "common-crawl:CC-MAIN-2026-12:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/melittagroup/MelittaCareers/job/DE-Bremen/Mitarbeiter-Qualittssicherung--m-w-d-_R100462/apply",
@@ -1426503,7 +1426568,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/microchiphr/External/job/CA---San-Jose---Holger/FAE---Principal-Embedded-Solutions-Engineer--Wireless-Specialist-_R3750-23",
@@ -1427428,7 +1427494,8 @@
         "common-crawl:CC-MAIN-2025-47:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/modaxo/Busology"
@@ -1427465,7 +1427532,8 @@
         "common-crawl:CC-MAIN-2025-43:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/modaxo/Elovate"
@@ -1427720,7 +1427788,8 @@
         "common-crawl:CC-MAIN-2026-17:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/de-DE/recruiting/modaxo/TrapezeGroupITS/job/Servicetechniker--m-f-d-_R52403-1",
@@ -1427825,7 +1427894,8 @@
       "boardUrl": "https://wd3.myworkdaysite.com/recruiting/modaxo/Voyagerr",
       "apiUrl": "https://wd3.myworkdaysite.com/wday/cxs/modaxo/Voyagerr/jobs",
       "discoverySources": [
-        "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/modaxo/Voyagerr"
@@ -1432674,7 +1432744,8 @@
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*",
-        "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/nantmedia/LATimesCareers/job/El-Segundo-CA/Senior-Editor--Features_REQ_001506",
@@ -1449246,7 +1449317,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/prismahealth/PrismaHealthCorporate/job/Laurens-SC/Medical-Assistant-Certified--P-T--Day_R1050194",
@@ -1449759,7 +1449831,8 @@
         "common-crawl:CC-MAIN-2025-51:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://pru.wd5.myworkdayjobs.com/careers/job/Associate-Manger--Actuarial_R-115183",
@@ -1455832,7 +1455905,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/fr-FR/recruiting/riotinto/RioTinto_Careers/job/Conakry/Un--e--Conseiller--re--Senior-en-Relation-avec-le-Gouvernement_R28983?source=RECR_APPLICANT_SOURCE_JOB_BOARD_LINKEDIN",
@@ -1463816,7 +1463890,8 @@
         "common-crawl:CC-MAIN-2026-12:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/siegfriedgroup/Siegfried_External_Careers"
@@ -1464552,7 +1464627,8 @@
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/simmonssimmons/SimmonsSimmonsExternal/job/Simmons-Adaptive---Interim-Consultant-Lawyer_JR100422",
@@ -1464883,7 +1464959,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd105.myworkdaysite.com/en-US/recruiting/sjog/SJGHC_External_Career_Site/job/Berwick-Victoria/Ward-Clerk_JR-4429-1?utm_source=Indeed&utm_medium=organic&utm_campaign=Indeed",
@@ -1464942,7 +1465019,8 @@
         "common-crawl:CC-MAIN-2026-12:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-51:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd105.myworkdaysite.com/en-US/recruiting/sjog/SJGHC_Nursing_and_Midwifery_Careers/job/Midland-Western-Australia/Director-of-Nursing---Midwifery_JR-9203-1",
@@ -1466362,7 +1466440,8 @@
         "common-crawl:CC-MAIN-2024-46:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/recruiting/socccd/SOCCCD",
@@ -1467230,7 +1467309,8 @@
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/southernwater/SouthernWater/introduceYourself",
@@ -1472506,7 +1472586,8 @@
         "common-crawl:CC-MAIN-2025-43:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2025-47:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/sysco/syscocareers/login?redirect",
@@ -1472619,7 +1472700,8 @@
         "common-crawl:CC-MAIN-2026-04:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/takeaway/grubhubcareers/job/chicago-washington-avenue-office/assistant-counsel_r_042119",
@@ -1472644,7 +1472726,8 @@
         "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/takeaway/JET-ECS-R/job/Canada-MB-Remote/Senior-React-Developer_R_049450-1",
@@ -1476195,7 +1476278,8 @@
       "apiUrl": "https://wd3.myworkdaysite.com/wday/cxs/technicolor/mikros/jobs",
       "discoverySources": [
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/technicolor/mikros/job/CAN---QC---Montreal-740-St-Maurice/Lead-Animation---Animation-Lead---TMNT2_JR102697"
@@ -1476214,7 +1476298,8 @@
         "common-crawl:CC-MAIN-2026-04:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-51:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-38:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/technicolor/mpc/job/AUS---SA---Adelaide-178-N-Terrace/Coordinator--Production_JR102520",
@@ -1476231,7 +1476316,8 @@
       "boardUrl": "https://wd3.myworkdaysite.com/recruiting/technicolor/technicolor",
       "apiUrl": "https://wd3.myworkdaysite.com/wday/cxs/technicolor/technicolor/jobs",
       "discoverySources": [
-        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/technicolor/technicolor/job/CAN---QC---Montreal-740-St-Maurice/Superviseur-Compositing---Compositing-Supervisor---Paw-Patrol-3_JR102429-1"
@@ -1476250,7 +1476336,8 @@
         "common-crawl:CC-MAIN-2026-04:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-08:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/technicolor/themill"
@@ -1476529,7 +1476616,9 @@
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2024-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/telesure/Wday/details/Assessor-Learner_JR103645",
@@ -1479906,7 +1479995,8 @@
         "common-crawl:CC-MAIN-2024-42:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-21:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-12:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd5.myworkdaysite.com/en-US/recruiting/tradeshift/External/job/Bucharest/Customer-Success-Manager_R-100004",
@@ -1485100,7 +1485190,8 @@
       "discoverySources": [
         "common-crawl:CC-MAIN-2026-08:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2025-05:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd1.myworkdaysite.com/recruiting/upenn/PennVet"
@@ -1487895,7 +1487986,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2025-47:*.myworkdayjobs.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://velux.wd3.myworkdayjobs.com/hu-HU/Velux_Commercial",
@@ -1487932,7 +1488024,8 @@
         "common-crawl:CC-MAIN-2026-17:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2025-47:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*",
-        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2024-46:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://velux.wd3.myworkdayjobs.com/da-DK/Velux_Residential/job/stvej-2-stbirk/Student-Business-Analyst--Finance-and-Performance-Management--Supply_R1066709",
@@ -1488564,7 +1488657,8 @@
       "boardUrl": "https://wd3.myworkdaysite.com/recruiting/verisure/eQuest",
       "apiUrl": "https://wd3.myworkdaysite.com/wday/cxs/verisure/eQuest/jobs",
       "discoverySources": [
-        "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/verisure/eQuest/job/Firenze/Tecnico-Manutentore-Sistemi-di-Sicurezza--Recruiting-Day-Toscana_r2025041788",
@@ -1491660,7 +1491754,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdayjobs.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://volarisgroup.wd3.myworkdayjobs.com/Volaris",
@@ -1492232,7 +1492327,8 @@
         "common-crawl:CC-MAIN-2025-26:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd12.myworkdaysite.com/en-US/recruiting/vxi/Careers/job/Angeles-City-Philippines/Operations-Manager-Post_R25_00171/apply/applyManually?utm_source=CareerSite",
@@ -1494628,7 +1494724,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-GB/recruiting/wfp/job_openings/details/Business-Support-Associate-G-6_JR122897",
@@ -1495759,7 +1495856,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/recruiting/wkcda/External/job/Hong-Kong/Curator_R6083-5",
@@ -1498833,7 +1498931,8 @@
         "common-crawl:CC-MAIN-2026-30:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-13:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/yokogawa/yokogawa-career-site/job/Al-Khobar/NWS--Lead-Engineer_R-5893",
@@ -1499540,7 +1499639,8 @@
         "common-crawl:CC-MAIN-2025-33:*.myworkdaysite.com/*",
         "common-crawl:CC-MAIN-2026-08:*.myworkdayjobs.com/*",
         "common-crawl:CC-MAIN-2026-34:*.myworkdaysite.com/*",
-        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*"
+        "common-crawl:CC-MAIN-2026-39:*.myworkdaysite.com/*",
+        "common-crawl:CC-MAIN-2025-21:*.myworkdaysite.com/*"
       ],
       "sampleUrls": [
         "https://wd3.myworkdaysite.com/en-US/recruiting/zrg/teleclinic-jobs/job/Mnchen/Initiativbewerbung-TeleClinic_JR00865/apply",
@@ -1499596,5 +1499696,5 @@
       "validation": null
     }
   ],
-  "shardMergedAt": "2026-10-11T09:50:26.751Z"
+  "shardMergedAt": "2026-10-18T08:04:32.785Z"
 }
